@@ -11,3 +11,12 @@
 // ============================================================
 window.SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
 window.SUPABASE_ANON_KEY = 'YOUR-ANON-PUBLIC-KEY';
+
+// ============================================================
+// （選用）AI 輔助評分代理網址
+//
+// 部署 supabase/functions/claude/index.ts 之後，把函式網址貼在這裡，
+// 例如：https://YOUR-PROJECT.supabase.co/functions/v1/claude
+// 留空 = 停用「AI 建議評分」功能，其他功能不受影響。
+// ============================================================
+window.CLAUDE_PROXY_URL = '';

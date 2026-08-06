@@ -10,8 +10,10 @@
     第二階段價值觀題庫（十類 48 題可勾選）、罐頭回覆庫。
   - **飼主**（提出申請的一方）：送出的申請進度、私人筆記、回答小抄。
 - `supabase-schema.sql` — 資料庫結構與 RLS（Row Level Security）政策。
-- `js/config.js` — 你的 Supabase 連線設定（網址＋anon 金鑰）。
+- `js/config.js` — 你的 Supabase 連線設定（網址＋anon 金鑰＋選用的 AI 代理網址）。
 - `js/supabase-client.js` — 共用的登入／資料存取邏輯。
+- `supabase/functions/claude/index.ts` — （選用）Claude API 代理，讓「待認養」後台的
+  「AI 建議評分」按鈕能安全呼叫 AI，金鑰只存在伺服器端。
 
 ## 上線前要做的事
 
@@ -36,6 +38,19 @@
 ### 3. 開啟 GitHub Pages
 Repo 設定 → **Settings → Pages** → Source 選「Deploy from a branch」→ 選 `main` 分支、
 `/ (root)` 目錄 → Save。幾分鐘後就能用 `https://<你的帳號>.github.io/warmsun-adoption-match/` 開啟。
+
+### 4.（選用）開啟「AI 建議評分」
+「待認養」後台審查申請人時，可以按「AI 建議評分」讓 AI 幫忙看一下優缺點與建議方向
+（只是輔助意見，通過／婉拒還是你自己按）。這一步需要一個能安全保管 API 金鑰的
+後端，所以用 Supabase Edge Function 代理：
+1. 安裝 [Supabase CLI](https://supabase.com/docs/guides/cli)，登入並連結你的專案：
+   `supabase login` → `supabase link --project-ref <你的專案代號>`
+2. 部署函式：`supabase functions deploy claude`
+3. 到 https://console.anthropic.com 申請一組 API 金鑰，設定成密鑰（不會出現在前端）：
+   `supabase secrets set ANTHROPIC_API_KEY=sk-ant-xxxxx`
+4. 把函式網址貼進 `js/config.js` 的 `CLAUDE_PROXY_URL`：
+   `https://<你的專案代號>.supabase.co/functions/v1/claude`
+5. 留空這個設定，「AI 建議評分」按鈕會自動顯示為停用狀態，不影響其他功能。
 
 ## 已知限制（原型階段）
 

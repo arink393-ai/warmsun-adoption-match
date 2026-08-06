@@ -307,7 +307,7 @@ const DEFAULT_CANNED = [
 目前這邊沒有要再開放新的申請，先謝謝您，祝福您一切順利。`}
 ];
 
-let me = null, myProfile = null, roster = [], keeperOut = [];
+let me = null, myProfile = null, roster = [], keeperOut = [], rosterFromProfiles = {};
 
 /* ── 登入 gate（與 index.html 相同邏輯） ── */
 let gateMode = 'login';
@@ -395,6 +395,7 @@ async function renderRoster(){
   if(!list.length){ box.innerHTML = '<div class="empty">目前沒有收到申請。</div>'; return; }
   const fromProfiles = {};
   for(const a of list){ if(!fromProfiles[a.from_user]) fromProfiles[a.from_user] = await DB.getProfile(a.from_user); }
+  rosterFromProfiles = fromProfiles;
   const q1 = (Array.isArray(myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
   box.innerHTML = list.map(a => {
     const from = fromProfiles[a.from_user] || {name:'（已取消登記）'};
@@ -416,7 +417,9 @@ async function renderRoster(){
           <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
         ${a.stage===3 && !(a.unlock_from && a.unlock_to) ? `
           <button class="ghost unlockTo" data-app="${a.id}">${a.unlock_to ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>` : ''}
+        ${a.a1 ? `<button class="ghost aiJudge" data-app="${a.id}">AI 建議評分</button>` : ''}
       </div>
+      ${a.a1 ? `<div class="hint aiOut" data-app="${a.id}" style="margin-top:8px;white-space:pre-wrap"></div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="hint">🔓 對方已互相解鎖，可在配對站查看日常觀察資訊</div>` : ''}
       <label style="margin-top:14px">套用罐頭回覆（自動帶入對方名字）</label>
       <select class="cannedSel" data-name="${esc(from.name)}"></select>
@@ -441,6 +444,24 @@ function bindRoster(){
   $('roster').querySelectorAll('.unlockTo').forEach(b => b.onclick = async () => {
     try{ await upd(b.dataset.app, {unlock_to: true}); }catch(e){ alert(e.message||'操作失敗'); }
   });
+  $('roster').querySelectorAll('.aiJudge').forEach(b => {
+    if(!DB.hasClaudeProxy()){
+      b.disabled = true; b.title = '尚未設定 AI 代理網址（js/config.js 的 CLAUDE_PROXY_URL）';
+      return;
+    }
+    b.onclick = async () => {
+      const a = roster.find(x => x.id === b.dataset.app);
+      const from = rosterFromProfiles[a.from_user] || {};
+      const out = $('roster').querySelector(`.aiOut[data-app="${a.id}"]`);
+      b.disabled = true; out.textContent = 'AI 分析中⋯⋯';
+      try{
+        const q1 = (Array.isArray(myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
+        const q2 = (Array.isArray(a.a2_questions) && a.a2_questions.length) ? a.a2_questions : DEFAULT_Q2;
+        out.textContent = await DB.askClaude(buildJudgePrompt(from, a, q1, q2));
+      }catch(e){ out.textContent = '分析失敗：' + (e.message||''); }
+      b.disabled = false;
+    };
+  });
   const canned = mergedCanned();
   $('roster').querySelectorAll('.cannedSel').forEach(sel => {
     sel.innerHTML = canned.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
@@ -456,6 +477,25 @@ function bindRoster(){
     const msg = b.parentElement.querySelector('.cannedUseMsg');
     msg.textContent = '已複製'; setTimeout(()=>msg.textContent='',2000);
   });
+}
+function buildJudgePrompt(from, a, q1, q2){
+  const qa = (qs, ans) => qs.map((q,i) => `${i+1}. ${q}\n   回答：${(ans||[])[i]||'（未答）'}`).join('\n');
+  return `你是「暖陽動物之家」認養配對站的審查助手，正在協助一位待認養身分的使用者評估申請人。這只是輔助建議，最後決定權在使用者身上，不要幫忙做最終決定，只提供分析。
+
+【使用者（待認養方）的自我介紹】
+${myProfile.bio || '（未填寫）'}
+
+【使用者希望對方是】
+${myProfile.wants || '（未填寫）'}
+
+【申請人基本資料】
+暱稱：${from.name||''}　年齡：${from.age||''}　居住地：${from.area||''}　職業：${from.job||''}
+
+【申請人的第一階段回答】
+${a.a1 ? qa(q1, a.a1) : '（尚未進行）'}
+${a.a2 ? '\n【申請人的第二階段回答】\n' + qa(q2, a.a2) : ''}
+
+請用大約 150～250 字，依序給出：這位申請人的優點、需要留意或進一步確認的地方、以及你觀察到「通過／再觀察／婉拒」哪個方向比較合理並說明一句話理由。語氣中性，不要編造回答中沒提到的資訊。`;
 }
 function applyPlaceholders(t, ctx){
   return (t||'').replace(/\{\{name\}\}/g, ctx.name||'').replace(/\{\{myname\}\}/g, ctx.myname||'');

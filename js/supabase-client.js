@@ -126,10 +126,35 @@
     return data;
   }
 
+  // ── AI 輔助評分（選用，需部署 supabase/functions/claude） ──
+  function hasClaudeProxy() {
+    return !!window.CLAUDE_PROXY_URL;
+  }
+  async function askClaude(prompt) {
+    if (!window.CLAUDE_PROXY_URL) throw new Error('尚未設定 AI 代理網址（js/config.js 的 CLAUDE_PROXY_URL）');
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('尚未登入');
+    const res = await fetch(window.CLAUDE_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 700,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error((data.error && data.error.message) || 'AI 請求失敗');
+    const text = data.content && data.content[0] && data.content[0].text;
+    if (!text) throw new Error('AI 沒有回傳內容');
+    return text;
+  }
+
   window.DB = {
     sb,
     signUpEmail, signInEmail, signInGoogle, signOut, getUser, onAuthChange,
     ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles,
-    listOutbox, listInbox, findApplicationTo, createApplication, updateApplication
+    listOutbox, listInbox, findApplicationTo, createApplication, updateApplication,
+    hasClaudeProxy, askClaude
   };
 })();
