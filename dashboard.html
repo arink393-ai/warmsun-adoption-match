@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>暖陽動物之家｜我的後台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --paper:#FFFFFF; --paper-2:#FAF9F7; --ink:#2E2A26; --ink-soft:#7B736A;
+    --rule:#E6E2DC; --brand:#E0752A; --brand-dk:#C9611C;
+    --ok:#2E7D46; --warn:#D99400; --bad:#C0392B;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:"Noto Sans TC",system-ui,sans-serif;
+       font-size:15px;line-height:1.75;padding-bottom:60px}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 18px}
+  header{border-bottom:2px solid var(--brand);padding:24px 0 0;margin-bottom:20px}
+  .tag{display:inline-block;background:var(--brand);color:#fff;font-family:"IBM Plex Mono",monospace;
+       font-size:11px;letter-spacing:.2em;padding:4px 12px;border-radius:3px 3px 0 0}
+  h1{font-family:"Noto Serif TC",serif;font-size:clamp(22px,4vw,30px);color:var(--brand);margin:10px 0 4px}
+  .sub{font-size:13px;color:var(--ink-soft);margin:0 0 14px}
+  .topbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:10px 0 0;font-size:12px;color:var(--ink-soft)}
+  .topbar a{color:var(--brand);text-decoration:none;font-weight:500}
+  .topbar a:hover{text-decoration:underline}
+
+  .tabbar{display:flex;gap:2px;border-bottom:1px solid var(--brand);margin-bottom:20px;flex-wrap:wrap}
+  .tabbtn{background:transparent;color:var(--ink-soft);border:1px solid var(--rule);border-bottom:0;
+          border-radius:3px 3px 0 0;padding:8px 14px;font-size:13px;cursor:pointer;margin-bottom:-1px}
+  .tabbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .pane{display:none} .pane.on{display:block}
+
+  fieldset{border:1px solid var(--rule);border-radius:3px;background:var(--paper-2);padding:14px 16px 18px;margin:0 0 18px}
+  legend{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.16em;color:var(--brand);padding:0 8px}
+  label{display:block;font-size:12px;color:var(--ink-soft);margin:12px 0 5px}
+  input,select,textarea{width:100%;background:#fff;border:1px solid var(--rule);border-radius:3px;
+        padding:9px 11px;font-family:inherit;font-size:14px;color:var(--ink)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-offset:1px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
+  button{font-family:inherit;font-size:14px;background:var(--brand);color:#fff;border:1px solid var(--brand);
+         border-radius:3px;padding:10px 18px;cursor:pointer}
+  button:hover{background:var(--brand-dk);border-color:var(--brand-dk)}
+  button.ghost{background:transparent;color:var(--ink);border-color:var(--rule);padding:6px 12px;font-size:12px}
+  button.ghost:hover{background:var(--brand);color:#fff;border-color:var(--brand)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  .msg{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--brand)}
+  .hint{font-size:12px;color:var(--ink-soft)}
+  .err{font-size:12px;color:var(--bad)}
+  .empty{border:1px dashed var(--rule);padding:28px;text-align:center;color:var(--ink-soft)}
+  .qa{border-left:2px solid var(--rule);padding:2px 0 2px 10px;margin:8px 0;font-size:13px}
+  .qa b{display:block;color:var(--ink-soft);font-weight:400;font-size:12px}
+  .stage{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.1em}
+  .s0{color:var(--bad)} .s1{color:var(--warn)} .s2{color:var(--warn)} .s3{color:var(--ok)}
+  .pill{display:inline-block;font-size:11px;border:1px solid var(--rule);border-radius:999px;
+        padding:1px 9px;margin:0 4px 4px 0;color:var(--ink-soft)}
+  .q1row{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
+  .q1row textarea{flex:1}
+  .q1row button{padding:6px 10px;font-size:12px}
+
+  #gate{position:fixed;inset:0;background:var(--paper);z-index:9999;display:flex;
+        align-items:center;justify-content:center;padding:24px}
+  #gate .box{max-width:380px;width:100%}
+  #gate h1{text-align:center}
+  #gate .sub{text-align:center}
+  #gateForm .switcher{display:flex;gap:6px;justify-content:center;margin-top:14px;font-size:12px}
+  #gateForm .switcher button{background:none;border:none;color:var(--brand);cursor:pointer;padding:2px;font-size:12px}
+  .google-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;color:var(--ink);
+              border:1px solid var(--rule);width:100%}
+  .google-btn:hover{background:var(--paper-2);border-color:var(--rule)}
+  .or{display:flex;align-items:center;gap:10px;color:var(--ink-soft);font-size:12px;margin:14px 0}
+  .or::before,.or::after{content:'';flex:1;height:1px;background:var(--rule)}
+</style>
+
+<div id="gate">
+  <div class="box">
+    <span class="tag">STAFF AREA</span>
+    <h1>暖陽動物之家</h1>
+    <p class="sub">請先登入，才能進入你的後台</p>
+    <fieldset id="gateForm">
+      <legend id="gateLegend">登入</legend>
+      <button type="button" class="google-btn" id="gGoogle">
+        <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.3-5.1l-6.6-5.6C29.6 35 26.9 36 24 36c-5.3 0-9.7-3.4-11.3-8.1l-6.5 5C9.6 39.6 16.3 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4 5.6l6.6 5.6C41.5 36.6 44 30.8 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
+        使用 Google 登入
+      </button>
+      <div class="or">或用 Email</div>
+      <label>Email</label><input id="gEmail" type="email" autocomplete="username">
+      <label>密碼</label><input id="gPass" type="password" autocomplete="current-password">
+      <div class="bar"><button id="gGo" style="width:100%">登入</button></div>
+      <div class="switcher">
+        <span>還沒有帳號？</span><button id="gToSignup">註冊一個</button>
+      </div>
+      <p class="err" id="gMsg" style="min-height:16px;margin-top:10px"></p>
+    </fieldset>
+  </div>
+</div>
+
+<div class="wrap" id="app" style="display:none">
+<header>
+  <div class="topbar">
+    <span id="whoami"></span>
+    <a href="index.html">回配對站</a>
+    <a href="#" id="logout">登出</a>
+  </div>
+  <span class="tag">STAFF AREA</span>
+  <h1>我的後台</h1>
+  <p class="sub" id="roleSub"></p>
+</header>
+
+<div id="needProfile" class="empty" style="display:none">
+  你還沒完成登記。請先到<a href="index.html">首頁「我的登記」</a>選擇身分，再回來設定後台。
+</div>
+
+<div id="petArea" style="display:none">
+  <div class="tabbar" id="petTabbar"></div>
+
+  <div class="pane on" id="pane-roster">
+    <div id="roster"></div>
+  </div>
+
+  <div class="pane" id="pane-q1">
+    <fieldset>
+      <legend>第一階段　書面審查題目</legend>
+      <p class="hint" style="margin:0 0 8px">這些題目會顯示在你的檔案頁，申請人提出認養申請時要回答。</p>
+      <div id="q1List"></div>
+      <div class="bar">
+        <button class="ghost" id="q1Add">+ 新增一題</button>
+        <button id="q1Save">儲存題目</button>
+        <button class="ghost" id="q1Reset">還原預設</button>
+        <span class="msg" id="q1Msg"></span>
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="pane" id="pane-q2">
+    <fieldset>
+      <legend>第二階段　價值觀題庫</legend>
+      <p class="hint" style="margin:0 0 8px">十類共 48 題，勾選你想用的（建議 4～8 題）。有人通過第一階段時，會自動附上你勾選的這組題目；沒有勾選就用預設四題。</p>
+      <div id="q2List"></div>
+      <div class="bar">
+        <button id="q2Save">儲存為我的題庫</button>
+        <button class="ghost" id="q2Clear">清空勾選</button>
+        <span class="msg" id="q2Msg"></span>
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="pane" id="pane-canned">
+    <fieldset>
+      <legend>罐頭回覆庫</legend>
+      <label for="cannedPick">選擇一封（可自行修改後存檔，套用時會自動代入名字）</label>
+      <select id="cannedPick"></select>
+      <textarea id="cannedText" rows="9" style="margin-top:8px"></textarea>
+      <div class="bar">
+        <button class="ghost" id="cannedCopy">複製</button>
+        <button id="cannedSave">存這封</button>
+        <button class="ghost" id="cannedReset">還原預設</button>
+        <span class="msg" id="cannedMsg"></span>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>認養流程與評等對照</legend>
+      <p class="hint" style="line-height:2;margin:0">
+        第一階段　書面審查　│ 不提供聯絡方式<br>
+        第二階段　價值觀評估　│ 不提供聯絡方式<br>
+        第三階段　日常觀察　│ 雙方同意後互相解鎖<br>
+        <br>
+        任何階段都可以直接停止，不需要理由，也不會影響任何一方。
+      </p>
+    </fieldset>
+  </div>
+</div>
+
+<div id="keeperArea" style="display:none">
+  <div class="tabbar" id="keeperTabbar"></div>
+
+  <div class="pane on" id="pane-kout">
+    <div id="koutbox"></div>
+  </div>
+
+  <div class="pane" id="pane-ktips">
+    <fieldset>
+      <legend>回答小抄</legend>
+      <p class="hint" style="line-height:2;margin:0">
+        第一階段看的是「你現在的生活長什麼樣子」，不是漂亮話。具體、誠實、舉得出例子，比條件完美更重要。<br><br>
+        第二階段沒有標準答案，重點是遇到真實狀況時你會怎麼想、怎麼做。前後一致、願意承認自己的不足，通常比一直往好的方向回答更有說服力。<br><br>
+        任何階段覺得不適合，都可以直接說想停下來，不需要理由，這不會被視為失禮。
+      </p>
+    </fieldset>
+  </div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/supabase-client.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => (t==null?'':String(t)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const KIND = {pet:'待認養', keeper:'飼主'};
+function flash(id, t){ $(id).textContent = t; setTimeout(()=>{ if($(id)) $(id).textContent=''; }, 2500); }
+function copy(t){ navigator.clipboard && navigator.clipboard.writeText(t); }
+
+const DEFAULT_Q1 = [
+  '請簡單介紹你自己（生活型態、興趣、平常怎麼過假日）',
+  '你目前希望建立的是哪一種關係？（結婚為前提／長期交往／先當朋友／其他）',
+  '你能接受對方家裡有寵物，並一起照顧嗎？',
+  '如果和另一半意見不同，你通常怎麼處理？請舉一個實際例子',
+  '五年後，你希望自己過著什麼樣的生活？'
+];
+const DEFAULT_Q2 = [
+  '如果對方躲起來哭、不想說原因，你會怎麼陪伴？',
+  '你認為「冷靜」和「冷戰」有什麼不同？',
+  '如果對方需要一整天安靜休息，你會怎麼看待？',
+  '你認為自己的缺點是什麼？'
+];
+
+/* 第二階段題庫：十類共 48 題 */
+const S2_CATS = [
+ {label:'一、獨立空間與陪伴', qs:[
+   '如果另一半因為工作或健康因素，需要一整天安靜休息，您會怎麼看待？',
+   '對方沒有即時回覆訊息時，您會怎麼調適自己的情緒？',
+   '您認為健康的陪伴，和過度依賴之間，差別是什麼？',
+   '如果兩個人同時低電量，其中一方又需要安慰，您會怎麼溝通？']},
+ {label:'二、情緒支持', qs:[
+   '如果對方躲起來哭、不想說原因，您會怎麼陪伴？',
+   '如果對方只想安靜，不需要建議或解決方案，您能接受嗎？',
+   '如果低潮持續好幾週，而不是一兩天，您會怎麼陪伴？',
+   '您自己情緒低落時，通常會主動分享，還是自己消化？']},
+ {label:'三、衝突與修復', qs:[
+   '如果雙方都覺得自己有道理，您通常會怎麼處理？',
+   '您習慣當下談清楚，還是先冷靜之後再談？',
+   '您認為「冷靜」和「冷戰」有什麼不同？',
+   '上一次向別人道歉，是因為什麼事？',
+   '如果您的原意沒有惡意，但對方確實受傷了，您會怎麼處理？',
+   '您願意為了對方調整表達方式，而不只是強調「我只是說實話」嗎？']},
+ {label:'四、安全感與界線', qs:[
+   '您怎麼看待伴侶交換手機密碼這件事？',
+   '如果另一半因為過去受過傷，需要比較高的透明度，您會怎麼回應？',
+   '您能接受伴侶有異性朋友嗎？界線在哪裡？',
+   '您認為報備、分享與控制之間，差別是什麼？',
+   '您怎麼區分「需要理解」和「過度控制」？']},
+ {label:'五、金錢與家庭責任', qs:[
+   '您怎麼看待約會時的 AA、輪流請客，或由一方負擔？',
+   '若未來共同生活，家用您希望怎麼分配？',
+   '您支持共同帳戶與個人帳戶並存嗎？',
+   '對財務透明度，您的期待是什麼？',
+   '如果其中一方暫時無法工作，您會怎麼安排生活與支出？',
+   '如果收入下降或工作失利，您會主動讓伴侶知道嗎？']},
+ {label:'六、健康與長期照護', qs:[
+   '如果對方因為健康因素需要長時間休養、暫時無法工作，您會怎麼安排？',
+   '家務、經濟與醫療壓力，您希望怎麼分擔？',
+   '如果照護期比預期更久，您會怎麼維持自己的身心狀態？',
+   '您會怎麼避免讓生病的伴侶覺得自己是負擔？',
+   '您認為一個人的價值，會因為無法工作而降低嗎？']},
+ {label:'七、毛孩共同生活', qs:[
+   '如果雙方的寵物沒辦法馬上相處，您願意怎麼磨合？',
+   '如果寵物需要昂貴的醫療，您會怎麼討論費用？',
+   '如果對方生病住院，您願意獨立處理寵物的照護嗎？',
+   '您怎麼看待毛孩在家庭裡的位置？']},
+ {label:'八、家庭與原生家庭界線', qs:[
+   '如果伴侶和您的家人意見不同，您會怎麼協調？',
+   '您認為伴侶與原生家庭之間，應該保有什麼樣的界線？',
+   '如果家人對生育規劃有意見，您會怎麼處理？',
+   '未來您希望與家人同住，還是建立獨立的家庭？']},
+ {label:'九、人生規劃與成長', qs:[
+   '五年後，您希望自己過著什麼樣的生活？',
+   '工作、伴侶、健康與家人，您的排序是什麼？',
+   '如果兩人的職涯方向不同，您會怎麼討論？',
+   '您能接受伴侶有自己的夢想，而不是完全圍繞家庭嗎？',
+   '您認為「兩個人一起成長」，具體是什麼意思？']},
+ {label:'十、自我認識', qs:[
+   '您認為自己的缺點是什麼？',
+   '朋友通常怎麼形容您？',
+   '上一段感情讓您學到什麼？',
+   '您最容易在關係裡出現什麼盲點？',
+   '您希望伴侶怎麼提醒您？']}
+];
+
+const DEFAULT_CANNED = [
+  {id:'s1_pass', name:'第一階段通過→邀請第二階段', text:
+`您好，謝謝您完成第一階段的書面資料😊
+
+看完您的回答，我想邀請您進入第二階段：價值觀評估。
+這階段沒有標準答案，也不是考試，想了解的是您遇到真實狀況時會怎麼想、怎麼做。
+請到「我送出的申請」頁面回答，不用急，想清楚再回覆就好。`},
+  {id:'s1_reject', name:'第一階段婉拒', text:
+`您好，謝謝您花時間填寫申請表。
+
+想了很久，覺得目前彼此在一些重要的地方期待不太一樣，這次先不繼續往下走了。
+祝福您順利找到適合的人：）`},
+  {id:'s2_pass', name:'第二階段通過→開放第三階段', text:
+`您好，謝謝您認真回答第二階段的問題，讀得出來您有仔細想過。
+
+我想邀請您進入第三階段：日常觀察。雙方都同意後，會互相看到對方的日常觀察資訊（例如 IG），
+先不主動追蹤，維持觀察一段時間就好。`},
+  {id:'s2_hold', name:'第二階段暫緩', text:
+`您好，謝謝您的回答。
+
+目前想再多觀察一陣子，暫時先維持現在這個階段，之後有想法會再跟您說，謝謝您的耐心。`},
+  {id:'thanks', name:'感謝但目前不考慮', text:
+`您好，謝謝您對這個配對有興趣。
+
+目前這邊沒有要再開放新的申請，先謝謝您，祝福您一切順利。`}
+];
+
+let me = null, myProfile = null, roster = [], keeperOut = [];
+
+/* ── 登入 gate（與 index.html 相同邏輯） ── */
+let gateMode = 'login';
+function setGateMode(m){
+  gateMode = m;
+  $('gateLegend').textContent = m === 'login' ? '登入' : '註冊';
+  $('gGo').textContent = m === 'login' ? '登入' : '註冊並登入';
+  $('gToSignup').textContent = m === 'login' ? '註冊一個' : '改成登入';
+  $('gMsg').textContent = '';
+}
+$('gToSignup').onclick = () => setGateMode(gateMode === 'login' ? 'signup' : 'login');
+$('gGoogle').onclick = async () => {
+  try{ await DB.signInGoogle(); }
+  catch(e){ $('gMsg').textContent = e.message || '尚未開通 Google 登入'; }
+};
+$('gGo').onclick = async () => {
+  const email = $('gEmail').value.trim(), pass = $('gPass').value;
+  if(!email || !pass){ $('gMsg').textContent = '請輸入 Email 與密碼'; return; }
+  $('gGo').disabled = true;
+  try{
+    if(gateMode === 'login') await DB.signInEmail(email, pass);
+    else{ await DB.signUpEmail(email, pass); $('gMsg').textContent = '註冊成功，若專案要求信箱驗證，請先去收信再登入'; }
+  }catch(e){ $('gMsg').textContent = e.message || '失敗了，請再試一次'; }
+  $('gGo').disabled = false;
+};
+$('logout').onclick = async (e) => { e.preventDefault(); await DB.signOut(); };
+
+DB.onAuthChange(async (user) => {
+  if(!user){
+    me = null; myProfile = null;
+    $('gate').style.display = 'flex'; $('app').style.display = 'none';
+    return;
+  }
+  me = user;
+  $('gate').style.display = 'none'; $('app').style.display = '';
+  $('whoami').textContent = user.email || '';
+  await boot();
+});
+
+async function boot(){
+  myProfile = await DB.ensureProfile();
+  $('needProfile').style.display = 'none';
+  $('petArea').style.display = 'none';
+  $('keeperArea').style.display = 'none';
+  if(!myProfile.kind){
+    $('needProfile').style.display = '';
+    $('roleSub').textContent = '尚未登記身分';
+    return;
+  }
+  $('roleSub').textContent = myProfile.kind === 'pet'
+    ? `${myProfile.name || '（未命名）'}｜待認養視角的審查後台`
+    : `${myProfile.name || '（未命名）'}｜飼主視角的申請追蹤台`;
+  if(myProfile.kind === 'pet'){
+    $('petArea').style.display = '';
+    initPetTabs();
+    fillQ1(); fillQ2(); initCanned();
+    await renderRoster();
+  }else{
+    $('keeperArea').style.display = '';
+    initKeeperTabs();
+    await renderKeeperOutbox();
+  }
+}
+
+/* ══════════════════ PET 視角 ══════════════════ */
+const PET_PANES = [
+  {k:'roster', t:'收件審查'}, {k:'q1', t:'第一階段題目'},
+  {k:'q2', t:'第二階段題庫'}, {k:'canned', t:'罐頭回覆庫'}
+];
+function initPetTabs(){
+  $('petTabbar').innerHTML = PET_PANES.map((p,i) =>
+    `<button class="tabbtn${i?'':' on'}" data-k="${p.k}">${p.t}</button>`).join('');
+  $('petTabbar').onclick = e => {
+    const b = e.target.closest('.tabbtn'); if(!b) return;
+    document.querySelectorAll('#petTabbar .tabbtn').forEach(x => x.classList.toggle('on', x === b));
+    ['roster','q1','q2','canned'].forEach(k => $('pane-'+k).classList.toggle('on', k === b.dataset.k));
+  };
+}
+
+/* ── 收件審查（applications where to_user = me） ── */
+async function renderRoster(){
+  const box = $('roster');
+  const list = await DB.listInbox();
+  roster = list;
+  if(!list.length){ box.innerHTML = '<div class="empty">目前沒有收到申請。</div>'; return; }
+  const fromProfiles = {};
+  for(const a of list){ if(!fromProfiles[a.from_user]) fromProfiles[a.from_user] = await DB.getProfile(a.from_user); }
+  const q1 = (Array.isArray(myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
+  box.innerHTML = list.map(a => {
+    const from = fromProfiles[a.from_user] || {name:'（已取消登記）'};
+    const q2 = (Array.isArray(a.a2_questions) && a.a2_questions.length) ? a.a2_questions : DEFAULT_Q2;
+    const qa = (qs, ans) => qs.map((q,i) => `<div class="qa"><b>${esc(q)}</b>${esc((ans||[])[i]||'')}</div>`).join('');
+    const stageTxt = a.status==='rejected' ? '未通過' : a.stage===1 ? '第一階段' : a.stage===2 ? '第二階段' : '第三階段';
+    return `<fieldset><legend>${esc(from.name)}　${KIND[from.kind]||''}</legend>
+      <div class="stage s${a.status==='rejected'?0:a.stage}">${stageTxt}</div>
+      <div>${[from.age && from.age+' 歲', from.area, from.job].filter(Boolean)
+             .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
+      ${a.a1 ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1) : ''}
+      ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
+      <div class="bar">
+        ${a.status==='open' && a.stage===1 && a.a1 ? `
+          <button class="pass" data-app="${a.id}">通過，進第二階段</button>
+          <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
+        ${a.status==='open' && a.stage===2 && a.a2 ? `
+          <button class="pass" data-app="${a.id}">通過，進第三階段</button>
+          <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
+        ${a.stage===3 && !(a.unlock_from && a.unlock_to) ? `
+          <button class="ghost unlockTo" data-app="${a.id}">${a.unlock_to ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>` : ''}
+      </div>
+      ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="hint">🔓 對方已互相解鎖，可在配對站查看日常觀察資訊</div>` : ''}
+      <label style="margin-top:14px">套用罐頭回覆（自動帶入對方名字）</label>
+      <select class="cannedSel" data-name="${esc(from.name)}"></select>
+      <textarea class="cannedOut" rows="6" style="margin-top:6px"></textarea>
+      <div class="bar"><button class="ghost cannedUse">複製這封</button><span class="msg cannedUseMsg"></span></div>
+    </fieldset>`;
+  }).join('');
+  bindRoster();
+}
+function bindRoster(){
+  const upd = async (id, patch) => { await DB.updateApplication(id, patch); await renderRoster(); };
+  $('roster').querySelectorAll('.pass').forEach(b => b.onclick = async () => {
+    const a = roster.find(x => x.id === b.dataset.app);
+    const patch = {stage: Math.min(3, a.stage + 1)};
+    if(a.stage === 1 && Array.isArray(myProfile.q2_bank) && myProfile.q2_bank.length) patch.a2_questions = myProfile.q2_bank;
+    try{ await upd(a.id, patch); }catch(e){ alert(e.message||'操作失敗'); }
+  });
+  $('roster').querySelectorAll('.rej').forEach(b => b.onclick = async () => {
+    const note = prompt('想留一句話給對方嗎？（可留空）');
+    try{ await upd(b.dataset.app, {status:'rejected', note: note||null}); }catch(e){ alert(e.message||'操作失敗'); }
+  });
+  $('roster').querySelectorAll('.unlockTo').forEach(b => b.onclick = async () => {
+    try{ await upd(b.dataset.app, {unlock_to: true}); }catch(e){ alert(e.message||'操作失敗'); }
+  });
+  const canned = mergedCanned();
+  $('roster').querySelectorAll('.cannedSel').forEach(sel => {
+    sel.innerHTML = canned.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    const fill = () => {
+      const c = canned.find(x => x.id === sel.value) || canned[0];
+      const box = sel.closest('fieldset').querySelector('.cannedOut');
+      box.value = applyPlaceholders(c ? c.text : '', {name: sel.dataset.name, myname: myProfile.name});
+    };
+    sel.onchange = fill; fill();
+  });
+  $('roster').querySelectorAll('.cannedUse').forEach(b => b.onclick = () => {
+    copy(b.closest('fieldset').querySelector('.cannedOut').value);
+    const msg = b.parentElement.querySelector('.cannedUseMsg');
+    msg.textContent = '已複製'; setTimeout(()=>msg.textContent='',2000);
+  });
+}
+function applyPlaceholders(t, ctx){
+  return (t||'').replace(/\{\{name\}\}/g, ctx.name||'').replace(/\{\{myname\}\}/g, ctx.myname||'');
+}
+
+/* ── 第一階段題目 ── */
+let q1Draft = [];
+function fillQ1(){
+  q1Draft = (Array.isArray(myProfile.q1) && myProfile.q1.length) ? myProfile.q1.slice() : DEFAULT_Q1.slice();
+  renderQ1();
+}
+function renderQ1(){
+  $('q1List').innerHTML = q1Draft.map((q,i) => `
+    <div class="q1row">
+      <textarea rows="2" data-i="${i}">${esc(q)}</textarea>
+      <button class="ghost q1del" data-i="${i}">刪除</button>
+    </div>`).join('');
+  $('q1List').querySelectorAll('textarea').forEach(t => t.oninput = () => { q1Draft[+t.dataset.i] = t.value; });
+  $('q1List').querySelectorAll('.q1del').forEach(b => b.onclick = () => { q1Draft.splice(+b.dataset.i,1); renderQ1(); });
+}
+$('q1Add').onclick = () => { q1Draft.push(''); renderQ1(); };
+$('q1Reset').onclick = () => { q1Draft = DEFAULT_Q1.slice(); renderQ1(); };
+$('q1Save').onclick = async () => {
+  const qs = q1Draft.map(q => q.trim()).filter(Boolean);
+  if(!qs.length){ flash('q1Msg','至少要有一題'); return; }
+  try{ myProfile = await DB.saveMyProfile({q1: qs}); flash('q1Msg','已儲存'); }
+  catch(e){ flash('q1Msg', e.message||'儲存失敗'); }
+};
+
+/* ── 第二階段題庫 ── */
+function fillQ2(){
+  const picked = new Set((Array.isArray(myProfile.q2_bank) ? myProfile.q2_bank : DEFAULT_Q2));
+  $('q2List').innerHTML = S2_CATS.map((c,ci) => `
+    <details style="margin-bottom:6px">
+      <summary class="hint" style="cursor:pointer">${esc(c.label)}</summary>
+      ${c.qs.map((q,qi) => `
+        <label style="display:flex;gap:8px;align-items:flex-start;margin:5px 0 5px 6px">
+          <input type="checkbox" class="q2Chk" value="${ci}-${qi}" style="width:auto;margin:3px 0 0" ${picked.has(q)?'checked':''}>
+          <span style="font-size:13px;line-height:1.6">${esc(q)}</span>
+        </label>`).join('')}
+    </details>`).join('');
+  q2Count();
+}
+function q2Picked(){
+  return [...document.querySelectorAll('.q2Chk:checked')].map(c => {
+    const [ci,qi] = c.value.split('-').map(Number);
+    return S2_CATS[ci].qs[qi];
+  });
+}
+function q2Count(){
+  const n = document.querySelectorAll('.q2Chk:checked').length;
+  $('q2Msg').textContent = n ? `已選 ${n} 題` : '';
+}
+document.addEventListener('change', e => { if(e.target.classList.contains('q2Chk')) q2Count(); });
+$('q2Save').onclick = async () => {
+  const qs = q2Picked();
+  if(!qs.length){ flash('q2Msg','請先勾幾題（建議 4～8 題）'); return; }
+  try{ myProfile = await DB.saveMyProfile({q2_bank: qs}); flash('q2Msg', `已儲存，共 ${qs.length} 題`); }
+  catch(e){ flash('q2Msg', e.message||'儲存失敗'); }
+};
+$('q2Clear').onclick = () => { document.querySelectorAll('.q2Chk').forEach(c => c.checked=false); q2Count(); };
+
+/* ── 罐頭回覆庫 ── */
+function mergedCanned(){
+  const custom = Array.isArray(myProfile.canned) ? myProfile.canned : [];
+  return DEFAULT_CANNED.map(d => {
+    const hit = custom.find(x => x.id === d.id);
+    return hit ? Object.assign({}, d, {text: hit.text}) : d;
+  });
+}
+function initCanned(){
+  const list = mergedCanned();
+  $('cannedPick').innerHTML = list.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  $('cannedPick').onchange = () => { $('cannedText').value = (list.find(c=>c.id===$('cannedPick').value)||{}).text||''; };
+  $('cannedPick').onchange();
+}
+$('cannedCopy').onclick = () => { copy($('cannedText').value); flash('cannedMsg','已複製'); };
+$('cannedSave').onclick = async () => {
+  const id = $('cannedPick').value, text = $('cannedText').value;
+  const custom = Array.isArray(myProfile.canned) ? myProfile.canned.slice() : [];
+  const i = custom.findIndex(x => x.id === id);
+  if(i >= 0) custom[i] = {id, text}; else custom.push({id, text});
+  try{ myProfile = await DB.saveMyProfile({canned: custom}); flash('cannedMsg','已儲存'); }
+  catch(e){ flash('cannedMsg', e.message||'儲存失敗'); }
+};
+$('cannedReset').onclick = async () => {
+  const id = $('cannedPick').value;
+  const custom = (Array.isArray(myProfile.canned) ? myProfile.canned : []).filter(x => x.id !== id);
+  try{
+    myProfile = await DB.saveMyProfile({canned: custom});
+    $('cannedText').value = (DEFAULT_CANNED.find(c=>c.id===id)||{}).text||'';
+    flash('cannedMsg','已還原');
+  }catch(e){ flash('cannedMsg', e.message||'還原失敗'); }
+};
+
+/* ══════════════════ KEEPER 視角 ══════════════════ */
+const KEEPER_PANES = [{k:'kout', t:'我送出的申請'}, {k:'ktips', t:'回答小抄'}];
+function initKeeperTabs(){
+  $('keeperTabbar').innerHTML = KEEPER_PANES.map((p,i) =>
+    `<button class="tabbtn${i?'':' on'}" data-k="${p.k}">${p.t}</button>`).join('');
+  $('keeperTabbar').onclick = e => {
+    const b = e.target.closest('.tabbtn'); if(!b) return;
+    document.querySelectorAll('#keeperTabbar .tabbtn').forEach(x => x.classList.toggle('on', x === b));
+    ['kout','ktips'].forEach(k => $('pane-'+k).classList.toggle('on', k === b.dataset.k));
+  };
+}
+async function renderKeeperOutbox(){
+  const box = $('koutbox');
+  const list = await DB.listOutbox();
+  keeperOut = list;
+  if(!list.length){ box.innerHTML = '<div class="empty">還沒有送出任何申請，到<a href="index.html">配對站</a>看看吧。</div>'; return; }
+  const toProfiles = {};
+  for(const a of list){ if(!toProfiles[a.to_user]) toProfiles[a.to_user] = await DB.getProfile(a.to_user); }
+  box.innerHTML = list.map(a => {
+    const to = toProfiles[a.to_user] || {name:'（已取消登記）'};
+    const stageTxt = a.status==='rejected' ? '未通過' : a.stage===1 ? '第一階段' : a.stage===2 ? '第二階段' : '第三階段';
+    return `<fieldset><legend>${esc(to.name)}</legend>
+      <div class="stage s${a.status==='rejected'?0:a.stage}">${stageTxt}</div>
+      ${a.note ? `<p class="hint">對方留言：${esc(a.note)}</p>` : ''}
+      <label>我的私人筆記（只有你看得到，可以記感覺、進度、要注意的事）</label>
+      <textarea class="memo" rows="3" data-app="${a.id}">${esc(a.keeper_note||'')}</textarea>
+      <div class="bar"><button class="ghost memoSave" data-app="${a.id}">儲存筆記</button>
+        <span class="msg memoMsg" data-app="${a.id}"></span></div>
+      <p class="hint" style="margin-top:8px">回答問題與解鎖操作請到<a href="index.html">配對站「我送出的申請」</a>。</p>
+    </fieldset>`;
+  }).join('');
+  box.querySelectorAll('.memoSave').forEach(b => b.onclick = async () => {
+    const id = b.dataset.app;
+    const text = box.querySelector(`.memo[data-app="${id}"]`).value;
+    const msg = box.querySelector(`.memoMsg[data-app="${id}"]`);
+    try{ await DB.updateApplication(id, {keeper_note: text}); msg.textContent = '已儲存'; setTimeout(()=>msg.textContent='',2000); }
+    catch(e){ msg.textContent = e.message||'儲存失敗'; }
+  });
+}
+</script>
+</html>

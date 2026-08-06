@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>暖陽動物之家｜認養配對所</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --paper:#FFFFFF; --paper-2:#FAF9F7; --ink:#2E2A26; --ink-soft:#7B736A;
+    --rule:#E6E2DC; --brand:#E0752A; --brand-dk:#C9611C;
+    --ok:#2E7D46; --warn:#D99400; --bad:#C0392B;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:"Noto Sans TC",system-ui,sans-serif;
+       font-size:15px;line-height:1.75;padding-bottom:60px}
+  .wrap{max-width:960px;margin:0 auto;padding:0 18px}
+  header{border-bottom:2px solid var(--brand);padding:24px 0 0;margin-bottom:20px}
+  .tag{display:inline-block;background:var(--brand);color:#fff;font-family:"IBM Plex Mono",monospace;
+       font-size:11px;letter-spacing:.2em;padding:4px 12px;border-radius:3px 3px 0 0}
+  h1{font-family:"Noto Serif TC",serif;font-size:clamp(22px,4vw,30px);color:var(--brand);margin:10px 0 4px}
+  .sub{font-size:13px;color:var(--ink-soft);margin:0 0 14px}
+  .notice{background:#FFF6EC;border-left:3px solid var(--brand);padding:10px 14px;font-size:13px;margin-bottom:18px}
+
+  .topbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:10px 0 0;font-size:12px;color:var(--ink-soft)}
+  .topbar a{color:var(--brand);text-decoration:none;font-weight:500}
+  .topbar a:hover{text-decoration:underline}
+
+  .tabbar{display:flex;gap:2px;border-bottom:1px solid var(--brand);margin-bottom:20px;flex-wrap:wrap}
+  .tabbtn{background:transparent;color:var(--ink-soft);border:1px solid var(--rule);border-bottom:0;
+          border-radius:3px 3px 0 0;padding:8px 14px;font-size:13px;cursor:pointer;margin-bottom:-1px}
+  .tabbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .pane{display:none} .pane.on{display:block}
+
+  fieldset{border:1px solid var(--rule);border-radius:3px;background:var(--paper-2);padding:14px 16px 18px;margin:0 0 18px}
+  legend{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.16em;color:var(--brand);padding:0 8px}
+  label{display:block;font-size:12px;color:var(--ink-soft);margin:12px 0 5px}
+  input,select,textarea{width:100%;background:#fff;border:1px solid var(--rule);border-radius:3px;
+        padding:9px 11px;font-family:inherit;font-size:14px;color:var(--ink)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-offset:1px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
+  button{font-family:inherit;font-size:14px;background:var(--brand);color:#fff;border:1px solid var(--brand);
+         border-radius:3px;padding:10px 18px;cursor:pointer}
+  button:hover{background:var(--brand-dk);border-color:var(--brand-dk)}
+  button.ghost{background:transparent;color:var(--ink);border-color:var(--rule);padding:6px 12px;font-size:12px}
+  button.ghost:hover{background:var(--brand);color:#fff;border-color:var(--brand)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  .msg{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--brand)}
+  .hint{font-size:12px;color:var(--ink-soft)}
+  .err{font-size:12px;color:var(--bad)}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+  .card{background:#fff;border:1px solid var(--rule);border-radius:4px;padding:14px 16px;
+        box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .card h3{margin:0;font-size:16px;font-family:"Noto Serif TC",serif}
+  .kind{font-size:12px;color:var(--ink-soft);margin:2px 0 8px}
+  .bio{font-size:13px;margin:8px 0;white-space:pre-wrap}
+  .pill{display:inline-block;font-size:11px;border:1px solid var(--rule);border-radius:999px;
+        padding:1px 9px;margin:0 4px 4px 0;color:var(--ink-soft)}
+  .stage{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.1em}
+  .s1{color:var(--warn)} .s2{color:var(--warn)} .s3{color:var(--ok)} .s0{color:var(--bad)}
+  .lock{background:var(--paper-2);border:1px dashed var(--rule);border-radius:3px;padding:10px 12px;
+        font-size:13px;color:var(--ink-soft);margin-top:8px}
+  .open{border:1px solid var(--ok);border-style:solid;color:var(--ink);background:#F2FAF4}
+  .empty{border:1px dashed var(--rule);padding:28px;text-align:center;color:var(--ink-soft)}
+  .qa{border-left:2px solid var(--rule);padding:2px 0 2px 10px;margin:8px 0;font-size:13px}
+  .qa b{display:block;color:var(--ink-soft);font-weight:400;font-size:12px}
+
+  #gate{position:fixed;inset:0;background:var(--paper);z-index:9999;display:flex;
+        align-items:center;justify-content:center;padding:24px}
+  #gate .box{max-width:380px;width:100%}
+  #gate h1{text-align:center}
+  #gate .sub{text-align:center}
+  #gateForm .switcher{display:flex;gap:6px;justify-content:center;margin-top:14px;font-size:12px}
+  #gateForm .switcher button{background:none;border:none;color:var(--brand);cursor:pointer;padding:2px;font-size:12px}
+  .google-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;color:var(--ink);
+              border:1px solid var(--rule);width:100%}
+  .google-btn:hover{background:var(--paper-2);border-color:var(--rule)}
+  .or{display:flex;align-items:center;gap:10px;color:var(--ink-soft);font-size:12px;margin:14px 0}
+  .or::before,.or::after{content:'';flex:1;height:1px;background:var(--rule)}
+</style>
+
+<div id="gate">
+  <div class="box">
+    <span class="tag">ADOPTION CENTER</span>
+    <h1>暖陽動物之家</h1>
+    <p class="sub">請先登入，才能瀏覽與登記</p>
+    <fieldset id="gateForm">
+      <legend id="gateLegend">登入</legend>
+      <button type="button" class="google-btn" id="gGoogle">
+        <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.3-5.1l-6.6-5.6C29.6 35 26.9 36 24 36c-5.3 0-9.7-3.4-11.3-8.1l-6.5 5C9.6 39.6 16.3 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4 5.6l6.6 5.6C41.5 36.6 44 30.8 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
+        使用 Google 登入
+      </button>
+      <div class="or">或用 Email</div>
+      <label>Email</label><input id="gEmail" type="email" autocomplete="username">
+      <label>密碼</label><input id="gPass" type="password" autocomplete="current-password">
+      <div class="bar"><button id="gGo" style="width:100%">登入</button></div>
+      <div class="switcher">
+        <span>還沒有帳號？</span><button id="gToSignup">註冊一個</button>
+      </div>
+      <p class="err" id="gMsg" style="min-height:16px;margin-top:10px"></p>
+    </fieldset>
+  </div>
+</div>
+
+<div class="wrap" id="app" style="display:none">
+<header>
+  <div class="topbar">
+    <span id="whoami"></span>
+    <a href="dashboard.html">我的後台</a>
+    <a href="#" id="logout">登出</a>
+  </div>
+  <span class="tag">ADOPTION CENTER</span>
+  <h1>暖陽動物之家｜認養配對所</h1>
+  <p class="sub">男生登記為 🐶 狗狗，女生登記為 🐱 貓咪。想認識誰，就提出認養申請，通過三階段審查才會解鎖日常觀察。</p>
+</header>
+
+<div class="notice">
+  這是配對原型的公開站。個人資料只有登入的會員看得到；申請往來只有你和對方看得到。
+</div>
+
+<div class="tabbar" id="tabbar"></div>
+
+<!-- 佈告欄 -->
+<div class="pane on" id="pane-board">
+  <fieldset>
+    <legend>篩選</legend>
+    <div class="row">
+      <div><label>類別</label>
+        <select id="fSpecies">
+          <option value="">全部</option>
+          <option value="cat">🐱 貓咪（女生）</option>
+          <option value="dog">🐶 狗狗（男生）</option>
+        </select></div>
+      <div><label>身分</label>
+        <select id="fKind">
+          <option value="">全部</option>
+          <option value="pet">待認養</option>
+          <option value="keeper">飼主</option>
+        </select></div>
+      <div><label>關鍵字</label><input id="fText" placeholder="地區、興趣⋯⋯"></div>
+    </div>
+    <div class="bar"><button class="ghost" id="reload">重新整理</button><span class="msg" id="boardMsg"></span></div>
+  </fieldset>
+  <div id="board" class="grid"></div>
+</div>
+
+<!-- 我的登記 -->
+<div class="pane" id="pane-me">
+  <fieldset>
+    <legend>登記資料</legend>
+    <div class="row">
+      <div><label>暱稱</label><input id="mName" placeholder="例：小橘"></div>
+      <div><label>身分</label>
+        <select id="mKind">
+          <option value="pet">待認養（我想被認識）</option>
+          <option value="keeper">飼主（我想認識別人）</option>
+        </select></div>
+      <div><label>類別</label>
+        <select id="mSpecies">
+          <option value="cat">🐱 貓咪（女生）</option>
+          <option value="dog">🐶 狗狗（男生）</option>
+        </select></div>
+    </div>
+    <div class="row">
+      <div><label>年齡</label><input id="mAge" placeholder="例：28"></div>
+      <div><label>居住地</label><input id="mArea" placeholder="例：台北"></div>
+      <div><label>職業</label><input id="mJob" placeholder="例：工程師"></div>
+    </div>
+    <label>自我介紹（會公開）</label>
+    <textarea id="mBio" rows="4" placeholder="興趣、生活型態、想找什麼樣的人⋯⋯"></textarea>
+    <label>希望對方是（會公開）</label>
+    <textarea id="mWants" rows="3" placeholder="例：年齡 25-40、能接受兩隻貓、重視溝通"></textarea>
+    <label>日常觀察資訊（第三階段解鎖後才會顯示給對方）</label>
+    <textarea id="mLocked" rows="2" placeholder="例：IG @your_account"></textarea>
+    <div class="bar">
+      <button id="mSave">儲存登記</button>
+      <span class="msg" id="meMsg"></span>
+    </div>
+    <p class="hint" style="margin-top:10px">待認養身分想自訂第一階段題目、第二階段題庫、罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」設定。</p>
+  </fieldset>
+</div>
+
+<!-- 我送出的申請 -->
+<div class="pane" id="pane-out">
+  <div id="outbox"></div>
+</div>
+
+<!-- 我收到的申請 -->
+<div class="pane" id="pane-in">
+  <div id="inbox"></div>
+</div>
+
+<!-- 流程說明 -->
+<div class="pane" id="pane-how">
+  <fieldset>
+    <legend>認養流程</legend>
+    <p><b>第一階段　書面審查</b><br>填寫對方的認養申請表。對方會看到你的回答，決定要不要進入下一階段。此階段雙方都不提供聯絡方式。</p>
+    <p><b>第二階段　價值觀評估</b><br>對方會出幾道情境題。沒有標準答案，誠實與前後一致比漂亮重要。</p>
+    <p><b>第三階段　日常觀察解鎖</b><br>雙方都同意後，才會互相顯示日常觀察資訊（IG 等）。解鎖是雙向的，單方同意不會揭露。</p>
+    <p class="hint">任何階段都可以直接停止，不需要理由。收容所不會追問，也不影響對你的評價。</p>
+  </fieldset>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/supabase-client.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => (t==null?'':String(t)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const SPECIES = {cat:'🐱 貓咪', dog:'🐶 狗狗'};
+const KIND = {pet:'待認養', keeper:'飼主'};
+
+const DEFAULT_Q1 = [
+  '請簡單介紹你自己（生活型態、興趣、平常怎麼過假日）',
+  '你目前希望建立的是哪一種關係？（結婚為前提／長期交往／先當朋友／其他）',
+  '你能接受對方家裡有寵物，並一起照顧嗎？',
+  '如果和另一半意見不同，你通常怎麼處理？請舉一個實際例子',
+  '五年後，你希望自己過著什麼樣的生活？'
+];
+const DEFAULT_Q2 = [
+  '如果對方躲起來哭、不想說原因，你會怎麼陪伴？',
+  '你認為「冷靜」和「冷戰」有什麼不同？',
+  '如果對方需要一整天安靜休息，你會怎麼看待？',
+  '你認為自己的缺點是什麼？'
+];
+
+let me = null, myProfile = null, profiles = [], apps = [];
+
+/* ── 登入 gate ── */
+let gateMode = 'login';
+function setGateMode(m){
+  gateMode = m;
+  $('gateLegend').textContent = m === 'login' ? '登入' : '註冊';
+  $('gGo').textContent = m === 'login' ? '登入' : '註冊並登入';
+  $('gToSignup').textContent = m === 'login' ? '註冊一個' : '改成登入';
+  $('gMsg').textContent = '';
+}
+$('gToSignup').onclick = () => setGateMode(gateMode === 'login' ? 'signup' : 'login');
+$('gGoogle').onclick = async () => {
+  try{ await DB.signInGoogle(); }
+  catch(e){ $('gMsg').textContent = e.message || '尚未開通 Google 登入'; }
+};
+$('gGo').onclick = async () => {
+  const email = $('gEmail').value.trim(), pass = $('gPass').value;
+  if(!email || !pass){ $('gMsg').textContent = '請輸入 Email 與密碼'; return; }
+  $('gGo').disabled = true;
+  try{
+    if(gateMode === 'login') await DB.signInEmail(email, pass);
+    else{
+      await DB.signUpEmail(email, pass);
+      $('gMsg').textContent = '註冊成功，若專案要求信箱驗證，請先去收信再登入';
+    }
+  }catch(e){ $('gMsg').textContent = e.message || '失敗了，請再試一次'; }
+  $('gGo').disabled = false;
+};
+$('logout').onclick = async (e) => { e.preventDefault(); await DB.signOut(); };
+
+DB.onAuthChange(async (user) => {
+  if(!user){
+    me = null; myProfile = null;
+    $('gate').style.display = 'flex'; $('app').style.display = 'none';
+    return;
+  }
+  me = user;
+  $('gate').style.display = 'none'; $('app').style.display = '';
+  $('whoami').textContent = user.email || '';
+  await boot();
+});
+
+/* ── 分頁 ── */
+const PANES = [
+  {k:'board', t:'佈告欄'}, {k:'me', t:'我的登記'},
+  {k:'out', t:'我送出的申請'}, {k:'in', t:'我收到的申請'}, {k:'how', t:'流程說明'}
+];
+function initTabs(){
+  $('tabbar').innerHTML = PANES.map((p,i) =>
+    `<button class="tabbtn${i?'':' on'}" data-k="${p.k}">${p.t}</button>`).join('');
+  $('tabbar').onclick = e => {
+    const b = e.target.closest('.tabbtn'); if(!b) return;
+    document.querySelectorAll('.tabbtn').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.pane').forEach(x => x.classList.toggle('on', x.id === 'pane-' + b.dataset.k));
+    if(b.dataset.k === 'out') renderOutbox();
+    if(b.dataset.k === 'in') renderInbox();
+    if(b.dataset.k === 'board') renderBoard();
+  };
+}
+
+/* ── 我的登記 ── */
+function fillMe(){
+  if(!myProfile) return;
+  mName.value = myProfile.name||''; mKind.value = myProfile.kind||'pet'; mSpecies.value = myProfile.species||'cat';
+  mAge.value = myProfile.age||''; mArea.value = myProfile.area||''; mJob.value = myProfile.job||'';
+  mBio.value = myProfile.bio||''; mWants.value = myProfile.wants||''; mLocked.value = myProfile.locked||'';
+}
+$('mSave').onclick = async () => {
+  const name = mName.value.trim();
+  if(!name){ flash('meMsg','請填暱稱'); return; }
+  try{
+    myProfile = await DB.saveMyProfile({
+      name, kind: mKind.value, species: mSpecies.value,
+      age: mAge.value.trim(), area: mArea.value.trim(), job: mJob.value.trim(),
+      bio: mBio.value.trim(), wants: mWants.value.trim(), locked: mLocked.value.trim()
+    });
+    flash('meMsg','已儲存'); renderBoard();
+  }catch(e){ flash('meMsg', e.message || '儲存失敗'); }
+};
+
+function flash(id, t){ $(id).textContent = t; setTimeout(()=>{ if($(id)) $(id).textContent=''; }, 2500); }
+
+/* ── 佈告欄 ── */
+async function renderBoard(){
+  const sp = fSpecies.value, kd = fKind.value, q = fText.value.trim().toLowerCase();
+  const list = profiles
+    .filter(p => !sp || p.species === sp)
+    .filter(p => !kd || p.kind === kd)
+    .filter(p => !q || [p.name,p.area,p.job,p.bio,p.wants].join(' ').toLowerCase().includes(q));
+  if(!list.length){
+    $('board').innerHTML = '<div class="empty">目前沒有符合的登記。<br>先到「我的登記」建立自己的檔案吧。</div>';
+    return;
+  }
+  $('board').innerHTML = list.map(p => {
+    const app = apps.find(a => a.from_user === me.id && a.to_user === p.id);
+    const unlocked = app && app.stage === 3 && app.unlock_from && app.unlock_to;
+    return `<div class="card">
+      <h3>${SPECIES[p.species].split(' ')[0]} ${esc(p.name)}</h3>
+      <div class="kind">${KIND[p.kind]}　${SPECIES[p.species]}</div>
+      <div>${[p.age && p.age+' 歲', p.area, p.job].filter(Boolean)
+              .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
+      ${p.bio ? `<div class="bio">${esc(p.bio)}</div>` : ''}
+      ${p.wants ? `<div class="hint">希望對方：${esc(p.wants)}</div>` : ''}
+      <div class="lock ${unlocked?'open':''}">${unlocked
+        ? '🔓 日常觀察：' + esc(p.locked || '（對方尚未填寫）')
+        : '🔒 日常觀察資訊需通過三階段審查後解鎖'}</div>
+      <div class="bar">${
+        !myProfile || !myProfile.kind ? '<span class="hint">請先完成自己的登記</span>'
+        : app ? `<span class="stage s${app.status==='rejected'?0:app.stage}">目前：${stageText(app)}</span>`
+        : `<button class="ghost apply" data-id="${p.id}">提出認養申請</button>`}
+      </div>
+    </div>`;
+  }).join('');
+  $('board').querySelectorAll('.apply').forEach(b => b.onclick = () => openApply(b.dataset.id));
+}
+function stageText(a){
+  if(a.status === 'rejected') return '未通過';
+  if(a.stage === 1) return a.a1 ? '第一階段　等待審查' : '第一階段　待填表';
+  if(a.stage === 2) return a.a2 ? '第二階段　等待審查' : '第二階段　待作答';
+  if(a.stage === 3) return (a.unlock_from && a.unlock_to) ? '第三階段　已解鎖' : '第三階段　等待雙方同意';
+  return '—';
+}
+
+/* ── 提出申請 ── */
+function openApply(toId){
+  const to = profiles.find(p => p.id === toId); if(!to) return;
+  const q1 = (Array.isArray(to.q1) && to.q1.length) ? to.q1 : DEFAULT_Q1;
+  const html = `
+    <fieldset><legend>向 ${esc(to.name)} 提出認養申請</legend>
+      <p class="hint">第一階段書面審查。對方會讀到你的回答，決定是否進入第二階段。</p>
+      ${q1.map((q,i) => `<label>${i+1}. ${esc(q)}</label><textarea rows="2" class="a1q"></textarea>`).join('')}
+      <div class="bar"><button id="sendApply">送出申請</button>
+        <button class="ghost" id="cancelApply">取消</button><span class="msg" id="applyMsg"></span></div>
+    </fieldset>`;
+  const box = document.createElement('div');
+  box.id = 'applyBox'; box.innerHTML = html;
+  $('pane-board').prepend(box);
+  window.scrollTo({top:0, behavior:'smooth'});
+  $('cancelApply').onclick = () => box.remove();
+  $('sendApply').onclick = async () => {
+    const ans = [...document.querySelectorAll('.a1q')].map(t => t.value.trim());
+    if(ans.some(a => !a)){ flash('applyMsg','每一題都要回答'); return; }
+    try{
+      const app = await DB.createApplication(toId, ans);
+      apps.push(app);
+      box.remove(); renderBoard(); flash('boardMsg','申請已送出');
+    }catch(e){ flash('applyMsg', e.message || '送出失敗'); }
+  };
+}
+
+/* ── 我送出的申請 ── */
+async function renderOutbox(){
+  apps = apps.filter(a => a.from_user !== me.id).concat(await DB.listOutbox());
+  const list = apps.filter(a => a.from_user === me.id);
+  if(!list.length){ $('outbox').innerHTML = '<div class="empty">還沒有送出任何申請。</div>'; return; }
+  const toProfiles = {};
+  for(const a of list){ if(!toProfiles[a.to_user]) toProfiles[a.to_user] = await DB.getProfile(a.to_user); }
+  $('outbox').innerHTML = list.map(a => {
+    const to = toProfiles[a.to_user] || {name:'（已取消登記）'};
+    const q2 = (Array.isArray(a.a2_questions) && a.a2_questions.length) ? a.a2_questions : DEFAULT_Q2;
+    const needQ2 = a.stage === 2 && !a.a2 && a.status === 'open';
+    return `<fieldset><legend>${esc(to.name)}</legend>
+      <div class="stage s${a.status==='rejected'?0:a.stage}">${stageText(a)}</div>
+      ${a.note ? `<p class="hint">對方留言：${esc(a.note)}</p>` : ''}
+      ${needQ2 ? q2.map((q,i) => `<label>${i+1}. ${esc(q)}</label><textarea rows="2" class="a2q" data-app="${a.id}" data-idx="${i}"></textarea>`).join('')
+               + `<div class="bar"><button class="sendQ2" data-app="${a.id}" data-n="${q2.length}">送出回答</button></div>` : ''}
+      ${a.stage === 3 && !(a.unlock_from && a.unlock_to) ? `<div class="bar">
+          <button class="ghost unlock" data-app="${a.id}">${a.unlock_from ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>
+        </div>` : ''}
+      ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(to.locked || '對方尚未填寫')}</div>` : ''}
+    </fieldset>`;
+  }).join('');
+  bindOutbox();
+}
+function bindOutbox(){
+  $('outbox').querySelectorAll('.sendQ2').forEach(b => b.onclick = async () => {
+    const a = apps.find(x => x.id === b.dataset.app);
+    const n = +b.dataset.n;
+    const ans = [];
+    for(let i=0;i<n;i++) ans.push(($('outbox').querySelector(`.a2q[data-app="${a.id}"][data-idx="${i}"]`)||{value:''}).value.trim());
+    if(ans.some(x => !x)){ alert('每一題都要回答'); return; }
+    try{
+      const updated = await DB.updateApplication(a.id, {a2: ans});
+      Object.assign(a, updated); renderOutbox();
+    }catch(e){ alert(e.message || '送出失敗'); }
+  });
+  $('outbox').querySelectorAll('.unlock').forEach(b => b.onclick = async () => {
+    const a = apps.find(x => x.id === b.dataset.app);
+    try{
+      const updated = await DB.updateApplication(a.id, {unlock_from: true});
+      Object.assign(a, updated); renderOutbox(); renderBoard();
+    }catch(e){ alert(e.message || '操作失敗'); }
+  });
+}
+
+/* ── 我收到的申請 ── */
+async function renderInbox(){
+  apps = apps.filter(a => a.to_user !== me.id).concat(await DB.listInbox());
+  const list = apps.filter(a => a.to_user === me.id);
+  if(!list.length){ $('inbox').innerHTML = '<div class="empty">目前沒有收到申請。</div>'; return; }
+  const fromProfiles = {};
+  for(const a of list){ if(!fromProfiles[a.from_user]) fromProfiles[a.from_user] = await DB.getProfile(a.from_user); }
+  $('inbox').innerHTML = list.map(a => {
+    const from = fromProfiles[a.from_user] || {name:'（已取消登記）'};
+    const q1 = (Array.isArray(myProfile && myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
+    const q2 = (Array.isArray(a.a2_questions) && a.a2_questions.length) ? a.a2_questions : DEFAULT_Q2;
+    const qa = (qs, ans) => qs.map((q,i) => `<div class="qa"><b>${esc(q)}</b>${esc((ans||[])[i]||'')}</div>`).join('');
+    return `<fieldset><legend>${esc(from.name)}　${KIND[from.kind]||''}</legend>
+      <div class="stage s${a.status==='rejected'?0:a.stage}">${stageText(a)}</div>
+      <div>${[from.age && from.age+' 歲', from.area, from.job].filter(Boolean)
+             .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
+      ${a.a1 ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1) : ''}
+      ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
+      <div class="bar">
+        ${a.status === 'open' && a.stage === 1 && a.a1 ? `
+          <button class="pass" data-app="${a.id}">通過，進第二階段</button>
+          <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
+        ${a.status === 'open' && a.stage === 2 && a.a2 ? `
+          <button class="pass" data-app="${a.id}">通過，進第三階段</button>
+          <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
+        ${a.stage === 3 && !(a.unlock_from && a.unlock_to) ? `
+          <button class="ghost unlockTo" data-app="${a.id}">${a.unlock_to ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>` : ''}
+      </div>
+      ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(from.locked || '對方尚未填寫')}</div>` : ''}
+      <p class="hint" style="margin-top:8px">想自訂第二階段題目、使用罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」。</p>
+    </fieldset>`;
+  }).join('');
+  bindInbox();
+}
+function bindInbox(){
+  const upd = async (id, patch) => {
+    const a = apps.find(x => x.id === id);
+    const updated = await DB.updateApplication(id, patch);
+    Object.assign(a, updated);
+    renderInbox(); renderBoard();
+  };
+  $('inbox').querySelectorAll('.pass').forEach(b => b.onclick = async () => {
+    const a = apps.find(x => x.id === b.dataset.app);
+    const patch = {stage: Math.min(3, a.stage + 1)};
+    if(a.stage === 1 && Array.isArray(myProfile && myProfile.q2_bank) && myProfile.q2_bank.length){
+      patch.a2_questions = myProfile.q2_bank;
+    }
+    try{ await upd(a.id, patch); }catch(e){ alert(e.message||'操作失敗'); }
+  });
+  $('inbox').querySelectorAll('.rej').forEach(b => b.onclick = async () => {
+    const note = prompt('想留一句話給對方嗎？（可留空）');
+    try{ await upd(b.dataset.app, {status:'rejected', note: note||null}); }catch(e){ alert(e.message||'操作失敗'); }
+  });
+  $('inbox').querySelectorAll('.unlockTo').forEach(b => b.onclick = async () => {
+    try{ await upd(b.dataset.app, {unlock_to: true}); }catch(e){ alert(e.message||'操作失敗'); }
+  });
+}
+
+/* ── 啟動 ── */
+['fSpecies','fKind'].forEach(i => $(i).onchange = renderBoard);
+$('fText').oninput = renderBoard;
+$('reload').onclick = async () => { await boot(); flash('boardMsg','已更新'); };
+
+async function boot(){
+  myProfile = await DB.ensureProfile();
+  profiles = await DB.listProfiles();
+  apps = (await DB.listOutbox()).concat(await DB.listInbox());
+  fillMe(); renderBoard();
+}
+
+initTabs();
+</script>
+</html>
