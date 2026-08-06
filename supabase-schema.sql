@@ -39,6 +39,16 @@ create table if not exists public.profiles (
   canned      jsonb,                 -- 自訂罐頭回覆庫（僅 kind='pet' 使用）
   credits     int not null default 5,        -- 診療點數（新帳號贈送 5 點）
   credit_log  jsonb not null default '[]'::jsonb, -- 點數異動紀錄
+  photo_status text not null default 'none' check (photo_status in ('none','checking','pending','approved','rejected')),
+  photo_reason text default '',
+  verify_status text not null default 'none' check (verify_status in ('none','pending','approved','rejected')),
+  verify_reason text default '',
+  verify_task jsonb,                   -- {gesture, code}：驗證照要比的手勢與紙條代碼
+  verify_deleted_at timestamptz,
+  consent     boolean not null default false,
+  consent_at  timestamptz,
+  bonus_given boolean not null default false,  -- 完成登記＋照片審核通過的獎勵點數是否已發過
+  is_admin    boolean not null default false,  -- 審核台權限；只能自己去 Table Editor 手動打勾給信任帳號
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
@@ -47,31 +57,57 @@ create table if not exists public.profiles (
 alter table public.profiles add column if not exists credits int not null default 5;
 alter table public.profiles add column if not exists credit_log jsonb not null default '[]'::jsonb;
 alter table public.profiles alter column credits set default 5;
+alter table public.profiles add column if not exists photo_status text not null default 'none';
+alter table public.profiles add column if not exists photo_reason text default '';
+alter table public.profiles add column if not exists verify_status text not null default 'none';
+alter table public.profiles add column if not exists verify_reason text default '';
+alter table public.profiles add column if not exists verify_task jsonb;
+alter table public.profiles add column if not exists verify_deleted_at timestamptz;
+alter table public.profiles add column if not exists consent boolean not null default false;
+alter table public.profiles add column if not exists consent_at timestamptz;
+alter table public.profiles add column if not exists bonus_given boolean not null default false;
+alter table public.profiles add column if not exists is_admin boolean not null default false;
 
 alter table public.profiles enable row level security;
 
+-- 用 security definer 函式檢查是否為管理員，避免 profiles 的 RLS policy 直接查詢自己造成遞迴
+create or replace function public.is_admin(uid uuid)
+returns boolean language sql security definer stable set search_path = public as $$
+  select coalesce((select is_admin from public.profiles where id = uid), false);
+$$;
+
 drop policy if exists "profiles_select_authenticated" on public.profiles;
+drop policy if exists "profiles_select_visible"       on public.profiles;
 drop policy if exists "profiles_insert_own"           on public.profiles;
 drop policy if exists "profiles_update_own"           on public.profiles;
+drop policy if exists "profiles_update_admin"         on public.profiles;
 drop policy if exists "profiles_delete_own"           on public.profiles;
 
--- 已登入的人都能看佈告欄（未登入者一律看不到，anon 沒有任何 policy）
-create policy "profiles_select_authenticated"
+-- 已登入的人看得到：審核通過的公開登記、自己的那一筆、以及管理員看全部（審核用）
+create policy "profiles_select_visible"
   on public.profiles for select
   to authenticated
-  using (true);
+  using (photo_status = 'approved' or auth.uid() = id or public.is_admin(auth.uid()));
 
--- 只能新增/修改/刪除自己的那一筆
+-- 只能新增自己的那一筆
 create policy "profiles_insert_own"
   on public.profiles for insert
   to authenticated
   with check (auth.uid() = id);
 
+-- 修改自己的那一筆
 create policy "profiles_update_own"
   on public.profiles for update
   to authenticated
   using (auth.uid() = id)
   with check (auth.uid() = id);
+
+-- 管理員可以修改任何一筆（審核通過/退回、發放獎勵點數）
+create policy "profiles_update_admin"
+  on public.profiles for update
+  to authenticated
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
 
 create policy "profiles_delete_own"
   on public.profiles for delete
@@ -172,3 +208,69 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- ============================================================
+-- 5) Storage：大頭照（公開）與驗證照（私密，審核完即刪）
+-- ============================================================
+insert into storage.buckets (id, name, public)
+  values ('avatars', 'avatars', true)
+  on conflict (id) do nothing;
+
+insert into storage.buckets (id, name, public)
+  values ('verify', 'verify', false)
+  on conflict (id) do nothing;
+
+-- 檔案路徑統一用 {user_id}/avatar.jpg、{user_id}/verify.jpg
+drop policy if exists "avatars_public_read"   on storage.objects;
+drop policy if exists "avatars_owner_insert"  on storage.objects;
+drop policy if exists "avatars_owner_update"  on storage.objects;
+drop policy if exists "avatars_owner_delete"  on storage.objects;
+drop policy if exists "verify_owner_all"      on storage.objects;
+drop policy if exists "verify_admin_read"     on storage.objects;
+drop policy if exists "verify_admin_delete"   on storage.objects;
+
+-- 大頭照：所有人都能讀（bucket 本身設公開），但只有本人能上傳/改/刪自己的檔案
+create policy "avatars_public_read"
+  on storage.objects for select
+  using (bucket_id = 'avatars');
+
+create policy "avatars_owner_insert"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "avatars_owner_update"
+  on storage.objects for update
+  to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "avatars_owner_delete"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- 驗證照：只有本人（上傳/讀取/刪除）與管理員（讀取＋審核後刪除）能存取，其他人完全看不到
+create policy "verify_owner_all"
+  on storage.objects for all
+  to authenticated
+  using (bucket_id = 'verify' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'verify' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "verify_admin_read"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'verify' and public.is_admin(auth.uid()));
+
+create policy "verify_admin_delete"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'verify' and public.is_admin(auth.uid()));
+
+-- ============================================================
+-- 6) 把自己設成管理員（審核台權限）
+--    這行不會自動執行——執行完上面全部之後，自己先用這個帳號登入一次，
+--    再回到 SQL Editor，把 <你的帳號 email> 換成自己的 email，單獨執行這一段：
+--
+--    update public.profiles set is_admin = true
+--    where id = (select id from auth.users where email = '<你的帳號 email>');
+-- ============================================================

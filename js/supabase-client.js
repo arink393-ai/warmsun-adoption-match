@@ -79,6 +79,22 @@
     if (error) throw error;
     return data;
   }
+  // 管理員專用：更新別人的那一筆（審核通過/退回、發獎勵點數）。
+  // 非管理員呼叫這個會被 RLS 擋下來，不會真的改到別人的資料。
+  async function adminUpdateProfile(id, patch) {
+    const { data, error } = await sb.from('profiles')
+      .update(patch).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  }
+  // 管理員專用：列出所有待審核（照片或驗證照還沒通過）的登記
+  async function adminListPending() {
+    const { data, error } = await sb.from('profiles').select('*')
+      .or('photo_status.eq.checking,photo_status.eq.pending,verify_status.eq.pending')
+      .order('updated_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
 
   // ── 診療點數（模擬付費，用來限流 AI 呼叫） ──
   async function spendCredit(amount, why) {
@@ -142,22 +158,18 @@
     return data;
   }
 
-  // ── AI 輔助評分（選用，需部署 supabase/functions/claude） ──
+  // ── AI 輔助評分／照片初審（選用，需部署 supabase/functions/claude） ──
   function hasClaudeProxy() {
     return !!window.CLAUDE_PROXY_URL;
   }
-  async function askClaude(prompt) {
+  async function askClaudeRaw(messages, opts) {
     if (!window.CLAUDE_PROXY_URL) throw new Error('尚未設定 AI 代理網址（js/config.js 的 CLAUDE_PROXY_URL）');
     const { data: { session } } = await sb.auth.getSession();
     if (!session) throw new Error('尚未登入');
     const res = await fetch(window.CLAUDE_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 700,
-        messages: [{ role: 'user', content: prompt }]
-      })
+      body: JSON.stringify(Object.assign({ model: 'claude-sonnet-5', max_tokens: 700, messages }, opts || {}))
     });
     const data = await res.json();
     if (!res.ok) throw new Error((data.error && data.error.message) || 'AI 請求失敗');
@@ -165,12 +177,59 @@
     if (!text) throw new Error('AI 沒有回傳內容');
     return text;
   }
+  async function askClaude(prompt) {
+    return askClaudeRaw([{ role: 'user', content: prompt }]);
+  }
+
+  // ── Storage：大頭照（公開）／驗證照（私密，審核完即刪） ──
+  function dataUrlToBlob(dataUrl) {
+    const [head, b64] = dataUrl.split(',');
+    const mime = (head.match(/data:(.*);base64/) || [])[1] || 'image/jpeg';
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+  function avatarUrl(userId, cacheBust) {
+    const base = `${window.SUPABASE_URL}/storage/v1/object/public/avatars/${userId}/avatar.jpg`;
+    return cacheBust ? `${base}?t=${encodeURIComponent(cacheBust)}` : base;
+  }
+  async function uploadAvatar(dataUrl) {
+    const user = await getUser();
+    if (!user) throw new Error('尚未登入');
+    const path = `${user.id}/avatar.jpg`;
+    const { error } = await sb.storage.from('avatars')
+      .upload(path, dataUrlToBlob(dataUrl), { upsert: true, contentType: 'image/jpeg' });
+    if (error) throw error;
+    return avatarUrl(user.id, Date.now());
+  }
+  async function uploadVerifyPhoto(dataUrl) {
+    const user = await getUser();
+    if (!user) throw new Error('尚未登入');
+    const path = `${user.id}/verify.jpg`;
+    const { error } = await sb.storage.from('verify')
+      .upload(path, dataUrlToBlob(dataUrl), { upsert: true, contentType: 'image/jpeg' });
+    if (error) throw error;
+    return path;
+  }
+  async function getVerifySignedUrl(userId) {
+    const { data, error } = await sb.storage.from('verify')
+      .createSignedUrl(`${userId}/verify.jpg`, 120);
+    if (error) throw error;
+    return data.signedUrl;
+  }
+  async function deleteVerifyPhoto(userId) {
+    const { error } = await sb.storage.from('verify').remove([`${userId}/verify.jpg`]);
+    if (error) throw error;
+  }
 
   window.DB = {
     sb,
     signUpEmail, signInEmail, signInGoogle, signOut, getUser, onAuthChange,
     ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles,
+    adminUpdateProfile, adminListPending,
     listOutbox, listInbox, findApplicationTo, createApplication, updateApplication,
-    hasClaudeProxy, askClaude, spendCredit, topupCredit
+    hasClaudeProxy, askClaude, askClaudeRaw, spendCredit, topupCredit,
+    avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto
   };
 })();

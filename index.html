@@ -171,14 +171,55 @@
       <div><label>居住地</label><input id="mArea" placeholder="例：台北"></div>
       <div><label>職業</label><input id="mJob" placeholder="例：工程師"></div>
     </div>
+
+    <label>大頭照（必填．需通過審核才會公開）</label>
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:0 0 120px">
+        <img id="mPhoto" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:6px;
+             border:1px solid var(--rule);background:var(--paper-2);display:block">
+      </div>
+      <div style="flex:1">
+        <input id="mFile" type="file" accept="image/*">
+        <p class="hint" style="margin-top:6px">
+          必須是<b>本人、單人、看得清楚五官</b>的照片。<br>
+          風景、寵物、動漫、明星照、AI 生成圖、多人合照、盜用他人照片一律不通過，
+          且無法登記、提出申請或接受申請。<br>
+          上傳後會先由系統初步檢查，再經人工審核。
+        </p>
+        <p class="hint" id="photoState"></p>
+      </div>
+    </div>
+
+    <label>驗證照（必填．僅供審核，永不公開，審核通過後立即刪除）</label>
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:0 0 120px">
+        <img id="mVerify" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:6px;
+             border:1px dashed var(--rule);background:var(--paper-2);display:block">
+      </div>
+      <div style="flex:1">
+        <div id="verifyTask" class="lock" style="margin:0 0 8px"></div>
+        <input id="mVFile" type="file" accept="image/*">
+        <p class="hint" style="margin-top:6px">
+          請依上方指示拍一張照片，用來確認大頭照是本人。<br>
+          這張照片<b>不會出現在佈告欄，也不會給任何申請人看到</b>，審核通過後系統會立即刪除。
+        </p>
+        <p class="hint" id="verifyState"></p>
+      </div>
+    </div>
+
     <label>自我介紹（會公開）</label>
     <textarea id="mBio" rows="4" placeholder="興趣、生活型態、想找什麼樣的人⋯⋯"></textarea>
     <label>希望對方是（會公開）</label>
     <textarea id="mWants" rows="3" placeholder="例：年齡 25-40、能接受兩隻貓、重視溝通"></textarea>
     <label>日常觀察資訊（第三階段解鎖後才會顯示給對方）</label>
     <textarea id="mLocked" rows="2" placeholder="例：IG @your_account"></textarea>
+    <label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px">
+      <input type="checkbox" id="mConsent" style="width:auto;margin:4px 0 0">
+      <span style="font-size:13px;color:var(--ink)">我已閱讀並同意「<a href="#" data-goto="privacy">隱私權政策</a>」，了解照片與資料的蒐集目的、保存期限與刪除方式。</span>
+    </label>
     <div class="bar">
       <button id="mSave">儲存登記</button>
+      <button class="ghost" id="mPurge">刪除我的所有資料</button>
       <span class="msg" id="meMsg"></span>
     </div>
     <p class="hint" style="margin-top:10px">待認養身分想自訂第一階段題目、第二階段題庫、罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」設定。</p>
@@ -231,6 +272,57 @@
     <p class="hint">收費不是門檻，而是節奏。要付出一點成本，大家才會挑真正想認識的人申請，收到申請的人也才有辦法認真讀完每一份。</p>
     <p class="hint">若對方超過 14 天沒有處理你的申請，可以在「我送出的申請」自行退回掛號費。</p>
   </fieldset>
+  <fieldset>
+    <legend>照片與身分規則</legend>
+    <p>登記必須上傳<b>本人、單人、看得清楚五官</b>的照片，經系統初步檢查與人工審核後才會公開。</p>
+    <p>以下情況不予通過，且無法登記、提出申請或接受申請：非真人照片（風景、寵物、動漫、AI 生成圖）、多人合照無法辨識、明星或網路名人照片、盜用他人照片。</p>
+    <p class="hint">照片通過審核並填妥基本資料，可獲得 <span id="howPhotoBonus">5</span> 點獎勵。</p>
+    <p class="hint">系統只能做初步判斷，是否為盜用仍需人工查核；若發現盜用，登記會被移除且不退點。</p>
+  </fieldset>
+</div>
+
+<!-- 隱私權 -->
+<div class="pane" id="pane-privacy">
+  <fieldset>
+    <legend>隱私權政策</legend>
+    <p><b>一、蒐集目的</b><br>
+    本平台蒐集個人資料，目的僅限於：認養配對媒合、身分真實性審核、以及申請進度通知。不會用於其他目的。</p>
+
+    <p><b>二、蒐集項目</b><br>
+    ・公開資料：暱稱、年齡、居住地、職業、自我介紹、擇偶條件、大頭照<br>
+    ・僅供審核：驗證照（不公開，審核通過後立即刪除）<br>
+    ・僅在解鎖後顯示給特定對象：日常觀察資訊（社群帳號等）<br>
+    ・申請內容：你填寫的認養申請表回答</p>
+
+    <p><b>三、保存期限</b><br>
+    ・驗證照：<b>審核通過或退回後立即刪除</b><br>
+    ・公開資料與申請紀錄：保存至你自行刪除為止<br>
+    ・取消登記後：相關資料於系統中一併移除</p>
+
+    <p><b>四、第三方處理</b><br>
+    大頭照的初步檢查與主治獸醫評估會將內容傳送至 AI 服務（Anthropic Claude）進行分析。該服務不會用於訓練模型。驗證照<b>不會</b>傳送給任何第三方，僅由管理者人工檢視。</p>
+
+    <p><b>五、你的權利</b><br>
+    你可以隨時查詢、更正或刪除自己的資料。<br>
+    ・修改：到「我的登記」直接編輯<br>
+    ・刪除：到「我的登記」按「刪除我的所有資料」，將移除登記、照片、申請紀錄與點數紀錄，且無法復原</p>
+
+    <p><b>六、不做的事</b><br>
+    ・不會將你的資料販售或提供給廣告商<br>
+    ・不會在未解鎖的情況下向他人顯示你的聯絡方式<br>
+    ・不會用臉部辨識技術自動比對照片，身分審核一律由人工進行</p>
+
+    <p class="hint">本平台目前為原型階段。資料儲存在 Supabase 資料庫，並以帳號登入與 Row Level Security 做存取控管，但仍建議不要填寫過於敏感的真實資料。</p>
+  </fieldset>
+</div>
+
+<!-- 審核台（只有 is_admin 帳號看得到內容） -->
+<div class="pane" id="pane-audit">
+  <fieldset>
+    <legend>管理員審核</legend>
+    <p class="hint" id="auditMsg">讀取中⋯⋯</p>
+  </fieldset>
+  <div id="auditList"></div>
 </div>
 </div>
 
@@ -260,11 +352,19 @@ const DEFAULT_Q2 = [
 const APPLY_COST = 1;      /* 送出申請的掛號費 */
 const VET_COST = 1;        /* 主治獸醫評估的診療費 */
 const REFUND_DAYS = 14;    /* 對方超過幾天未處理可退點 */
+const PHOTO_BONUS = 5;     /* 照片審核通過＋資料填妥的獎勵點數 */
 const PACKS = [
   {n:1,  price:30,  label:'單次診療'},
   {n:5,  price:120, label:'五次回診包'},
   {n:12, price:250, label:'年度健檢包'}
 ];
+const GESTURES = [
+  '比出「V」手勢放在臉旁',
+  '用手比出數字「3」',
+  '手掌張開放在下巴旁邊',
+  '比出大拇指朝上'
+];
+const isApproved = p => !!p && p.photo_status === 'approved' && p.verify_status === 'approved';
 
 let me = null, myProfile = null, profiles = [], apps = [];
 
@@ -313,8 +413,13 @@ DB.onAuthChange(async (user) => {
 const PANES = [
   {k:'board', t:'佈告欄'}, {k:'me', t:'我的登記'},
   {k:'out', t:'我送出的申請'}, {k:'in', t:'我收到的申請'},
-  {k:'clinic', t:'診療室'}, {k:'how', t:'流程說明'}
+  {k:'clinic', t:'診療室'}, {k:'audit', t:'審核台'},
+  {k:'how', t:'流程說明'}, {k:'privacy', t:'隱私權'}
 ];
+function gotoTab(k){
+  const b = $('tabbar').querySelector(`.tabbtn[data-k="${k}"]`); if(!b) return;
+  b.click();
+}
 function initTabs(){
   $('tabbar').innerHTML = PANES.map((p,i) =>
     `<button class="tabbtn${i?'':' on'}" data-k="${p.k}">${p.t}</button>`).join('');
@@ -326,35 +431,163 @@ function initTabs(){
     if(b.dataset.k === 'in') renderInbox();
     if(b.dataset.k === 'board') renderBoard();
     if(b.dataset.k === 'clinic') renderClinic();
+    if(b.dataset.k === 'audit') renderAudit();
   };
+  document.addEventListener('click', e => {
+    const g = e.target.closest('[data-goto]'); if(!g) return;
+    e.preventDefault(); gotoTab(g.dataset.goto);
+  });
 }
 
 /* ── 我的登記 ── */
-function fillMe(){
+function photoStateText(p){
+  if(!p || p.photo_status === 'none') return '尚未上傳照片，目前無法公開登記。';
+  if(p.photo_status === 'approved') return '✅ 審核通過，你的登記已公開。';
+  if(p.photo_status === 'rejected') return '❌ 未通過：' + (p.photo_reason||'') + '　請更換照片後重新送審。';
+  if(p.photo_status === 'checking') return '系統檢查中⋯⋯';
+  return '⏳ 已通過系統初步檢查，等待人工審核。' + (p.photo_reason ? '（' + p.photo_reason + '）' : '');
+}
+function verifyStateText(p){
+  if(!p || p.verify_status === 'none') return '尚未上傳驗證照。';
+  if(p.verify_status === 'approved') return '✅ 身分已驗證，驗證照已依政策刪除。';
+  if(p.verify_status === 'rejected') return '❌ 未通過：' + (p.verify_reason||'') + '　請重新上傳。';
+  return '⏳ 已上傳，等待人工審核。';
+}
+function showVerifyTask(p){
+  const t = p.verify_task || {
+    gesture: GESTURES[Math.floor(Math.random()*GESTURES.length)],
+    code: String(Math.floor(1000 + Math.random()*9000))
+  };
+  $('verifyTask').innerHTML =
+    `📸 請拍一張照片：<b>${esc(t.gesture)}</b>，<br>並手持寫有 <b>暖陽 ${esc(t.code)}</b> 的紙條（手寫即可）。`;
+  return t;
+}
+async function fillMe(){
   if(!myProfile) return;
   mName.value = myProfile.name||''; mKind.value = myProfile.kind||'pet'; mSpecies.value = myProfile.species||'cat';
   mAge.value = myProfile.age||''; mArea.value = myProfile.area||''; mJob.value = myProfile.job||'';
   mBio.value = myProfile.bio||''; mWants.value = myProfile.wants||''; mLocked.value = myProfile.locked||'';
+  mConsent.checked = !!myProfile.consent;
+  if(myProfile.photo_status !== 'none') $('mPhoto').src = DB.avatarUrl(me.id, myProfile.updated_at);
+  if(myProfile.verify_status !== 'none' && myProfile.verify_status !== 'approved'){
+    try{ $('mVerify').src = await DB.getVerifySignedUrl(me.id); }catch(e){}
+  }
+  $('photoState').textContent = photoStateText(myProfile);
+  $('verifyState').textContent = verifyStateText(myProfile);
+  const task = showVerifyTask(myProfile);
+  if(!myProfile.verify_task){ myProfile = await DB.saveMyProfile({verify_task: task}); }
 }
+$('mFile').onchange = async (e) => {
+  const f = e.target.files[0]; if(!f) return;
+  try{
+    const d = await resizeImage(f);
+    $('mPhoto').src = d; $('mPhoto').dataset.new = '1';
+    $('photoState').textContent = '已選擇照片，儲存登記後會送審。';
+  }catch(err){ $('photoState').textContent = err.message; }
+};
+$('mVFile').onchange = async (e) => {
+  const f = e.target.files[0]; if(!f) return;
+  try{
+    const d = await resizeImage(f, 480);
+    $('mVerify').src = d; $('mVerify').dataset.new = '1';
+    $('verifyState').textContent = '已選擇，儲存登記後送審。';
+  }catch(err){ $('verifyState').textContent = err.message; }
+};
 $('mSave').onclick = async () => {
   const name = mName.value.trim();
   if(!name){ flash('meMsg','請填暱稱'); return; }
+  if(!$('mConsent').checked){ flash('meMsg','請先閱讀並勾選同意隱私權政策'); return; }
+  const newPhoto  = $('mPhoto').dataset.new  === '1' ? $('mPhoto').src  : null;
+  const newVerify = $('mVerify').dataset.new === '1' ? $('mVerify').src : null;
   try{
-    myProfile = await DB.saveMyProfile({
+    const patch = {
       name, kind: mKind.value, species: mSpecies.value,
       age: mAge.value.trim(), area: mArea.value.trim(), job: mJob.value.trim(),
-      bio: mBio.value.trim(), wants: mWants.value.trim(), locked: mLocked.value.trim()
-    });
+      bio: mBio.value.trim(), wants: mWants.value.trim(), locked: mLocked.value.trim(),
+      consent: true
+    };
+    if(!myProfile.consent) patch.consent_at = new Date().toISOString();
+    myProfile = await DB.saveMyProfile(patch);
+
+    if(newPhoto){
+      await DB.uploadAvatar(newPhoto);
+      $('mPhoto').dataset.new = '';
+      myProfile = await DB.saveMyProfile({photo_status: 'checking', photo_reason: ''});
+      $('photoState').textContent = '系統檢查中⋯⋯';
+      try{
+        const r = await autoScreenPhoto(newPhoto);
+        myProfile = await DB.saveMyProfile({photo_status: r.ok ? 'pending' : 'rejected', photo_reason: r.reason});
+      }catch(e){
+        myProfile = await DB.saveMyProfile({photo_status: 'pending', photo_reason: '系統檢查未完成，改由人工審核'});
+      }
+    }
+    if(newVerify){
+      await DB.uploadVerifyPhoto(newVerify);
+      $('mVerify').dataset.new = '';
+      myProfile = await DB.saveMyProfile({verify_status: 'pending', verify_reason: ''});
+    }
+
+    $('photoState').textContent = photoStateText(myProfile);
+    $('verifyState').textContent = verifyStateText(myProfile);
     flash('meMsg','已儲存'); renderBoard();
   }catch(e){ flash('meMsg', e.message || '儲存失敗'); }
 };
+$('mPurge').onclick = async () => {
+  if(!confirm('這會刪除你的登記、照片、所有申請紀錄與點數紀錄，且無法復原。確定嗎？')) return;
+  if(!confirm('再確認一次：所有資料都會消失，包含已建立的配對進度。')) return;
+  try{
+    try{ await DB.deleteVerifyPhoto(me.id); }catch(e){}
+    await DB.sb.storage.from('avatars').remove([`${me.id}/avatar.jpg`]);
+    await DB.sb.from('profiles').delete().eq('id', me.id);
+    await DB.signOut();
+  }catch(e){ flash('meMsg', e.message || '刪除失敗'); }
+};
 
 function flash(id, t){ $(id).textContent = t; setTimeout(()=>{ if($(id)) $(id).textContent=''; }, 2500); }
+
+/* 壓縮到指定邊長，避免塞爆儲存空間 */
+function resizeImage(file, max = 320){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const fr = new FileReader();
+    fr.onload = () => { img.src = fr.result; };
+    fr.onerror = () => reject(new Error('讀不到檔案'));
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL('image/jpeg', 0.75));
+    };
+    img.onerror = () => reject(new Error('這個檔案不是圖片'));
+    fr.readAsDataURL(file);
+  });
+}
+
+/* 系統初步檢查：只能判斷「是不是合格的真人單人照」，無法確認是否盜用 */
+async function autoScreenPhoto(dataUrl){
+  if(!DB.hasClaudeProxy()) return {ok:true, reason:'（尚未設定 AI 代理，略過系統初檢，直接交由人工審核）'};
+  const b64 = dataUrl.split(',')[1];
+  const text = await DB.askClaudeRaw([{role:'user', content:[
+    {type:'image', source:{type:'base64', media_type:'image/jpeg', data:b64}},
+    {type:'text', text:
+`這是交友平台的大頭照審核。請判斷這張圖是否符合規定。
+
+不通過的情況：不是真人照片（風景、動物、物品、動漫、插圖、明顯的 AI 生成圖）、多人合照無法辨識主角、看不清楚五官、明顯是名人或明星照、明顯是廣告或素材圖。
+
+只輸出一行，用半形直線分隔兩欄，不要其他文字：
+pass 或 reject|一句話說明理由（繁體中文，20 字內）`}
+  ]}]);
+  const line = text.split('\n').map(x=>x.trim()).filter(Boolean).pop() || '';
+  const p = line.split(/\s*[|｜]\s*/);
+  return {ok: /pass/i.test(p[0]||''), reason: (p[1]||'').trim()};
+}
 
 /* ── 佈告欄 ── */
 async function renderBoard(){
   const sp = fSpecies.value, kd = fKind.value, q = fText.value.trim().toLowerCase();
   const list = profiles
+    .filter(p => isApproved(p))
     .filter(p => !sp || p.species === sp)
     .filter(p => !kd || p.kind === kd)
     .filter(p => !q || [p.name,p.area,p.job,p.bio,p.wants].join(' ').toLowerCase().includes(q));
@@ -366,6 +599,8 @@ async function renderBoard(){
     const app = apps.find(a => a.from_user === me.id && a.to_user === p.id);
     const unlocked = app && app.stage === 3 && app.unlock_from && app.unlock_to;
     return `<div class="card">
+      <img src="${DB.avatarUrl(p.id, p.updated_at)}" alt="" style="width:100%;height:170px;object-fit:cover;
+           border-radius:4px;margin-bottom:10px;background:var(--paper-2)">
       <h3>${SPECIES[p.species].split(' ')[0]} ${esc(p.name)}</h3>
       <div class="kind">${KIND[p.kind]}　${SPECIES[p.species]}</div>
       <div>${[p.age && p.age+' 歲', p.area, p.job].filter(Boolean)
@@ -377,6 +612,7 @@ async function renderBoard(){
         : '🔒 日常觀察資訊需通過三階段審查後解鎖'}</div>
       <div class="bar">${
         !myProfile || !myProfile.kind ? '<span class="hint">請先完成自己的登記</span>'
+        : !isApproved(myProfile) ? '<span class="hint">你的照片尚未通過審核，暫時無法提出申請</span>'
         : app ? `<span class="stage s${app.status==='rejected'?0:app.stage}">目前：${stageText(app)}</span>`
         : `<button class="ghost apply" data-id="${p.id}">提出認養申請（${APPLY_COST} 點）</button>`}
       </div>
@@ -412,6 +648,7 @@ function openApply(toId){
   $('sendApply').onclick = async () => {
     const ans = [...document.querySelectorAll('.a1q')].map(t => t.value.trim());
     if(ans.some(a => !a)){ flash('applyMsg','每一題都要回答'); return; }
+    if(!isApproved(myProfile)){ flash('applyMsg','你的照片尚未通過審核，無法提出申請'); return; }
     if((myProfile.credits||0) < APPLY_COST){ flash('applyMsg','掛號費不足，請到「診療室」儲值'); return; }
     if(!confirm(`送出這份申請會扣 ${APPLY_COST} 點掛號費，確定嗎？`)) return;
     const spent = await DB.spendCredit(APPLY_COST, `掛號　向 ${to.name} 提出申請`);
@@ -632,6 +869,89 @@ ${app.a2 ? '【第二階段回答】\n' + qa(q2, app.a2) : ''}
   }
 }
 
+/* ── 管理員審核台 ── */
+async function renderAudit(){
+  if(!myProfile || !myProfile.is_admin){
+    $('auditMsg').textContent = '你不是管理員，看不到審核內容。';
+    $('auditList').innerHTML = '';
+    return;
+  }
+  $('auditMsg').textContent = '讀取待審核名單中⋯⋯';
+  let list;
+  try{ list = await DB.adminListPending(); }
+  catch(e){ $('auditMsg').textContent = '讀取失敗：' + e.message; return; }
+  if(!list.length){ $('auditMsg').textContent = ''; $('auditList').innerHTML = '<div class="empty">目前沒有待審核的登記。</div>'; return; }
+  $('auditMsg').textContent = `共 ${list.length} 筆待審核`;
+
+  const rows = await Promise.all(list.map(async p => {
+    let verifySrc = '';
+    if(p.verify_status !== 'none' && p.verify_status !== 'approved'){
+      try{ verifySrc = await DB.getVerifySignedUrl(p.id); }catch(e){}
+    }
+    return { p, verifySrc };
+  }));
+
+  $('auditList').innerHTML = rows.map(({p, verifySrc}) => `
+    <fieldset><legend>${esc(p.name || '（未命名）')}</legend>
+      <div class="row" style="align-items:flex-start">
+        <div style="flex:0 0 300px">
+          <div style="display:flex;gap:8px">
+            <div><div class="hint">大頭照</div>
+              <img src="${DB.avatarUrl(p.id, p.updated_at)}" alt="" style="width:140px;height:140px;object-fit:cover;
+                   border-radius:6px;border:1px solid var(--rule);background:var(--paper-2)"></div>
+            <div><div class="hint">驗證照（不公開）</div>
+              ${verifySrc ? `<img src="${verifySrc}" alt="" style="width:140px;height:140px;object-fit:cover;
+                   border-radius:6px;border:1px dashed var(--brand)">` : '<div class="empty" style="width:140px;height:140px">未上傳</div>'}</div>
+          </div>
+          ${p.verify_task ? `<p class="hint" style="margin-top:6px">指定動作：${esc(p.verify_task.gesture)}　紙條代碼：暖陽 ${esc(p.verify_task.code)}</p>` : ''}
+        </div>
+        <div style="flex:1">
+          <div class="hint">${KIND[p.kind]||''}　${SPECIES[p.species]||''}　${esc(p.age||'')}　${esc(p.area||'')}</div>
+          <div class="bio">${esc(p.bio||'')}</div>
+          <div class="hint">系統初檢：${p.photo_status === 'rejected' ? '未通過' : '通過'}　${esc(p.photo_reason||'')}</div>
+          <div class="bar">
+            <button class="okBtn" data-id="${p.id}">審核通過</button>
+            <button class="ghost noBtn" data-id="${p.id}">退回</button>
+          </div>
+        </div>
+      </div>
+    </fieldset>`).join('');
+
+  $('auditList').querySelectorAll('.okBtn').forEach(b => b.onclick = async () => {
+    const p = list.find(x => x.id === b.dataset.id);
+    if(p.verify_status !== 'approved' && p.verify_status !== 'pending'){ alert('這位還沒有上傳驗證照，無法通過。'); return; }
+    const patch = {
+      photo_status: 'approved', photo_reason: '',
+      verify_status: 'approved', verify_deleted_at: new Date().toISOString()
+    };
+    if(!p.bonus_given && p.bio && p.wants && p.age && p.area){
+      const log = Array.isArray(p.credit_log) ? p.credit_log.slice() : [];
+      log.unshift({at:new Date().toISOString(), t:'完成登記獎勵（照片審核通過）', d:+PHOTO_BONUS});
+      patch.credits = (p.credits||0) + PHOTO_BONUS;
+      patch.credit_log = log.slice(0,50);
+      patch.bonus_given = true;
+    }
+    try{
+      await DB.adminUpdateProfile(p.id, patch);
+      try{ await DB.deleteVerifyPhoto(p.id); }catch(e){}
+      renderAudit(); renderBoard();
+    }catch(e){ alert(e.message || '操作失敗'); }
+  });
+  $('auditList').querySelectorAll('.noBtn').forEach(b => b.onclick = async () => {
+    const p = list.find(x => x.id === b.dataset.id);
+    const why = prompt('退回原因（會顯示給對方）', '照片無法辨識為本人');
+    if(why === null) return;
+    try{
+      await DB.adminUpdateProfile(p.id, {
+        photo_status: 'rejected', photo_reason: why,
+        verify_status: 'rejected', verify_reason: why, verify_deleted_at: new Date().toISOString()
+      });
+      try{ await DB.deleteVerifyPhoto(p.id); }catch(e){}
+      renderAudit(); renderBoard();
+    }catch(e){ alert(e.message || '操作失敗'); }
+  });
+}
+
 /* ── 啟動 ── */
 ['fSpecies','fKind'].forEach(i => $(i).onchange = renderBoard);
 $('fText').oninput = renderBoard;
@@ -641,13 +961,14 @@ async function boot(){
   myProfile = await DB.ensureProfile();
   profiles = await DB.listProfiles();
   apps = (await DB.listOutbox()).concat(await DB.listInbox());
-  fillMe(); renderBoard();
+  await fillMe(); renderBoard();
 }
 
 ['clinicApplyCost','howApplyCost'].forEach(id => $(id).textContent = APPLY_COST);
 ['clinicVetCost','howVetCost'].forEach(id => $(id).textContent = VET_COST);
 $('clinicRefundDays').textContent = REFUND_DAYS;
 $('howFreeCredits').textContent = 5;
+$('howPhotoBonus').textContent = PHOTO_BONUS;
 initTabs();
 </script>
 </html>
