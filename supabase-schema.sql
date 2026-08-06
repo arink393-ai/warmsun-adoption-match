@@ -37,15 +37,16 @@ create table if not exists public.profiles (
   q1          jsonb,                 -- 自訂第一階段書面審查題（僅 kind='pet' 使用；空=用預設題）
   q2_bank     jsonb,                 -- 自訂第二階段價值觀題庫勾選（僅 kind='pet' 使用）
   canned      jsonb,                 -- 自訂罐頭回覆庫（僅 kind='pet' 使用）
-  credits     int not null default 3,        -- 診療點數（新帳號贈送 3 點）
+  credits     int not null default 5,        -- 診療點數（新帳號贈送 5 點）
   credit_log  jsonb not null default '[]'::jsonb, -- 點數異動紀錄
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
 
 -- 若資料表已存在（舊版本先執行過這份腳本），補上新欄位
-alter table public.profiles add column if not exists credits int not null default 3;
+alter table public.profiles add column if not exists credits int not null default 5;
 alter table public.profiles add column if not exists credit_log jsonb not null default '[]'::jsonb;
+alter table public.profiles alter column credits set default 5;
 
 alter table public.profiles enable row level security;
 
@@ -95,6 +96,8 @@ create table if not exists public.applications (
   keeper_note  text,                         -- 申請人自己的私人筆記，只有申請人看得到
   vet          text,                         -- 主治獸醫（AI）評估結果，快取起來避免重複收費
   vet_at       timestamptz,
+  paid         int not null default 0,       -- 送出申請時付的掛號費點數
+  refunded     boolean not null default false, -- 掛號費是否已退回申請人
   created_at   timestamptz default now(),
   updated_at   timestamptz default now(),
   unique (from_user, to_user),
@@ -105,6 +108,8 @@ create table if not exists public.applications (
 alter table public.applications add column if not exists keeper_note text;
 alter table public.applications add column if not exists vet text;
 alter table public.applications add column if not exists vet_at timestamptz;
+alter table public.applications add column if not exists paid int not null default 0;
+alter table public.applications add column if not exists refunded boolean not null default false;
 
 alter table public.applications enable row level security;
 

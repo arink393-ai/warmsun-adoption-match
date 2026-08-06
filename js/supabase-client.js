@@ -127,11 +127,11 @@
     if (error) throw error;
     return data;
   }
-  async function createApplication(toId, a1) {
+  async function createApplication(toId, a1, extra) {
     const user = await getUser();
-    const { data, error } = await sb.from('applications').insert({
+    const { data, error } = await sb.from('applications').insert(Object.assign({
       from_user: user.id, to_user: toId, stage: 1, status: 'open', a1
-    }).select().single();
+    }, extra || {})).select().single();
     if (error) throw error;
     return data;
   }

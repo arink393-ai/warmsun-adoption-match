@@ -201,7 +201,12 @@
     <legend>診療點數</legend>
     <p style="font-size:26px;font-family:'Noto Serif TC',serif;color:var(--brand);margin:4px 0">
       <span id="balance">0</span> <span style="font-size:14px;color:var(--ink-soft)">點</span></p>
-    <p class="hint">主治獸醫（AI）評估每次消耗 1 點。評估會依對方的公開資料與申請回答，分析相容性、需要確認的地方與紅旗，僅供參考。</p>
+    <p class="hint">
+      <b>掛號費</b>　送出一份認養申請：<span id="clinicApplyCost">1</span> 點<br>
+      <b>診療費</b>　請主治獸醫評估一位申請人：<span id="clinicVetCost">1</span> 點<br>
+      收費是為了讓雙方都慎重：申請前先想清楚，收到申請的人也不會被大量亂投的訊息淹沒。<br>
+      若對方超過 <span id="clinicRefundDays">14</span> 天未處理你的申請，可以在「我送出的申請」退回掛號費。
+    </p>
     <div class="bar" id="topupBar"></div>
     <p class="hint" id="clinicMsg" style="margin-top:8px"></p>
   </fieldset>
@@ -219,6 +224,12 @@
     <p><b>第二階段　價值觀評估</b><br>對方會出幾道情境題。沒有標準答案，誠實與前後一致比漂亮重要。</p>
     <p><b>第三階段　日常觀察解鎖</b><br>雙方都同意後，才會互相顯示日常觀察資訊（IG 等）。解鎖是雙向的，單方同意不會揭露。</p>
     <p class="hint">任何階段都可以直接停止，不需要理由。收容所不會追問，也不影響對你的評價。</p>
+  </fieldset>
+  <fieldset>
+    <legend>關於診療點數</legend>
+    <p>送出一份認養申請需要 <span id="howApplyCost">1</span> 點掛號費；請主治獸醫評估一位申請人需要 <span id="howVetCost">1</span> 點診療費。新加入贈送 <span id="howFreeCredits">5</span> 點。</p>
+    <p class="hint">收費不是門檻，而是節奏。要付出一點成本，大家才會挑真正想認識的人申請，收到申請的人也才有辦法認真讀完每一份。</p>
+    <p class="hint">若對方超過 14 天沒有處理你的申請，可以在「我送出的申請」自行退回掛號費。</p>
   </fieldset>
 </div>
 </div>
@@ -244,6 +255,15 @@ const DEFAULT_Q2 = [
   '你認為「冷靜」和「冷戰」有什麼不同？',
   '如果對方需要一整天安靜休息，你會怎麼看待？',
   '你認為自己的缺點是什麼？'
+];
+
+const APPLY_COST = 1;      /* 送出申請的掛號費 */
+const VET_COST = 1;        /* 主治獸醫評估的診療費 */
+const REFUND_DAYS = 14;    /* 對方超過幾天未處理可退點 */
+const PACKS = [
+  {n:1,  price:30,  label:'單次診療'},
+  {n:5,  price:120, label:'五次回診包'},
+  {n:12, price:250, label:'年度健檢包'}
 ];
 
 let me = null, myProfile = null, profiles = [], apps = [];
@@ -358,7 +378,7 @@ async function renderBoard(){
       <div class="bar">${
         !myProfile || !myProfile.kind ? '<span class="hint">請先完成自己的登記</span>'
         : app ? `<span class="stage s${app.status==='rejected'?0:app.stage}">目前：${stageText(app)}</span>`
-        : `<button class="ghost apply" data-id="${p.id}">提出認養申請</button>`}
+        : `<button class="ghost apply" data-id="${p.id}">提出認養申請（${APPLY_COST} 點）</button>`}
       </div>
     </div>`;
   }).join('');
@@ -379,8 +399,9 @@ function openApply(toId){
   const html = `
     <fieldset><legend>向 ${esc(to.name)} 提出認養申請</legend>
       <p class="hint">第一階段書面審查。對方會讀到你的回答，決定是否進入第二階段。</p>
+      <p class="hint">送出需要 <b>${APPLY_COST} 點掛號費</b>，目前餘額 ${myProfile ? myProfile.credits : 0} 點。</p>
       ${q1.map((q,i) => `<label>${i+1}. ${esc(q)}</label><textarea rows="2" class="a1q"></textarea>`).join('')}
-      <div class="bar"><button id="sendApply">送出申請</button>
+      <div class="bar"><button id="sendApply">送出申請（${APPLY_COST} 點）</button>
         <button class="ghost" id="cancelApply">取消</button><span class="msg" id="applyMsg"></span></div>
     </fieldset>`;
   const box = document.createElement('div');
@@ -391,11 +412,19 @@ function openApply(toId){
   $('sendApply').onclick = async () => {
     const ans = [...document.querySelectorAll('.a1q')].map(t => t.value.trim());
     if(ans.some(a => !a)){ flash('applyMsg','每一題都要回答'); return; }
+    if((myProfile.credits||0) < APPLY_COST){ flash('applyMsg','掛號費不足，請到「診療室」儲值'); return; }
+    if(!confirm(`送出這份申請會扣 ${APPLY_COST} 點掛號費，確定嗎？`)) return;
+    const spent = await DB.spendCredit(APPLY_COST, `掛號　向 ${to.name} 提出申請`);
+    if(!spent.ok){ flash('applyMsg','掛號費不足，請到「診療室」儲值'); return; }
+    myProfile = spent.profile;
     try{
-      const app = await DB.createApplication(toId, ans);
+      const app = await DB.createApplication(toId, ans, {paid: APPLY_COST});
       apps.push(app);
       box.remove(); renderBoard(); flash('boardMsg','申請已送出');
-    }catch(e){ flash('applyMsg', e.message || '送出失敗'); }
+    }catch(e){
+      myProfile = await DB.topupCredit(APPLY_COST, '退回掛號費（申請送出失敗）');
+      flash('applyMsg', (e.message || '送出失敗') + '，已退回掛號費');
+    }
   };
 }
 
@@ -418,12 +447,31 @@ async function renderOutbox(){
       ${a.stage === 3 && !(a.unlock_from && a.unlock_to) ? `<div class="bar">
           <button class="ghost unlock" data-app="${a.id}">${a.unlock_from ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>
         </div>` : ''}
+      ${canRefund(a) ? `<div class="bar">
+          <button class="ghost refund" data-app="${a.id}">對方逾期未處理，退回掛號費</button>
+        </div>` : ''}
+      ${a.refunded ? '<p class="hint">掛號費已退回。</p>' : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(to.locked || '對方尚未填寫')}</div>` : ''}
     </fieldset>`;
   }).join('');
   bindOutbox();
 }
+function canRefund(a){
+  if(a.refunded || !a.paid) return false;
+  if(a.status !== 'open' || a.stage !== 1) return false;
+  return (Date.now() - new Date(a.created_at).getTime()) > REFUND_DAYS * 86400e3;
+}
 function bindOutbox(){
+  $('outbox').querySelectorAll('.refund').forEach(b => b.onclick = async () => {
+    const a = apps.find(x => x.id === b.dataset.app);
+    if(!canRefund(a)) return;
+    try{
+      const updated = await DB.updateApplication(a.id, {refunded: true});
+      Object.assign(a, updated);
+      myProfile = await DB.topupCredit(a.paid, '退回掛號費（對方逾期未處理）');
+      renderOutbox();
+    }catch(e){ alert(e.message || '操作失敗'); }
+  });
   $('outbox').querySelectorAll('.sendQ2').forEach(b => b.onclick = async () => {
     const a = apps.find(x => x.id === b.dataset.app);
     const n = +b.dataset.n;
@@ -475,7 +523,7 @@ async function renderInbox(){
           <button class="ghost unlockTo" data-app="${a.id}">${a.unlock_to ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>` : ''}
       </div>
       ${a.a1 ? `<div class="bar">
-          <button class="ghost vet" data-app="${a.id}">${a.vet ? '查看主治獸醫評估' : '請主治獸醫評估（1 點）'}</button>
+          <button class="ghost vet" data-app="${a.id}">${a.vet ? '查看主治獸醫評估' : `請主治獸醫評估（${VET_COST} 點）`}</button>
         </div><div id="vet-${a.id}">${a.vet ? `<div class="qa">${esc(a.vet)}</div>` : ''}</div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(from.locked || '對方尚未填寫')}</div>` : ''}
       <p class="hint" style="margin-top:8px">想自訂第二階段題目、使用罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」。</p>
@@ -512,11 +560,6 @@ function bindInbox(){
 }
 
 /* ── 診療室：點數與主治獸醫（AI）評估 ── */
-const PACKS = [
-  {n:1,  price:30,  label:'單次診療'},
-  {n:5,  price:120, label:'五次回診包'},
-  {n:12, price:250, label:'年度健檢包'}
-];
 function renderClinic(){
   if(!myProfile) return;
   $('balance').textContent = myProfile.credits ?? 0;
@@ -545,11 +588,11 @@ async function vetReview(app, from){
     box.innerHTML = '<p class="hint">尚未設定 AI 代理網址，暫時無法使用（不影響其他功能）。</p>';
     return;
   }
-  if((myProfile.credits||0) < 1){
+  if((myProfile.credits||0) < VET_COST){
     box.innerHTML = '<p class="hint">診療點數不足，請到「診療室」儲值。</p>';
     return;
   }
-  if(!confirm('這次評估會消耗 1 點診療費，要繼續嗎？')) return;
+  if(!confirm(`這次評估會消耗 ${VET_COST} 點診療費，要繼續嗎？`)) return;
   box.innerHTML = '<p class="hint">主治獸醫閱讀中⋯⋯</p>';
   const q1 = (Array.isArray(myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
   const q2 = (Array.isArray(app.a2_questions) && app.a2_questions.length) ? app.a2_questions : DEFAULT_Q2;
@@ -579,7 +622,7 @@ ${app.a2 ? '【第二階段回答】\n' + qa(q2, app.a2) : ''}
 不要編造對方沒說的事；資料不足就說資料不足。`;
   try{
     const text = await DB.askClaude(prompt);
-    const spent = await DB.spendCredit(1, `主治獸醫評估　${from.name}`);
+    const spent = await DB.spendCredit(VET_COST, `診療　主治獸醫評估 ${from.name}`);
     if(spent.ok) myProfile = spent.profile;
     const updated = await DB.updateApplication(app.id, {vet: text, vet_at: new Date().toISOString()});
     Object.assign(app, updated);
@@ -601,6 +644,10 @@ async function boot(){
   fillMe(); renderBoard();
 }
 
+['clinicApplyCost','howApplyCost'].forEach(id => $(id).textContent = APPLY_COST);
+['clinicVetCost','howVetCost'].forEach(id => $(id).textContent = VET_COST);
+$('clinicRefundDays').textContent = REFUND_DAYS;
+$('howFreeCredits').textContent = 5;
 initTabs();
 </script>
 </html>
