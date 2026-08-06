@@ -9,8 +9,8 @@
 // 真正的資料保護是 supabase-schema.sql 裡開的 RLS（沒登入者
 // 一律進不去），不是靠隱藏這組金鑰。
 // ============================================================
-window.SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
-window.SUPABASE_ANON_KEY = 'YOUR-ANON-PUBLIC-KEY';
+window.SUPABASE_URL = 'https://qjtthtqrqzrccxlgipdd.supabase.co';
+window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqdHRodHFycXpyY2N4bGdpcGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5MTE2ODMsImV4cCI6MjA5ODQ4NzY4M30.lh56gBDzFlv4FKsgtqSKA9PZwwPQPf5zCom3FVX5dfQ';
 
 // ============================================================
 // （選用）AI 輔助評分代理網址
