@@ -195,6 +195,22 @@
   <div id="inbox"></div>
 </div>
 
+<!-- 診療室 -->
+<div class="pane" id="pane-clinic">
+  <fieldset>
+    <legend>診療點數</legend>
+    <p style="font-size:26px;font-family:'Noto Serif TC',serif;color:var(--brand);margin:4px 0">
+      <span id="balance">0</span> <span style="font-size:14px;color:var(--ink-soft)">點</span></p>
+    <p class="hint">主治獸醫（AI）評估每次消耗 1 點。評估會依對方的公開資料與申請回答，分析相容性、需要確認的地方與紅旗，僅供參考。</p>
+    <div class="bar" id="topupBar"></div>
+    <p class="hint" id="clinicMsg" style="margin-top:8px"></p>
+  </fieldset>
+  <fieldset>
+    <legend>診療紀錄</legend>
+    <div id="ledger"></div>
+  </fieldset>
+</div>
+
 <!-- 流程說明 -->
 <div class="pane" id="pane-how">
   <fieldset>
@@ -276,7 +292,8 @@ DB.onAuthChange(async (user) => {
 /* ── 分頁 ── */
 const PANES = [
   {k:'board', t:'佈告欄'}, {k:'me', t:'我的登記'},
-  {k:'out', t:'我送出的申請'}, {k:'in', t:'我收到的申請'}, {k:'how', t:'流程說明'}
+  {k:'out', t:'我送出的申請'}, {k:'in', t:'我收到的申請'},
+  {k:'clinic', t:'診療室'}, {k:'how', t:'流程說明'}
 ];
 function initTabs(){
   $('tabbar').innerHTML = PANES.map((p,i) =>
@@ -288,6 +305,7 @@ function initTabs(){
     if(b.dataset.k === 'out') renderOutbox();
     if(b.dataset.k === 'in') renderInbox();
     if(b.dataset.k === 'board') renderBoard();
+    if(b.dataset.k === 'clinic') renderClinic();
   };
 }
 
@@ -427,12 +445,14 @@ function bindOutbox(){
 }
 
 /* ── 我收到的申請 ── */
+let inboxFromProfiles = {};
 async function renderInbox(){
   apps = apps.filter(a => a.to_user !== me.id).concat(await DB.listInbox());
   const list = apps.filter(a => a.to_user === me.id);
   if(!list.length){ $('inbox').innerHTML = '<div class="empty">目前沒有收到申請。</div>'; return; }
   const fromProfiles = {};
   for(const a of list){ if(!fromProfiles[a.from_user]) fromProfiles[a.from_user] = await DB.getProfile(a.from_user); }
+  inboxFromProfiles = fromProfiles;
   $('inbox').innerHTML = list.map(a => {
     const from = fromProfiles[a.from_user] || {name:'（已取消登記）'};
     const q1 = (Array.isArray(myProfile && myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
@@ -454,6 +474,9 @@ async function renderInbox(){
         ${a.stage === 3 && !(a.unlock_from && a.unlock_to) ? `
           <button class="ghost unlockTo" data-app="${a.id}">${a.unlock_to ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>` : ''}
       </div>
+      ${a.a1 ? `<div class="bar">
+          <button class="ghost vet" data-app="${a.id}">${a.vet ? '查看主治獸醫評估' : '請主治獸醫評估（1 點）'}</button>
+        </div><div id="vet-${a.id}">${a.vet ? `<div class="qa">${esc(a.vet)}</div>` : ''}</div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(from.locked || '對方尚未填寫')}</div>` : ''}
       <p class="hint" style="margin-top:8px">想自訂第二階段題目、使用罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」。</p>
     </fieldset>`;
@@ -482,6 +505,88 @@ function bindInbox(){
   $('inbox').querySelectorAll('.unlockTo').forEach(b => b.onclick = async () => {
     try{ await upd(b.dataset.app, {unlock_to: true}); }catch(e){ alert(e.message||'操作失敗'); }
   });
+  $('inbox').querySelectorAll('.vet').forEach(b => b.onclick = () => {
+    const a = apps.find(x => x.id === b.dataset.app);
+    vetReview(a, inboxFromProfiles[a.from_user] || {name:'申請人'});
+  });
+}
+
+/* ── 診療室：點數與主治獸醫（AI）評估 ── */
+const PACKS = [
+  {n:1,  price:30,  label:'單次診療'},
+  {n:5,  price:120, label:'五次回診包'},
+  {n:12, price:250, label:'年度健檢包'}
+];
+function renderClinic(){
+  if(!myProfile) return;
+  $('balance').textContent = myProfile.credits ?? 0;
+  $('topupBar').innerHTML = PACKS.map((p,i) =>
+    `<button class="ghost pack" data-i="${i}">${p.label}　${p.n} 點　NT$${p.price}</button>`).join('');
+  $('topupBar').querySelectorAll('.pack').forEach(b => b.onclick = async () => {
+    const p = PACKS[+b.dataset.i];
+    if(!confirm(`原型版本不會實際收費。\n模擬購買「${p.label}」${p.n} 點（定價 NT$${p.price}）？`)) return;
+    myProfile = await DB.topupCredit(p.n, `儲值　${p.label}（模擬）`);
+    renderClinic();
+  });
+  const log = Array.isArray(myProfile.credit_log) ? myProfile.credit_log : [];
+  $('ledger').innerHTML = log.length
+    ? log.slice(0,30).map(l => `<div class="qa">
+        <b>${new Date(l.at).toLocaleString('zh-TW')}</b>
+        ${esc(l.t)}　<span style="color:${l.d>0?'var(--ok)':'var(--brand)'}">${l.d>0?'+':''}${l.d} 點</span>
+      </div>`).join('')
+    : '<div class="empty">還沒有紀錄。</div>';
+  $('clinicMsg').textContent = '原型版本的儲值為模擬，不會實際扣款。';
+}
+
+async function vetReview(app, from){
+  const box = $('vet-' + app.id);
+  if(app.vet){ box.innerHTML = `<div class="qa">${esc(app.vet)}</div>`; return; }
+  if(!DB.hasClaudeProxy()){
+    box.innerHTML = '<p class="hint">尚未設定 AI 代理網址，暫時無法使用（不影響其他功能）。</p>';
+    return;
+  }
+  if((myProfile.credits||0) < 1){
+    box.innerHTML = '<p class="hint">診療點數不足，請到「診療室」儲值。</p>';
+    return;
+  }
+  if(!confirm('這次評估會消耗 1 點診療費，要繼續嗎？')) return;
+  box.innerHTML = '<p class="hint">主治獸醫閱讀中⋯⋯</p>';
+  const q1 = (Array.isArray(myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
+  const q2 = (Array.isArray(app.a2_questions) && app.a2_questions.length) ? app.a2_questions : DEFAULT_Q2;
+  const qa = (qs, ans) => qs.map((q,i) => `${q}\n→ ${(ans||[])[i]||'（未答）'}`).join('\n\n');
+  const prompt = `你是「暖陽動物之家」的主治獸醫，正在替一位待認養者評估申請人是否適合進入下一階段。語氣溫和專業，帶一點收容所的世界觀，但務必誠實。
+
+【待認養者（我方）】
+${myProfile.name}／${myProfile.age||'年齡未填'}／${myProfile.area||''}
+自介：${myProfile.bio||'（未填）'}
+希望對方：${myProfile.wants||'（未填）'}
+
+【申請人】
+${from.name}／${from.age||'年齡未填'}／${from.area||''}／${from.job||''}
+自介：${from.bio||'（未填）'}
+
+【第一階段回答】
+${qa(q1, app.a1)}
+
+${app.a2 ? '【第二階段回答】\n' + qa(q2, app.a2) : ''}
+
+請用繁體中文寫出約 300 字的評估，包含：
+1. 相容之處
+2. 需要進一步確認的地方（列 2-3 個具體問題）
+3. 觀察到的紅旗（若沒有就說沒有，不要硬找）
+4. 建議：可進入下一階段／建議補件再看／建議婉拒
+
+不要編造對方沒說的事；資料不足就說資料不足。`;
+  try{
+    const text = await DB.askClaude(prompt);
+    const spent = await DB.spendCredit(1, `主治獸醫評估　${from.name}`);
+    if(spent.ok) myProfile = spent.profile;
+    const updated = await DB.updateApplication(app.id, {vet: text, vet_at: new Date().toISOString()});
+    Object.assign(app, updated);
+    box.innerHTML = `<div class="qa">${esc(text)}</div>`;
+  }catch(e){
+    box.innerHTML = `<p class="hint" style="color:var(--bad)">評估失敗：${esc(e.message)}（未扣點）</p>`;
+  }
 }
 
 /* ── 啟動 ── */

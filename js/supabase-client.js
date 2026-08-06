@@ -79,6 +79,22 @@
     if (error) throw error;
     return data;
   }
+
+  // ── 診療點數（模擬付費，用來限流 AI 呼叫） ──
+  async function spendCredit(amount, why) {
+    const p = await getMyProfile();
+    if (!p || p.credits < amount) return { ok: false, profile: p };
+    const log = (Array.isArray(p.credit_log) ? p.credit_log.slice() : []);
+    log.unshift({ at: new Date().toISOString(), t: why, d: -amount });
+    const profile = await saveMyProfile({ credits: p.credits - amount, credit_log: log.slice(0, 50) });
+    return { ok: true, profile };
+  }
+  async function topupCredit(amount, why) {
+    const p = await getMyProfile();
+    const log = (Array.isArray(p.credit_log) ? p.credit_log.slice() : []);
+    log.unshift({ at: new Date().toISOString(), t: why, d: amount });
+    return await saveMyProfile({ credits: (p.credits || 0) + amount, credit_log: log.slice(0, 50) });
+  }
   async function listProfiles() {
     const user = await getUser();
     const { data, error } = await sb.from('profiles').select('*')
@@ -155,6 +171,6 @@
     signUpEmail, signInEmail, signInGoogle, signOut, getUser, onAuthChange,
     ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles,
     listOutbox, listInbox, findApplicationTo, createApplication, updateApplication,
-    hasClaudeProxy, askClaude
+    hasClaudeProxy, askClaude, spendCredit, topupCredit
   };
 })();
