@@ -53,7 +53,22 @@ create table if not exists public.profiles (
   updated_at  timestamptz default now()
 );
 
--- 若資料表已存在（舊版本先執行過這份腳本），補上新欄位
+-- 若資料表已存在（舊版本先執行過這份腳本，或當初建表沒有完整跑完），補齊所有欄位。
+-- 每一行都獨立、彼此不依賴，就算表本來殘缺不全，這裡也會全部補齊。
+alter table public.profiles add column if not exists name text not null default '';
+alter table public.profiles add column if not exists kind text not null default '';
+alter table public.profiles add column if not exists species text not null default '';
+alter table public.profiles add column if not exists age text default '';
+alter table public.profiles add column if not exists area text default '';
+alter table public.profiles add column if not exists job text default '';
+alter table public.profiles add column if not exists bio text default '';
+alter table public.profiles add column if not exists wants text default '';
+alter table public.profiles add column if not exists locked text default '';
+alter table public.profiles add column if not exists q1 jsonb;
+alter table public.profiles add column if not exists q2_bank jsonb;
+alter table public.profiles add column if not exists canned jsonb;
+alter table public.profiles add column if not exists created_at timestamptz default now();
+alter table public.profiles add column if not exists updated_at timestamptz default now();
 alter table public.profiles add column if not exists credits int not null default 5;
 alter table public.profiles add column if not exists credit_log jsonb not null default '[]'::jsonb;
 alter table public.profiles alter column credits set default 5;
@@ -140,7 +155,19 @@ create table if not exists public.applications (
   check (from_user <> to_user)
 );
 
--- 若資料表已存在，補上新欄位
+-- 若資料表已存在（或當初建表沒有完整跑完），補齊所有欄位
+alter table public.applications add column if not exists from_user uuid;
+alter table public.applications add column if not exists to_user uuid;
+alter table public.applications add column if not exists stage int not null default 1;
+alter table public.applications add column if not exists status text not null default 'open';
+alter table public.applications add column if not exists a1 jsonb;
+alter table public.applications add column if not exists a2 jsonb;
+alter table public.applications add column if not exists a2_questions jsonb;
+alter table public.applications add column if not exists unlock_from boolean not null default false;
+alter table public.applications add column if not exists unlock_to boolean not null default false;
+alter table public.applications add column if not exists note text;
+alter table public.applications add column if not exists created_at timestamptz default now();
+alter table public.applications add column if not exists updated_at timestamptz default now();
 alter table public.applications add column if not exists keeper_note text;
 alter table public.applications add column if not exists vet text;
 alter table public.applications add column if not exists vet_at timestamptz;
