@@ -210,49 +210,49 @@
     <label>自我介紹（會公開）</label>
     <textarea id="mBio" rows="4" placeholder="興趣、生活型態、想找什麼樣的人⋯⋯"></textarea>
 
-    <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 詳細資料（選填．會公開）—</div>
+    <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 詳細資料（必填．會公開）—</div>
     <div class="row">
       <div><label>年收入區間</label>
-        <select id="mIncome"><option value="">不透露</option>
+        <select id="mIncome"><option value="" disabled selected>請選擇</option>
           <option>60 萬以下</option><option>60～72 萬</option><option>72～90 萬</option>
-          <option>90～120 萬</option><option>120 萬以上</option></select></div>
+          <option>90～120 萬</option><option>120 萬以上</option><option>不透露</option></select></div>
       <div><label>婚姻狀態</label>
-        <select id="mMarital"><option value="">不透露</option>
+        <select id="mMarital"><option value="" disabled selected>請選擇</option>
           <option>未婚</option><option>離婚</option><option>喪偶</option><option>其他</option></select></div>
       <div><label>是否有孩子</label>
-        <select id="mHasKids"><option value="">不透露</option>
+        <select id="mHasKids"><option value="" disabled selected>請選擇</option>
           <option>沒有</option><option>有，同住</option><option>有，未同住</option></select></div>
     </div>
     <div class="row">
       <div><label>兵役狀況</label>
-        <select id="mMilitary"><option value="">不適用／不透露</option>
+        <select id="mMilitary"><option value="" disabled selected>請選擇</option>
           <option>已服完義務役</option><option>已服完替代役</option><option>免役</option>
-          <option>無兵役義務</option><option>尚未服役</option></select></div>
+          <option>無兵役義務</option><option>尚未服役</option><option>不適用</option></select></div>
       <div><label>居住狀況</label>
-        <select id="mLiving"><option value="">不透露</option>
+        <select id="mLiving"><option value="" disabled selected>請選擇</option>
           <option>自己住</option><option>與父母同住</option><option>與室友同住</option><option>其他</option></select></div>
       <div><label>負債狀況</label>
-        <select id="mDebt"><option value="">不透露</option>
+        <select id="mDebt"><option value="" disabled selected>請選擇</option>
           <option>沒有</option><option>有，可負擔範圍內</option><option>有，目前壓力較大</option></select></div>
     </div>
     <div class="row">
       <div><label>關係期待</label>
-        <select id="mRelGoal"><option value="">不透露</option>
+        <select id="mRelGoal"><option value="" disabled selected>請選擇</option>
           <option>以結婚為前提的長期穩定關係</option><option>長期交往，順其自然發展</option>
           <option>先以朋友身分互相了解</option><option>其他</option></select></div>
       <div><label>生育規劃</label>
-        <select id="mKidsPlan"><option value="">不透露</option>
+        <select id="mKidsPlan"><option value="" disabled selected>請選擇</option>
           <option>想要小孩</option><option>不確定，需要再溝通</option><option>不想要小孩</option>
           <option>已有小孩，不打算再生</option><option>其他</option></select></div>
       <div><label>MBTI（選填）</label><input id="mMbti" placeholder="例：INTJ"></div>
     </div>
-    <label>一週工作時數（含通勤，選填）</label>
+    <label>一週工作時數（含通勤）</label>
     <input id="mWorkHours" placeholder="例：45 小時">
-    <label>興趣與休閒活動（可複選）</label>
+    <label>興趣與休閒活動（可複選，至少選 1 項）</label>
     <div class="row" id="mInterests" style="flex-wrap:wrap;gap:6px 16px"></div>
-    <label>個性介紹（可複選）</label>
+    <label>個性介紹（可複選，至少選 1 項）</label>
     <div class="row" id="mPersonality" style="flex-wrap:wrap;gap:6px 16px"></div>
-    <label>生活習慣（可複選，據實勾選就好）</label>
+    <label>生活習慣（可複選，選填，據實勾選就好）</label>
     <div class="row" id="mHabits" style="flex-wrap:wrap;gap:6px 16px"></div>
     <input id="mHabitsOther" placeholder="其他習慣（選填）" style="margin-top:8px">
 
@@ -649,9 +649,20 @@ $('mVFile').onchange = async (e) => {
     $('verifyState').textContent = '已選擇，儲存登記後送審。';
   }catch(err){ $('verifyState').textContent = err.message; }
 };
+const REQUIRED_DETAIL_SELECTS = [
+  ['mIncome','年收入區間'], ['mMarital','婚姻狀態'], ['mHasKids','是否有孩子'],
+  ['mMilitary','兵役狀況'], ['mLiving','居住狀況'], ['mDebt','負債狀況'],
+  ['mRelGoal','關係期待'], ['mKidsPlan','生育規劃']
+];
 $('mSave').onclick = async () => {
   const name = mName.value.trim();
   if(!name){ flash('meMsg','請填暱稱'); return; }
+  for(const [id, label] of REQUIRED_DETAIL_SELECTS){
+    if(!$(id).value){ flash('meMsg', `詳細資料還沒填完：請選擇「${label}」`); return; }
+  }
+  if(!mWorkHours.value.trim()){ flash('meMsg','詳細資料還沒填完：請填寫「一週工作時數」'); return; }
+  if(!getCheckGroup('mInterests').length){ flash('meMsg','詳細資料還沒填完：請至少勾選一項「興趣與休閒活動」'); return; }
+  if(!getCheckGroup('mPersonality').length){ flash('meMsg','詳細資料還沒填完：請至少勾選一項「個性介紹」'); return; }
   if(!$('mConsent').checked){ flash('meMsg','請先閱讀並勾選同意隱私權政策'); return; }
   const newPhoto  = $('mPhoto').dataset.new  === '1' ? $('mPhoto').src  : null;
   const newVerify = $('mVerify').dataset.new === '1' ? $('mVerify').src : null;
