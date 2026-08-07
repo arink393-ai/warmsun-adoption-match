@@ -49,6 +49,27 @@ create table if not exists public.profiles (
   consent_at  timestamptz,
   bonus_given boolean not null default false,  -- 完成登記＋照片審核通過的獎勵點數是否已發過
   is_admin    boolean not null default false,  -- 審核台權限；只能自己去 Table Editor 手動打勾給信任帳號
+  -- 詳細資料（選填，會公開）
+  income      text default '',
+  marital     text default '',
+  has_kids    text default '',
+  military    text default '',
+  living      text default '',
+  debt        text default '',
+  relationship_goal text default '',
+  kids_plan   text default '',
+  mbti        text default '',
+  work_hours  text default '',
+  interests   jsonb not null default '[]'::jsonb,
+  personality jsonb not null default '[]'::jsonb,
+  habits      jsonb not null default '[]'::jsonb,
+  habits_other text default '',
+  -- 希望對方的條件（選填，會公開）
+  req_marital text default '',
+  req_age_min text default '',
+  req_age_max text default '',
+  req_kids    text default '',
+  req_habits  jsonb not null default '[]'::jsonb,
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
@@ -82,6 +103,28 @@ alter table public.profiles add column if not exists consent boolean not null de
 alter table public.profiles add column if not exists consent_at timestamptz;
 alter table public.profiles add column if not exists bonus_given boolean not null default false;
 alter table public.profiles add column if not exists is_admin boolean not null default false;
+
+-- 詳細資料（選填，會公開）——自介的結構化欄位
+alter table public.profiles add column if not exists income text default '';
+alter table public.profiles add column if not exists marital text default '';
+alter table public.profiles add column if not exists has_kids text default '';
+alter table public.profiles add column if not exists military text default '';
+alter table public.profiles add column if not exists living text default '';
+alter table public.profiles add column if not exists debt text default '';
+alter table public.profiles add column if not exists relationship_goal text default '';
+alter table public.profiles add column if not exists kids_plan text default '';
+alter table public.profiles add column if not exists mbti text default '';
+alter table public.profiles add column if not exists work_hours text default '';
+alter table public.profiles add column if not exists interests jsonb not null default '[]'::jsonb;
+alter table public.profiles add column if not exists personality jsonb not null default '[]'::jsonb;
+alter table public.profiles add column if not exists habits jsonb not null default '[]'::jsonb;
+alter table public.profiles add column if not exists habits_other text default '';
+-- 希望對方的條件（選填，會公開）
+alter table public.profiles add column if not exists req_marital text default '';
+alter table public.profiles add column if not exists req_age_min text default '';
+alter table public.profiles add column if not exists req_age_max text default '';
+alter table public.profiles add column if not exists req_kids text default '';
+alter table public.profiles add column if not exists req_habits jsonb not null default '[]'::jsonb;
 
 alter table public.profiles enable row level security;
 

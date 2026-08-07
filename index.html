@@ -209,8 +209,68 @@
 
     <label>自我介紹（會公開）</label>
     <textarea id="mBio" rows="4" placeholder="興趣、生活型態、想找什麼樣的人⋯⋯"></textarea>
-    <label>希望對方是（會公開）</label>
-    <textarea id="mWants" rows="3" placeholder="例：年齡 25-40、能接受兩隻貓、重視溝通"></textarea>
+
+    <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 詳細資料（選填．會公開）—</div>
+    <div class="row">
+      <div><label>年收入區間</label>
+        <select id="mIncome"><option value="">不透露</option>
+          <option>60 萬以下</option><option>60～72 萬</option><option>72～90 萬</option>
+          <option>90～120 萬</option><option>120 萬以上</option></select></div>
+      <div><label>婚姻狀態</label>
+        <select id="mMarital"><option value="">不透露</option>
+          <option>未婚</option><option>離婚</option><option>喪偶</option><option>其他</option></select></div>
+      <div><label>是否有孩子</label>
+        <select id="mHasKids"><option value="">不透露</option>
+          <option>沒有</option><option>有，同住</option><option>有，未同住</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>兵役狀況</label>
+        <select id="mMilitary"><option value="">不適用／不透露</option>
+          <option>已服完義務役</option><option>已服完替代役</option><option>免役</option>
+          <option>無兵役義務</option><option>尚未服役</option></select></div>
+      <div><label>居住狀況</label>
+        <select id="mLiving"><option value="">不透露</option>
+          <option>自己住</option><option>與父母同住</option><option>與室友同住</option><option>其他</option></select></div>
+      <div><label>負債狀況</label>
+        <select id="mDebt"><option value="">不透露</option>
+          <option>沒有</option><option>有，可負擔範圍內</option><option>有，目前壓力較大</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>關係期待</label>
+        <select id="mRelGoal"><option value="">不透露</option>
+          <option>以結婚為前提的長期穩定關係</option><option>長期交往，順其自然發展</option>
+          <option>先以朋友身分互相了解</option><option>其他</option></select></div>
+      <div><label>生育規劃</label>
+        <select id="mKidsPlan"><option value="">不透露</option>
+          <option>想要小孩</option><option>不確定，需要再溝通</option><option>不想要小孩</option>
+          <option>已有小孩，不打算再生</option><option>其他</option></select></div>
+      <div><label>MBTI（選填）</label><input id="mMbti" placeholder="例：INTJ"></div>
+    </div>
+    <label>一週工作時數（含通勤，選填）</label>
+    <input id="mWorkHours" placeholder="例：45 小時">
+    <label>興趣與休閒活動（可複選）</label>
+    <div class="row" id="mInterests" style="flex-wrap:wrap;gap:6px 16px"></div>
+    <label>個性介紹（可複選）</label>
+    <div class="row" id="mPersonality" style="flex-wrap:wrap;gap:6px 16px"></div>
+    <label>生活習慣（可複選，據實勾選就好）</label>
+    <div class="row" id="mHabits" style="flex-wrap:wrap;gap:6px 16px"></div>
+    <input id="mHabitsOther" placeholder="其他習慣（選填）" style="margin-top:8px">
+
+    <label style="margin-top:20px">希望對方是（會公開）</label>
+    <textarea id="mWants" rows="3" placeholder="例：重視溝通、個性穩定⋯⋯"></textarea>
+
+    <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 希望對方的條件（選填．會公開）—</div>
+    <div class="row">
+      <div><label>婚姻要求</label>
+        <select id="mReqMarital"><option value="">不限</option><option>需未婚</option></select></div>
+      <div><label>年齡下限</label><input id="mReqAgeMin" placeholder="例：28"></div>
+      <div><label>年齡上限</label><input id="mReqAgeMax" placeholder="例：40"></div>
+    </div>
+    <label>孩子要求</label>
+    <select id="mReqKids"><option value="">不限</option><option>需沒有小孩</option><option>可接受已有小孩</option></select>
+    <label>生活習慣要求（可複選）</label>
+    <div class="row" id="mReqHabits" style="flex-wrap:wrap;gap:6px 16px"></div>
+
     <label>日常觀察資訊（第三階段解鎖後才會顯示給對方）</label>
     <textarea id="mLocked" rows="2" placeholder="例：IG @your_account"></textarea>
     <label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px">
@@ -393,6 +453,25 @@ const GESTURES = [
 ];
 const isApproved = p => !!p && p.photo_status === 'approved' && p.verify_status === 'approved';
 
+/* ── 詳細資料的複選項目 ── */
+const INTEREST_OPTS = ['閱讀','電影／影集','旅行','健身／運動','烹飪','遊戲','音樂','藝術／手作','寵物','戶外／登山','追劇／動漫','攝影'];
+const PERSONALITY_OPTS = ['內向','外向','慢熱','理性','感性','幽默','務實','浪漫','獨立','顧家','樂觀','細心'];
+const HABITS_OPTS = ['抽菸','喝酒（社交場合）','喝酒（習慣性）','檳榔','賭博','經常夜生活'];
+const REQ_HABITS_OPTS = ['不能抽菸','不能習慣性飲酒','不能檳榔','不能賭博'];
+function renderCheckGroup(containerId, opts){
+  $(containerId).innerHTML = opts.map(o => `
+    <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink);margin:0">
+      <input type="checkbox" value="${esc(o)}" style="width:auto;margin:0">${esc(o)}
+    </label>`).join('');
+}
+function getCheckGroup(containerId){
+  return [...$(containerId).querySelectorAll('input:checked')].map(x => x.value);
+}
+function setCheckGroup(containerId, values){
+  const v = Array.isArray(values) ? values : [];
+  $(containerId).querySelectorAll('input[type=checkbox]').forEach(c => c.checked = v.includes(c.value));
+}
+
 let me = null, myProfile = null, profiles = [], apps = [], templateMaster = [];
 const OWNER_EMAIL = 'arink393@gmail.com';
 
@@ -533,6 +612,17 @@ async function fillMe(){
   mName.value = myProfile.name||''; mKind.value = myProfile.kind||'pet'; mSpecies.value = myProfile.species||'cat';
   mAge.value = myProfile.age||''; mArea.value = myProfile.area||''; mJob.value = myProfile.job||'';
   mBio.value = myProfile.bio||''; mWants.value = myProfile.wants||''; mLocked.value = myProfile.locked||'';
+  mIncome.value = myProfile.income||''; mMarital.value = myProfile.marital||''; mHasKids.value = myProfile.has_kids||'';
+  mMilitary.value = myProfile.military||''; mLiving.value = myProfile.living||''; mDebt.value = myProfile.debt||'';
+  mRelGoal.value = myProfile.relationship_goal||''; mKidsPlan.value = myProfile.kids_plan||''; mMbti.value = myProfile.mbti||'';
+  mWorkHours.value = myProfile.work_hours||'';
+  setCheckGroup('mInterests', myProfile.interests);
+  setCheckGroup('mPersonality', myProfile.personality);
+  setCheckGroup('mHabits', myProfile.habits);
+  mHabitsOther.value = myProfile.habits_other||'';
+  mReqMarital.value = myProfile.req_marital||''; mReqAgeMin.value = myProfile.req_age_min||''; mReqAgeMax.value = myProfile.req_age_max||'';
+  mReqKids.value = myProfile.req_kids||'';
+  setCheckGroup('mReqHabits', myProfile.req_habits);
   mConsent.checked = !!myProfile.consent;
   if(myProfile.photo_status !== 'none') $('mPhoto').src = DB.avatarUrl(me.id, myProfile.updated_at);
   if(myProfile.verify_status !== 'none' && myProfile.verify_status !== 'approved'){
@@ -570,6 +660,14 @@ $('mSave').onclick = async () => {
       name, kind: mKind.value, species: mSpecies.value,
       age: mAge.value.trim(), area: mArea.value.trim(), job: mJob.value.trim(),
       bio: mBio.value.trim(), wants: mWants.value.trim(), locked: mLocked.value.trim(),
+      income: mIncome.value, marital: mMarital.value, has_kids: mHasKids.value,
+      military: mMilitary.value, living: mLiving.value, debt: mDebt.value,
+      relationship_goal: mRelGoal.value, kids_plan: mKidsPlan.value, mbti: mMbti.value.trim(),
+      work_hours: mWorkHours.value.trim(),
+      interests: getCheckGroup('mInterests'), personality: getCheckGroup('mPersonality'),
+      habits: getCheckGroup('mHabits'), habits_other: mHabitsOther.value.trim(),
+      req_marital: mReqMarital.value, req_age_min: mReqAgeMin.value.trim(), req_age_max: mReqAgeMax.value.trim(),
+      req_kids: mReqKids.value, req_habits: getCheckGroup('mReqHabits'),
       consent: true
     };
     if(!myProfile.consent) patch.consent_at = new Date().toISOString();
@@ -649,6 +747,34 @@ pass 或 reject|一句話說明理由（繁體中文，20 字內）`}
   return {ok: /pass/i.test(p[0]||''), reason: (p[1]||'').trim()};
 }
 
+/* 佈告欄卡片：把詳細資料／希望對方的條件摺疊起來，避免卡片太長 */
+function detailBlock(p){
+  const hasSelf = p.marital || p.has_kids || p.income || p.relationship_goal || p.kids_plan
+    || (Array.isArray(p.interests) && p.interests.length)
+    || (Array.isArray(p.personality) && p.personality.length)
+    || (Array.isArray(p.habits) && p.habits.length);
+  const reqParts = [
+    p.req_marital,
+    (p.req_age_min || p.req_age_max) ? `年齡 ${p.req_age_min || '不限'}～${p.req_age_max || '不限'}` : '',
+    p.req_kids,
+    (Array.isArray(p.req_habits) && p.req_habits.length) ? p.req_habits.join('、') : ''
+  ].filter(Boolean);
+  if(!hasSelf && !reqParts.length) return '';
+  const list = (arr) => Array.isArray(arr) && arr.length ? arr.map(esc).join('、') : '';
+  return `<details style="margin-top:8px">
+    <summary class="hint" style="cursor:pointer">詳細資料</summary>
+    <div class="hint" style="margin-top:6px;line-height:1.9">
+      ${[p.marital && `婚姻：${esc(p.marital)}`, p.has_kids && `孩子：${esc(p.has_kids)}`, p.income && `年收入：${esc(p.income)}`].filter(Boolean).join('　')}
+      ${p.relationship_goal ? `<br>關係期待：${esc(p.relationship_goal)}` : ''}
+      ${p.kids_plan ? `<br>生育規劃：${esc(p.kids_plan)}` : ''}
+      ${list(p.interests) ? `<br>興趣：${list(p.interests)}` : ''}
+      ${list(p.personality) ? `<br>個性：${list(p.personality)}` : ''}
+      ${list(p.habits) ? `<br>習慣：${list(p.habits)}${p.habits_other ? '、' + esc(p.habits_other) : ''}` : ''}
+      ${reqParts.length ? `<br>希望對方：${reqParts.map(esc).join('，')}` : ''}
+    </div>
+  </details>`;
+}
+
 /* ── 佈告欄 ── */
 async function renderBoard(){
   const sp = fSpecies.value, kd = fKind.value, q = fText.value.trim().toLowerCase();
@@ -673,6 +799,7 @@ async function renderBoard(){
               .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
       ${p.bio ? `<div class="bio">${esc(p.bio)}</div>` : ''}
       ${p.wants ? `<div class="hint">希望對方：${esc(p.wants)}</div>` : ''}
+      ${detailBlock(p)}
       <div class="lock ${unlocked?'open':''}">${unlocked
         ? '🔓 日常觀察：' + esc(p.locked || '（對方尚未填寫）')
         : '🔒 日常觀察資訊需通過三階段審查後解鎖'}</div>
@@ -1156,6 +1283,10 @@ async function boot(){
 $('clinicRefundDays').textContent = REFUND_DAYS;
 $('howFreeCredits').textContent = 5;
 $('howPhotoBonus').textContent = PHOTO_BONUS;
+renderCheckGroup('mInterests', INTEREST_OPTS);
+renderCheckGroup('mPersonality', PERSONALITY_OPTS);
+renderCheckGroup('mHabits', HABITS_OPTS);
+renderCheckGroup('mReqHabits', REQ_HABITS_OPTS);
 initTabs();
 initCenter();
 </script>
