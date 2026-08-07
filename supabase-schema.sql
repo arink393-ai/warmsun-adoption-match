@@ -129,6 +129,13 @@ create policy "profiles_delete_own"
   to authenticated
   using (auth.uid() = id);
 
+-- 管理員可以移除任何一筆登記（例如檢舉查證屬實後下架）
+drop policy if exists "profiles_delete_admin" on public.profiles;
+create policy "profiles_delete_admin"
+  on public.profiles for delete
+  to authenticated
+  using (public.is_admin(auth.uid()));
+
 -- ============================================================
 -- 2) applications：認養申請（一位申請人對一位登記對象只有一筆）
 -- ============================================================
@@ -198,6 +205,13 @@ create policy "applications_update_participant"
   to authenticated
   using (auth.uid() = from_user or auth.uid() = to_user)
   with check (auth.uid() = from_user or auth.uid() = to_user);
+
+-- 管理員移除違規登記時，一併清掉相關申請
+drop policy if exists "applications_delete_admin" on public.applications;
+create policy "applications_delete_admin"
+  on public.applications for delete
+  to authenticated
+  using (public.is_admin(auth.uid()));
 
 -- ============================================================
 -- 3) updated_at 自動更新
@@ -294,7 +308,127 @@ create policy "verify_admin_delete"
   using (bucket_id = 'verify' and public.is_admin(auth.uid()));
 
 -- ============================================================
--- 6) 把自己設成管理員（審核台權限）
+-- 6) reports：檢舉（任何人都能送出，只有管理員看得到／能處理）
+-- ============================================================
+create table if not exists public.reports (
+  id         uuid primary key default gen_random_uuid(),
+  target_id  uuid references public.profiles(id) on delete cascade,
+  by_id      uuid references public.profiles(id) on delete set null,
+  why        text not null,
+  done       boolean not null default false,
+  created_at timestamptz default now()
+);
+
+alter table public.reports enable row level security;
+
+drop policy if exists "reports_insert_own"    on public.reports;
+drop policy if exists "reports_select_admin"  on public.reports;
+drop policy if exists "reports_update_admin"  on public.reports;
+
+create policy "reports_insert_own"
+  on public.reports for insert
+  to authenticated
+  with check (by_id = auth.uid());
+
+create policy "reports_select_admin"
+  on public.reports for select
+  to authenticated
+  using (public.is_admin(auth.uid()));
+
+create policy "reports_update_admin"
+  on public.reports for update
+  to authenticated
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
+
+-- ============================================================
+-- 7) template_master：新會員預設的罐頭回覆庫（只有管理員能改）
+--    每個會員自己改過的內容存在 profiles.canned，只覆蓋自己的那份，
+--    不會動到這裡的主檔；主檔只影響「還原預設」與全新註冊的會員。
+-- ============================================================
+create table if not exists public.template_master (
+  id   text primary key,
+  name text not null,
+  text text not null
+);
+
+alter table public.template_master enable row level security;
+
+drop policy if exists "template_master_select_all" on public.template_master;
+drop policy if exists "template_master_write_admin" on public.template_master;
+
+create policy "template_master_select_all"
+  on public.template_master for select
+  to authenticated
+  using (true);
+
+create policy "template_master_write_admin"
+  on public.template_master for all
+  to authenticated
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
+
+insert into public.template_master (id, name, text) values
+('pass1', '① 通過第一階段',
+'謝謝你願意完整填寫申請😊
+看得出你有認真想過，目前沒有發現明顯的條件衝突，想邀請你進入第二階段。
+第二階段沒有標準答案，只是想多了解你面對真實問題時會怎麼想、怎麼做。'),
+('supp', '② 請對方補充',
+'謝謝你的申請😊
+有幾個地方我還不太確定，方便再多說一點嗎？
+（列出想問的部分）
+不用急著回，慢慢想再告訴我就好。'),
+('pass2', '③ 通過第二階段',
+'謝謝你花時間回答這些問題😊
+你的答案不需要完美，但我感受到你願意思考共同生活這件事。
+如果你也還想繼續認識，我們可以進到第三階段，慢慢看看彼此的日常。'),
+('hold', '④ 想再觀察一陣子',
+'謝謝你的回覆😊
+我目前想再多一點時間認識，暫時先維持在這個階段，不急著往下走。
+這不是負面的意思，只是希望雙方都不要因為一時熱情而太快推進。'),
+('no', '⑤ 婉拒',
+'謝謝你願意花時間提出申請，也謝謝你這麼完整地介紹自己😊
+想了想，我還是決定先不繼續往下了。
+不是你不好，只是在一些對彼此都重要的事情上，方向不太一樣。
+祝你早日遇到真正合拍的人🌼'),
+('stop', '⑥ 中途喊停',
+'謝謝你這段時間的認識😊
+我想在這裡先停下來，這個決定與你的好壞無關。
+希望你之後一切順利🌼')
+on conflict (id) do nothing;
+
+-- profiles.canned 現在給「所有會員」當作自己的罐頭回覆覆蓋值使用
+-- （原本註解寫僅 kind='pet' 使用，現在放寬給所有人）
+comment on column public.profiles.canned is '自訂罐頭回覆庫覆蓋值（所有會員都可使用，對照 template_master 的主檔）';
+
+-- ============================================================
+-- 8) owner_kv：私人工具（暖陽動物之家回覆助手）專用的個人儲存空間
+--    只給你自己的帳號使用，其他人完全存取不到
+-- ============================================================
+create table if not exists public.owner_kv (
+  owner_id   uuid not null references auth.users(id) on delete cascade,
+  k          text not null,
+  v          text not null,
+  updated_at timestamptz not null default now(),
+  primary key (owner_id, k)
+);
+
+alter table public.owner_kv enable row level security;
+
+drop policy if exists "owner_kv_self_all" on public.owner_kv;
+
+create policy "owner_kv_self_all"
+  on public.owner_kv for all
+  to authenticated
+  using (auth.uid() = owner_id)
+  with check (auth.uid() = owner_id);
+
+drop trigger if exists trg_owner_kv_touch on public.owner_kv;
+create trigger trg_owner_kv_touch before update on public.owner_kv
+  for each row execute function public.touch_updated_at();
+
+-- ============================================================
+-- 9) 把自己設成管理員（審核台權限）
 --    這行不會自動執行——執行完上面全部之後，自己先用這個帳號登入一次，
 --    再回到 SQL Editor，把 <你的帳號 email> 換成自己的 email，單獨執行這一段：
 --

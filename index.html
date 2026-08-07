@@ -257,6 +257,33 @@
   </fieldset>
 </div>
 
+<!-- 我的回覆範本 -->
+<div class="pane" id="pane-tpl">
+  <fieldset>
+    <legend>我的回覆範本</legend>
+    <p class="hint" style="margin:0 0 8px">處理申請時可以一鍵套用。你可以自由修改成自己的語氣，只有你看得到。</p>
+    <select id="tplPick"></select>
+    <textarea id="tplText" rows="8" style="margin-top:8px"></textarea>
+    <div class="bar">
+      <button class="ghost" id="tplCopy">複製</button>
+      <button class="ghost" id="tplSave">存這封</button>
+      <button class="ghost" id="tplReset">還原預設</button>
+      <span class="msg" id="tplMsg"></span>
+    </div>
+  </fieldset>
+</div>
+
+<!-- 個人中心容器 -->
+<div class="pane" id="pane-center">
+  <div class="tabbar" id="subbar" style="border-bottom:1px solid var(--rule)"></div>
+  <div id="centerSlot"></div>
+</div>
+
+<!-- 管理後台 -->
+<div class="pane" id="pane-admin">
+  <div id="adminBody"><p class="hint">讀取中⋯⋯</p></div>
+</div>
+
 <!-- 流程說明 -->
 <div class="pane" id="pane-how">
   <fieldset>
@@ -366,7 +393,8 @@ const GESTURES = [
 ];
 const isApproved = p => !!p && p.photo_status === 'approved' && p.verify_status === 'approved';
 
-let me = null, myProfile = null, profiles = [], apps = [];
+let me = null, myProfile = null, profiles = [], apps = [], templateMaster = [];
+const OWNER_EMAIL = 'arink393@gmail.com';
 
 /* ── 登入 gate ── */
 let gateMode = 'login';
@@ -411,11 +439,14 @@ DB.onAuthChange(async (user) => {
 
 /* ── 分頁 ── */
 const PANES = [
-  {k:'board', t:'佈告欄'}, {k:'me', t:'我的登記'},
-  {k:'out', t:'我送出的申請'}, {k:'in', t:'我收到的申請'},
-  {k:'clinic', t:'診療室'}, {k:'audit', t:'審核台'},
+  {k:'board', t:'佈告欄'}, {k:'center', t:'個人中心'}, {k:'admin', t:'管理後台'},
   {k:'how', t:'流程說明'}, {k:'privacy', t:'隱私權'}
 ];
+const SUBS = [
+  {k:'me', t:'我的資料'}, {k:'in', t:'我的收件匣'}, {k:'out', t:'我的申請'},
+  {k:'tpl', t:'我的回覆範本'}, {k:'clinic', t:'診療點數'}
+];
+let curSub = 'me';
 function gotoTab(k){
   const b = $('tabbar').querySelector(`.tabbtn[data-k="${k}"]`); if(!b) return;
   b.click();
@@ -425,18 +456,53 @@ function initTabs(){
     `<button class="tabbtn${i?'':' on'}" data-k="${p.k}">${p.t}</button>`).join('');
   $('tabbar').onclick = e => {
     const b = e.target.closest('.tabbtn'); if(!b) return;
-    document.querySelectorAll('.tabbtn').forEach(x => x.classList.toggle('on', x === b));
-    document.querySelectorAll('.pane').forEach(x => x.classList.toggle('on', x.id === 'pane-' + b.dataset.k));
-    if(b.dataset.k === 'out') renderOutbox();
-    if(b.dataset.k === 'in') renderInbox();
+    document.querySelectorAll('#tabbar .tabbtn').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('#app > .pane').forEach(x => x.classList.toggle('on', x.id === 'pane-' + b.dataset.k));
     if(b.dataset.k === 'board') renderBoard();
-    if(b.dataset.k === 'clinic') renderClinic();
-    if(b.dataset.k === 'audit') renderAudit();
+    if(b.dataset.k === 'center') showSub(curSub);
+    if(b.dataset.k === 'admin') renderAdminHome();
   };
   document.addEventListener('click', e => {
     const g = e.target.closest('[data-goto]'); if(!g) return;
     e.preventDefault(); gotoTab(g.dataset.goto);
   });
+}
+/* ── 個人中心（把 me/in/out/tpl/clinic 搬進去，變成子分頁） ── */
+function initCenter(){
+  const slot = $('centerSlot');
+  SUBS.forEach(s => slot.appendChild($('pane-' + s.k)));
+  $('subbar').innerHTML = SUBS.map((s,i) =>
+    `<button class="tabbtn${i?'':' on'}" data-k="${s.k}">${s.t}</button>`).join('');
+  $('subbar').onclick = e => {
+    const b = e.target.closest('.tabbtn'); if(!b) return;
+    showSub(b.dataset.k);
+  };
+  showSub(curSub);
+}
+function showSub(k){
+  curSub = k;
+  document.querySelectorAll('#subbar .tabbtn').forEach(x => x.classList.toggle('on', x.dataset.k === k));
+  SUBS.forEach(s => { const el = $('pane-' + s.k); if(el) el.classList.toggle('on', s.k === k); });
+  if(k === 'me') fillMe();
+  if(k === 'in') renderInbox();
+  if(k === 'out') renderOutbox();
+  if(k === 'tpl') renderTpl();
+  if(k === 'clinic') renderClinic();
+}
+/* 私人工具連結：只有站長本人（arink393@gmail.com）看得到 */
+function showMyLinks(){
+  let box = $('ownerToolBox');
+  const isOwner = me && (me.email || '').toLowerCase() === OWNER_EMAIL;
+  if(isOwner){
+    if(!box){
+      box = document.createElement('div');
+      box.id = 'ownerToolBox';
+      box.className = 'notice';
+      box.style.marginTop = '14px';
+      box.innerHTML = '🔧 <a href="shelter-review-assistant.html" target="_blank">小橘的 Dcard 企劃工具（僅本人可見）</a>';
+      $('pane-me').appendChild(box);
+    }
+  }else if(box){ box.remove(); }
 }
 
 /* ── 我的登記 ── */
@@ -616,9 +682,19 @@ async function renderBoard(){
         : app ? `<span class="stage s${app.status==='rejected'?0:app.stage}">目前：${stageText(app)}</span>`
         : `<button class="ghost apply" data-id="${p.id}">提出認養申請（${APPLY_COST} 點）</button>`}
       </div>
+      <div class="bar" style="margin-top:4px">
+        <button class="ghost report" data-id="${p.id}" style="font-size:11px;padding:3px 8px">⚑ 檢舉</button>
+      </div>
     </div>`;
   }).join('');
   $('board').querySelectorAll('.apply').forEach(b => b.onclick = () => openApply(b.dataset.id));
+  $('board').querySelectorAll('.report').forEach(b => b.onclick = () => reportProfile(b.dataset.id));
+}
+async function reportProfile(id){
+  const why = prompt('請說明檢舉原因（例如：疑似盜圖、資料造假、騷擾訊息）');
+  if(!why) return;
+  try{ await DB.submitReport(id, why); alert('已收到檢舉，管理員會盡快處理。'); }
+  catch(e){ alert(e.message || '送出失敗'); }
 }
 function stageText(a){
   if(a.status === 'rejected') return '未通過';
@@ -784,7 +860,8 @@ function bindInbox(){
     try{ await upd(a.id, patch); }catch(e){ alert(e.message||'操作失敗'); }
   });
   $('inbox').querySelectorAll('.rej').forEach(b => b.onclick = async () => {
-    const note = prompt('想留一句話給對方嗎？（可留空）');
+    const note = prompt('想留一句話給對方嗎？（可留空，已帶入你的「婉拒」範本，可直接修改）', tplById('no'));
+    if(note === null) return;
     try{ await upd(b.dataset.app, {status:'rejected', note: note||null}); }catch(e){ alert(e.message||'操作失敗'); }
   });
   $('inbox').querySelectorAll('.unlockTo').forEach(b => b.onclick = async () => {
@@ -817,6 +894,51 @@ function renderClinic(){
     : '<div class="empty">還沒有紀錄。</div>';
   $('clinicMsg').textContent = '原型版本的儲值為模擬，不會實際扣款。';
 }
+
+/* ── 我的回覆範本：站方預設範本（template_master）＋ 個人覆寫（profiles.canned） ── */
+function mergedTemplates(){
+  const overrides = Array.isArray(myProfile && myProfile.canned) ? myProfile.canned : [];
+  return templateMaster.map(t => {
+    const o = overrides.find(x => x.id === t.id);
+    return {id: t.id, name: t.name, text: (o && o.text) || t.text};
+  });
+}
+function tplById(id){
+  const t = mergedTemplates().find(x => x.id === id);
+  return t ? t.text : '';
+}
+function renderTpl(){
+  const list = mergedTemplates();
+  const keep = $('tplPick').value;
+  $('tplPick').innerHTML = list.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  if(list.some(t => t.id === keep)) $('tplPick').value = keep;
+  loadTplText();
+}
+function loadTplText(){
+  const t = mergedTemplates().find(x => x.id === $('tplPick').value);
+  $('tplText').value = t ? t.text : '';
+}
+$('tplPick').onchange = loadTplText;
+$('tplCopy').onclick = async () => {
+  try{ await navigator.clipboard.writeText($('tplText').value); flash('tplMsg','已複製到剪貼簿'); }
+  catch(e){ flash('tplMsg','複製失敗，請手動選取文字'); }
+};
+$('tplSave').onclick = async () => {
+  const id = $('tplPick').value; if(!id) return;
+  const overrides = Array.isArray(myProfile.canned) ? myProfile.canned.slice() : [];
+  const i = overrides.findIndex(x => x.id === id);
+  const rec = {id, text: $('tplText').value};
+  if(i >= 0) overrides[i] = rec; else overrides.push(rec);
+  try{ myProfile = await DB.saveMyProfile({canned: overrides}); flash('tplMsg','已儲存這封'); renderTpl(); }
+  catch(e){ flash('tplMsg', e.message || '儲存失敗'); }
+};
+$('tplReset').onclick = async () => {
+  const id = $('tplPick').value; if(!id) return;
+  if(!confirm('還原成系統預設內容？你自己修改過的內容會被覆蓋。')) return;
+  const overrides = (Array.isArray(myProfile.canned) ? myProfile.canned : []).filter(x => x.id !== id);
+  try{ myProfile = await DB.saveMyProfile({canned: overrides}); flash('tplMsg','已還原為預設'); renderTpl(); }
+  catch(e){ flash('tplMsg', e.message || '還原失敗'); }
+};
 
 async function vetReview(app, from){
   const box = $('vet-' + app.id);
@@ -952,6 +1074,70 @@ async function renderAudit(){
   });
 }
 
+/* ── 管理後台：全站統計、檢舉處理、範本主檔管理（重新掛載審核台） ── */
+async function renderAdminHome(){
+  const body = $('adminBody');
+  if(!myProfile || !myProfile.is_admin){
+    body.innerHTML = '<p class="hint">你不是管理員，看不到後台內容。</p>';
+    return;
+  }
+  if(!$('adminStats')){
+    body.innerHTML = `
+      <fieldset><legend>全站統計</legend><p class="hint" id="adminStats">讀取中⋯⋯</p></fieldset>
+      <fieldset><legend>檢舉處理</legend><div id="reportList"><p class="hint">讀取中⋯⋯</p></div></fieldset>
+      <fieldset><legend>範本主檔管理</legend><div id="tplMasterList"></div></fieldset>
+      <div id="auditMount"></div>`;
+    $('auditMount').appendChild($('pane-audit'));
+    $('pane-audit').classList.add('on');
+  }
+
+  let allProfiles, allApps, reports;
+  try{
+    [allProfiles, allApps, reports] = await Promise.all([
+      DB.adminListAllProfiles(), DB.adminListAllApplications(), DB.adminListReports()
+    ]);
+  }catch(e){ $('adminStats').textContent = '讀取失敗：' + e.message; return; }
+
+  const approved = allProfiles.filter(p => p.photo_status === 'approved' && p.verify_status === 'approved').length;
+  $('adminStats').textContent =
+    `登記總數：${allProfiles.length}　已通過審核：${approved}　申請總數：${allApps.length}　未處理檢舉：${reports.filter(r=>!r.done).length}`;
+
+  const nameOf = id => { const p = allProfiles.find(x => x.id === id); return p ? p.name : '（已刪除）'; };
+  $('reportList').innerHTML = reports.length ? reports.map(r => `
+    <div class="qa">
+      <b>${new Date(r.created_at).toLocaleString('zh-TW')}　${r.done ? '✅ 已處理' : '⏳ 待處理'}</b>
+      被檢舉：${esc(nameOf(r.target_id))}　檢舉人：${esc(nameOf(r.by_id))}<br>
+      原因：${esc(r.why)}
+      ${!r.done ? `<div class="bar">
+          <button class="ghost mark" data-id="${r.id}">標記已處理</button>
+          <button class="ghost rmProf" data-id="${r.target_id}">移除該登記</button>
+        </div>` : ''}
+    </div>`).join('') : '<div class="empty">目前沒有檢舉。</div>';
+
+  $('tplMasterList').innerHTML = templateMaster.map(t => `
+      <label>${esc(t.name)}（${esc(t.id)}）</label>
+      <textarea rows="3" class="tplMasterText" data-id="${t.id}">${esc(t.text)}</textarea>`).join('')
+    + '<div class="bar"><button class="ghost" id="tplMasterSave">儲存所有範本</button><span class="msg" id="tplMasterMsg"></span></div>';
+
+  $('reportList').querySelectorAll('.mark').forEach(b => b.onclick = async () => {
+    try{ await DB.adminMarkReportDone(b.dataset.id); renderAdminHome(); }catch(e){ alert(e.message || '操作失敗'); }
+  });
+  $('reportList').querySelectorAll('.rmProf').forEach(b => b.onclick = async () => {
+    if(!confirm('確定要移除這個登記嗎？會一併刪除相關申請，且無法復原。')) return;
+    try{ await DB.adminRemoveProfile(b.dataset.id); renderAdminHome(); renderBoard(); }catch(e){ alert(e.message || '操作失敗'); }
+  });
+  $('tplMasterSave').onclick = async () => {
+    const areas = [...document.querySelectorAll('.tplMasterText')];
+    try{
+      for(const t of areas) await DB.adminSaveTemplateMaster(t.dataset.id, t.value);
+      templateMaster = await DB.getTemplateMaster();
+      flash('tplMasterMsg', '已儲存');
+    }catch(e){ flash('tplMasterMsg', e.message || '儲存失敗'); }
+  };
+
+  renderAudit();
+}
+
 /* ── 啟動 ── */
 ['fSpecies','fKind'].forEach(i => $(i).onchange = renderBoard);
 $('fText').oninput = renderBoard;
@@ -961,7 +1147,8 @@ async function boot(){
   myProfile = await DB.ensureProfile();
   profiles = await DB.listProfiles();
   apps = (await DB.listOutbox()).concat(await DB.listInbox());
-  await fillMe(); renderBoard();
+  if(!templateMaster.length){ try{ templateMaster = await DB.getTemplateMaster(); }catch(e){} }
+  await fillMe(); renderBoard(); showMyLinks();
 }
 
 ['clinicApplyCost','howApplyCost'].forEach(id => $(id).textContent = APPLY_COST);
@@ -970,5 +1157,6 @@ $('clinicRefundDays').textContent = REFUND_DAYS;
 $('howFreeCredits').textContent = 5;
 $('howPhotoBonus').textContent = PHOTO_BONUS;
 initTabs();
+initCenter();
 </script>
 </html>

@@ -95,6 +95,26 @@
     if (error) throw error;
     return data || [];
   }
+  // 管理員專用：列出所有登記（全站統計用）
+  async function adminListAllProfiles() {
+    const { data, error } = await sb.from('profiles').select('*');
+    if (error) throw error;
+    return data || [];
+  }
+  // 管理員專用：列出所有申請（全站統計用）
+  async function adminListAllApplications() {
+    const { data, error } = await sb.from('applications').select('*');
+    if (error) throw error;
+    return data || [];
+  }
+  // 管理員專用：移除違規登記，並清掉這個人牽涉的所有申請
+  async function adminRemoveProfile(id) {
+    const del1 = await sb.from('applications').delete()
+      .or(`from_user.eq.${id},to_user.eq.${id}`);
+    if (del1.error) throw del1.error;
+    const del2 = await sb.from('profiles').delete().eq('id', id);
+    if (del2.error) throw del2.error;
+  }
 
   // ── 診療點數（模擬付費，用來限流 AI 呼叫） ──
   async function spendCredit(amount, why) {
@@ -223,13 +243,68 @@
     if (error) throw error;
   }
 
+  // ── 檢舉 ──────────────────────────────────────────────
+  async function submitReport(targetId, why) {
+    const user = await getUser();
+    if (!user) throw new Error('尚未登入');
+    const { error } = await sb.from('reports').insert({ target_id: targetId, by_id: user.id, why });
+    if (error) throw error;
+  }
+  async function adminListReports() {
+    const { data, error } = await sb.from('reports').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+  async function adminMarkReportDone(id) {
+    const { error } = await sb.from('reports').update({ done: true }).eq('id', id);
+    if (error) throw error;
+  }
+
+  // ── 罐頭回覆範本（所有會員都有一份，預設值來自 template_master） ──
+  async function getTemplateMaster() {
+    const { data, error } = await sb.from('template_master').select('*').order('id');
+    if (error) throw error;
+    return data || [];
+  }
+  async function adminSaveTemplateMaster(id, text) {
+    const { error } = await sb.from('template_master').update({ text }).eq('id', id);
+    if (error) throw error;
+  }
+
+  // ── owner_kv：私人工具（暖陽動物之家回覆助手）專用儲存 ──
+  async function ownerKvGet(key) {
+    const user = await getUser();
+    if (!user) return null;
+    const { data, error } = await sb.from('owner_kv').select('v')
+      .eq('owner_id', user.id).eq('k', key).maybeSingle();
+    if (error) throw error;
+    return data ? { key, value: data.v } : null;
+  }
+  async function ownerKvSet(key, value) {
+    const user = await getUser();
+    if (!user) throw new Error('尚未登入');
+    const { error } = await sb.from('owner_kv')
+      .upsert({ owner_id: user.id, k: key, v: String(value) }, { onConflict: 'owner_id,k' });
+    if (error) throw error;
+    return { key, value };
+  }
+  async function ownerKvDelete(key) {
+    const user = await getUser();
+    if (!user) return;
+    const { error } = await sb.from('owner_kv').delete().eq('owner_id', user.id).eq('k', key);
+    if (error) throw error;
+  }
+
   window.DB = {
     sb,
     signUpEmail, signInEmail, signInGoogle, signOut, getUser, onAuthChange,
     ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles,
-    adminUpdateProfile, adminListPending,
+    adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminRemoveProfile,
     listOutbox, listInbox, findApplicationTo, createApplication, updateApplication,
     hasClaudeProxy, askClaude, askClaudeRaw, spendCredit, topupCredit,
-    avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto
+    avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto,
+    submitReport, adminListReports, adminMarkReportDone,
+    getTemplateMaster, adminSaveTemplateMaster,
+    ownerKvGet, ownerKvSet, ownerKvDelete
   };
 })();

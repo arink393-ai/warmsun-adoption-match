@@ -4,17 +4,26 @@
 想認識誰就提出認養申請，通過三階段審查（書面審查 → 價值觀評估 → 日常觀察）才會互相
 解鎖聯絡方式。
 
-- `index.html` — 公開配對站：登入／註冊、佈告欄、我的登記（大頭照＋身分驗證照上傳）、
-  送出與收到的申請、診療室（點數／模擬儲值／主治獸醫 AI 評估）、管理員審核台、隱私權政策、流程說明。
+- `index.html` — 公開配對站：登入／註冊、佈告欄（含檢舉）、**個人中心**（我的資料、我的收件匣、
+  我的申請、我的回覆範本、診療點數）、**管理後台**（只有 `is_admin` 帳號看得到：全站統計、
+  檢舉處理、範本主檔管理、照片與驗證照審核台）、隱私權政策、流程說明。
 - `dashboard.html` — 個人後台，依登記身分顯示不同內容：
   - **待認養**（被追求的一方）：收件審查（通過／婉拒／解鎖）、自訂第一階段題目、
     第二階段價值觀題庫（十類 48 題可勾選）、罐頭回覆庫、AI 建議評分（免費、不扣點）。
   - **飼主**（提出申請的一方）：送出的申請進度、私人筆記、回答小抄。
-- `supabase-schema.sql` — 資料庫結構與 RLS（Row Level Security）政策。
+- `shelter-review-assistant.html` — **私人工具**，只綁定站長本人的會員帳號（`arink393@gmail.com`），
+  跟平台的多人資料模型完全分開（不使用 `profiles`／`applications`），資料存在只有本人能存取的
+  `owner_kv` 資料表。用來管理小橘的 Dcard 企劃：病例設定、罐頭回覆、FAQ、貼文申請書、
+  表單匯入評分、AI 判斷該用哪封罐頭。登入後會在「個人中心 → 我的資料」看到這個工具的連結
+  （只有站長本人的帳號登入時才會顯示）。
+- `supabase-schema.sql` — 資料庫結構與 RLS（Row Level Security）政策，包含
+  `profiles`／`applications`（配對平台）、`reports`（檢舉）、`template_master`（範本主檔）、
+  `owner_kv`（私人工具專用，只有本人存取得到）。
 - `js/config.js` — 你的 Supabase 連線設定（網址＋anon 金鑰＋選用的 AI 代理網址）。
-- `js/supabase-client.js` — 共用的登入／資料存取邏輯。
-- `supabase/functions/claude/index.ts` — （選用）Claude API 代理，讓「待認養」後台的
-  「AI 建議評分」按鈕能安全呼叫 AI，金鑰只存在伺服器端。
+- `js/supabase-client.js` — 共用的登入／資料存取邏輯（配對平台與私人工具共用同一份）。
+- `supabase/functions/claude/index.ts` — （選用）Claude API 代理，讓照片初檢、主治獸醫評估、
+  「AI 建議評分」、私人工具的審查草稿產生都能安全呼叫 AI，金鑰只存在伺服器端，
+  瀏覽器端一律不會直接呼叫 `api.anthropic.com`。
 
 ## 上線前要做的事
 
@@ -64,18 +73,32 @@ Repo 設定 → **Settings → Pages** → Source 選「Deploy from a branch」�
 **審核通過或退回後系統會立即刪除驗證照**。`supabase-schema.sql` 已經包含建立這兩個
 bucket 與對應權限的 SQL，跑過整份腳本就會自動建好，不用另外去 Storage 頁面手動設定。
 
-要能使用「審核台」，你要先把自己的帳號設成管理員（這一步無法從網頁上做，得自己去資料庫改，
-避免任何人能自封管理員）：
+要能使用「管理後台」（全站統計、檢舉處理、範本主檔管理、照片與驗證照審核台），你要先把
+自己的帳號設成管理員（這一步無法從網頁上做，得自己去資料庫改，避免任何人能自封管理員）：
 1. 先用你自己的帳號在網站上登入一次（讓 Supabase 的 `auth.users` 裡有這筆帳號）。
 2. 到 Supabase **SQL Editor**，執行（記得換成你自己的 email）：
    ```sql
    update public.profiles set is_admin = true
    where id = (select id from auth.users where email = '你的帳號 email');
    ```
-3. 重新整理網站，「審核台」分頁就會顯示待審核名單。
+3. 重新整理網站，頂端分頁會出現「管理後台」，裡面會顯示全站統計、待處理檢舉、範本主檔編輯，
+   以及原本的照片／驗證照審核台。
 
 大頭照的系統初檢一樣透過 Claude 代理（見上一步），沒設定 `CLAUDE_PROXY_URL` 也不會擋住
 註冊流程，只是會略過初檢、直接進人工審核。
+
+### 6. 私人工具（`shelter-review-assistant.html`）
+
+這個工具只給站長本人使用，跟平台其他會員的資料完全分開：
+1. 打開 `index.html` 裡的 `const OWNER_EMAIL = 'arink393@gmail.com';`（在 `<script>` 區塊裡）
+   跟 `shelter-review-assistant.html` 裡同名的常數，確認都是你自己的帳號 email，兩邊要一致。
+2. 用這個帳號登入 `index.html` 後，到「個人中心 → 我的資料」最下面會看到
+   「小橘的 Dcard 企劃工具（僅本人可見）」連結，點進去就是 `shelter-review-assistant.html`。
+3. 直接用同一組帳密登入即可，資料會存進只有這個帳號能讀寫的 `owner_kv` 資料表
+   （`supabase-schema.sql` 已經建好對應的表格與 RLS 政策）。用別的帳號登入會被擋在門口，
+   不會看到任何內容。
+4. 這個工具裡產生審查草稿一樣透過 Claude 代理（見上面第 4 步），沒設定 `CLAUDE_PROXY_URL`
+   的話會顯示「尚未設定 AI 代理網址」，但存檔、罐頭回覆、名冊等其他功能不受影響。
 
 ## 已知限制（原型階段）
 
@@ -89,4 +112,4 @@ bucket 與對應權限的 SQL，跑過整份腳本就會自動建好，不用另
   改成私密 bucket＋簽名網址。
 - 「刪除我的所有資料」只會刪除 `profiles` 那筆資料與 Storage 檔案，不會刪除 Supabase Auth
   帳號本身（登入帳密仍然存在），如果要徹底刪帳號需要另外呼叫 Supabase 的管理端 API。
-- 沒有檢舉、封鎖機制。
+- 檢舉目前只會列進管理後台讓你人工判斷、決定要不要移除對方的登記，沒有自動封鎖或停權機制。

@@ -1,0 +1,2589 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>暖陽動物之家 · 認養面談紀錄室</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --paper:#FFFFFF;        /* 主底：純白 */
+    --paper-2:#FAF9F7;      /* 內欄位：極淺灰 */
+    --ink:#2E2A26;          /* 主字 */
+    --ink-soft:#7B736A;     /* 次字 */
+    --rule:#E6E2DC;         /* 細線 */
+    --stamp:#C0392B;        /* 紅燈 */
+    --tab:#D99400;          /* 黃燈／標籤 */
+    --teal:#E0752A;         /* 主色橘（重點使用） */
+    --ok:#2E7D46;           /* 綠燈 */
+    --warn:#D99400;         /* 黃燈 */
+    --bad:#C0392B;          /* 紅燈 */
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Noto Sans TC",system-ui,sans-serif;
+    font-size:15px; line-height:1.75;
+    padding:0 0 64px;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+
+  /* ── 檔案夾標頭 ── */
+  header{border-bottom:2px solid var(--teal);margin-bottom:26px;padding-top:26px}
+  .tab{
+    display:inline-block;background:var(--teal);color:#FFF7EC;
+    font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.22em;
+    padding:4px 14px 3px;border-radius:3px 3px 0 0;transform:translateY(1px)
+  }
+  h1{font-family:"Noto Serif TC",serif;font-weight:700;color:var(--teal);font-size:clamp(24px,4vw,34px);
+     margin:10px 0 2px;letter-spacing:.04em}
+  .sub{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-soft);
+       letter-spacing:.1em;margin:0 0 14px}
+
+  /* ── 版面 ── */
+  .cols{display:grid;grid-template-columns:340px 1fr;gap:26px;align-items:start}
+  @media(max-width:900px){.cols{grid-template-columns:1fr}}
+
+  fieldset{
+    border:1px solid var(--rule);border-radius:2px;background:var(--paper-2);
+    padding:14px 16px 18px;margin:0 0 18px
+  }
+  legend{
+    font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.18em;
+    color:var(--teal);padding:0 8px;text-transform:uppercase
+  }
+  label{display:block;font-size:12px;color:var(--ink-soft);letter-spacing:.05em;margin:12px 0 5px}
+  label:first-of-type{margin-top:0}
+  textarea,select,input{
+    width:100%;background:#fff;border:1px solid var(--rule);border-radius:2px;
+    color:var(--ink);font-family:inherit;font-size:14px;line-height:1.7;padding:9px 11px
+  }
+  textarea{resize:vertical}
+  textarea:focus,select:focus,input:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
+  .row{display:flex;gap:10px}
+  .row>div{flex:1}
+
+  button{
+    font-family:"Noto Sans TC",sans-serif;font-size:14px;font-weight:500;
+    border:1px solid var(--teal);background:var(--teal);color:#fff;
+    padding:11px 20px;border-radius:2px;cursor:pointer;letter-spacing:.08em
+  }
+  button:hover{background:#C9611C;border-color:#C9611C}
+  button:disabled{opacity:.45;cursor:wait}
+  button.ghost{background:transparent;color:var(--ink);border-color:var(--rule);padding:6px 12px;font-size:12px}
+  button.ghost:hover{background:var(--ink);color:var(--paper-2);border-color:var(--ink)}
+  .btnbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  .hint{font-size:12px;color:var(--ink-soft)}
+
+  /* ── 輸出 ── */
+  .record{
+    background:#fff;border:1px solid var(--rule);box-shadow:0 1px 3px rgba(0,0,0,.04);border-radius:2px;padding:26px 28px;
+    position:relative;margin-top:20px
+  }
+  .record .meta{
+    font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-soft);
+    letter-spacing:.1em;border-bottom:1px dashed var(--rule);padding-bottom:10px;margin-bottom:18px;
+    display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap
+  }
+  .dm{
+    background:var(--paper-2);border-left:3px solid var(--teal);padding:14px 16px;margin-bottom:22px;
+    white-space:pre-wrap
+  }
+  .dm h3{margin:0 0 8px;font-family:"IBM Plex Mono",monospace;font-size:11px;
+        letter-spacing:.18em;color:var(--teal);font-weight:500}
+  .md h2{font-family:"Noto Serif TC",serif;font-size:18px;margin:22px 0 8px;
+        border-bottom:1px solid var(--rule);padding-bottom:5px}
+  .md h3{font-size:15px;margin:16px 0 6px;color:var(--teal)}
+  .md ul{margin:6px 0;padding-left:20px}
+  .md hr{border:0;border-top:1px dashed var(--rule);margin:18px 0}
+  .md table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
+  .md th,.md td{border:1px solid var(--rule);padding:6px 9px;text-align:left}
+  .md th{background:var(--paper);font-weight:500;font-size:12px;letter-spacing:.06em}
+
+  /* 簽名元素：審查結果印章 */
+  .stamp{
+    display:inline-block;margin-top:24px;color:var(--stamp);border:3px double var(--stamp);
+    border-radius:4px;padding:10px 18px;transform:rotate(-4deg);
+    font-family:"Noto Serif TC",serif;font-weight:700;font-size:17px;letter-spacing:.1em;
+    opacity:.86;animation:thud .45s cubic-bezier(.2,1.5,.4,1) both
+  }
+  .stamp small{display:block;font-family:"IBM Plex Mono",monospace;font-weight:400;
+              font-size:10px;letter-spacing:.2em;opacity:.75}
+  @keyframes thud{from{transform:rotate(-4deg) scale(2.4);opacity:0}to{transform:rotate(-4deg) scale(1);opacity:.86}}
+  @media(prefers-reduced-motion:reduce){.stamp{animation:none}}
+
+  .flag{border-left:3px solid var(--rule);padding:6px 12px;margin:8px 0;background:var(--paper-2)}
+  .flag b{display:block;font-size:13px}
+  .flag small{color:var(--ink-soft)}
+  .f-red{border-color:var(--stamp)} .f-orange{border-color:#C8791F}
+  .f-yellow{border-color:var(--tab)} .f-green{border-color:var(--teal)}
+
+  .empty{border:1px dashed var(--rule);padding:34px 22px;text-align:center;color:var(--ink-soft);
+        margin-top:20px;background:rgba(255,255,255,.5)}
+  .lamp{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;
+        box-shadow:0 0 0 2px rgba(0,0,0,.05)}
+  .lamp-green{background:var(--ok)} .lamp-yellow{background:var(--warn)} .lamp-red{background:var(--bad)}
+  .icard{background:#fff;border:1px solid var(--rule);border-left:4px solid var(--rule);
+         border-radius:2px;padding:11px 14px;margin-top:10px}
+  .icard.g{border-left-color:var(--ok)} .icard.y{border-left-color:var(--warn)} .icard.r{border-left-color:var(--bad)}
+  .missing{color:var(--bad);font-size:12px;margin-top:4px}
+  .bgline{font-size:12px;color:var(--ink-soft);margin-top:3px;line-height:1.7}
+  .tabbar{display:flex;gap:2px;border-bottom:1px solid var(--teal);margin-bottom:16px;flex-wrap:wrap}
+  .tabbtn{background:transparent;color:var(--ink-soft);border:1px solid var(--rule);border-bottom:0;
+          border-radius:3px 3px 0 0;padding:7px 13px;font-size:13px;letter-spacing:.06em;
+          margin-bottom:-1px;font-weight:400}
+  .tabbtn:hover{background:var(--paper-2);color:var(--ink);border-color:var(--rule)}
+  .tabbtn.on{background:var(--teal);color:#fff;border-color:var(--teal);font-weight:500}
+  .bcard{background:#fff;border:1px solid var(--rule);border-left:4px solid var(--rule);
+         border-radius:2px;padding:12px 15px;margin-top:12px}
+  .bhead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .bnum{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-soft);letter-spacing:.1em}
+  .btag{font-size:11px;border:1px solid;border-radius:2px;padding:1px 7px;letter-spacing:.05em}
+  .bsrc{font-size:12px;color:var(--ink-soft);margin-top:6px;border-left:2px solid var(--rule);padding-left:8px}
+  code{font-family:"IBM Plex Mono",monospace;background:var(--paper);padding:1px 5px;border-radius:2px}
+  .err{border-left:3px solid var(--stamp);background:#fff;padding:12px 14px;margin-top:16px;font-size:14px}
+  .hist{font-size:13px;border-top:1px solid var(--rule);padding:8px 0;display:flex;
+        gap:8px;align-items:center}
+  .hist .h-main{flex:1;cursor:pointer;min-width:0}
+  .hist .h-main:hover{color:var(--teal)}
+  .hist .h-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hist .h-date{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-soft)}
+  .hist .del{border:0;background:none;color:var(--ink-soft);font-size:15px;padding:2px 5px;
+             cursor:pointer;line-height:1;border-radius:2px}
+  .hist .del:hover{background:var(--stamp);color:#fff}
+  #histSearch{font-size:13px;padding:7px 10px;margin-bottom:6px}
+  .saved{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--teal)}
+</style>
+
+<div id="gate" style="position:fixed;inset:0;background:var(--paper);z-index:9999;
+     display:flex;align-items:center;justify-content:center;padding:24px">
+  <div style="max-width:380px;width:100%;text-align:center">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;
+         color:#fff;background:var(--teal);display:inline-block;padding:4px 14px;border-radius:3px 3px 0 0">STAFF ONLY</div>
+    <h1 style="font-family:'Noto Serif TC',serif;color:var(--teal);font-size:26px;margin:12px 0 6px">暖陽動物之家</h1>
+    <p class="hint" id="gateHint" style="margin:0 0 18px">這是站長本人專用工具，請用你的會員帳號登入</p>
+    <input id="gateEmail" type="email" placeholder="Email" autocomplete="username" style="margin-bottom:8px">
+    <input id="gateInput" type="password" placeholder="密碼" autocomplete="current-password">
+    <div style="margin-top:12px"><button id="gateGo" style="width:100%">登入</button></div>
+    <p class="hint" id="gateMsg" style="min-height:20px;margin-top:10px"></p>
+    <p class="hint" style="margin-top:20px;font-size:11px;line-height:1.7">
+      這個工具只綁定站長本人的會員帳號，其他帳號登入也無法使用。</p>
+  </div>
+</div>
+
+<div class="wrap">
+<header>
+  <span class="tab">CASE FILE · No.0715</span>
+  <h1>暖陽動物之家 — 認養面談紀錄室</h1>
+  <p class="sub">貼上申請人的自介，產生第一階段書面審查草稿。送出前由你過目、修改。</p>
+</header>
+
+<div class="cols">
+  <!-- 左欄：設定 -->
+  <div id="leftCol">
+    <fieldset>
+      <legend>待認養動物檔案</legend>
+      <label for="profile">你在文章裡的設定（審查會據此比對）</label>
+      <textarea id="profile" rows="12" placeholder="貼上你那篇認養文的內容"></textarea>
+      <label for="formUrl">申請表單連結（罐頭裡的 {{表單}} 會自動換成這串）</label>
+      <input id="formUrl" type="url" value="https://forms.gle/xtGMXjj2q2Yah5NF9" placeholder="https://forms.gle/...">
+      <label for="lines">你的底線與最在意的事</label>
+      <textarea id="lines" rows="4" placeholder="例：不生育、要能接受兩隻貓、居住地需可通勤"></textarea>
+      <div class="btnbar">
+        <button class="ghost" id="save">存檔案</button>
+        <button class="ghost" id="gateLock">登出</button>
+        <span class="saved" id="savedMsg"></span>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>審查風格</legend>
+      <div class="row">
+        <div>
+          <label for="tone">語氣</label>
+          <select id="tone">
+            <option value="溫柔專業，帶一點收容所志工的可愛碎念">溫柔專業</option>
+            <option value="冷靜客觀，像真的醫療紀錄，少情緒用語">冷靜客觀</option>
+            <option value="幽默俏皮，適度吐槽但不刻薄">幽默俏皮</option>
+            <option value="嚴格把關，直接點出風險與不合處">嚴格把關</option>
+          </select>
+        </div>
+        <div>
+          <label for="len">紀錄長度</label>
+          <select id="len">
+            <option value="精簡（約 250 字）">精簡</option>
+            <option value="標準（約 450 字）" selected>標準</option>
+          </select>
+        </div>
+      </div>
+      <label for="dmlen">私訊短版字數</label>
+      <select id="dmlen">
+        <option>80 字以內（快速回覆）</option>
+        <option selected>150 字左右</option>
+        <option>250 字左右（想多聊）</option>
+      </select>
+    </fieldset>
+
+    <fieldset>
+      <legend>罐頭回覆庫</legend>
+      <label for="cannedPick">選擇一封（可自行修改後存檔）</label>
+      <select id="cannedPick"></select>
+      <textarea id="cannedText" rows="8" style="margin-top:8px"></textarea>
+      <div class="btnbar">
+        <button class="ghost" id="cannedCopy">複製</button>
+        <button class="ghost" id="cannedSave">存這封</button>
+        <button class="ghost" id="cannedReset">還原預設</button>
+        <span class="saved" id="cannedMsg"></span>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>常見問題 FAQ</legend>
+      <select id="faqPick"></select>
+      <textarea id="faqText" rows="6" style="margin-top:8px"></textarea>
+      <div class="btnbar">
+        <button class="ghost" id="faqCopy">複製引用句</button>
+        <button class="ghost" id="faqPlain">只複製答案</button>
+        <button class="ghost" id="faqAll">複製整份</button>
+      </div>
+      <div class="btnbar" style="margin-top:6px">
+        <button class="ghost" id="faqSave">存這題</button>
+        <button class="ghost" id="faqReset">還原預設</button>
+        <span class="saved" id="faqMsg"></span>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>認養申請書</legend>
+      <p class="hint" style="margin:0 0 8px">貼文與第二階段補件用的完整版，可自由修改後存檔。</p>
+      <textarea id="appForm" rows="10"></textarea>
+      <div class="btnbar">
+        <button class="ghost" id="appCopy">複製</button>
+        <button class="ghost" id="appSave">存檔</button>
+        <button class="ghost" id="appReset">還原預設</button>
+        <span class="saved" id="appMsg"></span>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>補件題組</legend>
+      <p class="hint" style="margin:0 0 8px">固定題每份都附，其餘依對方背景勾選。判斷結果也會自動幫你挑。</p>
+      <div id="modList"></div>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px">
+        <input type="checkbox" id="modFooter" checked style="width:auto;margin:0">
+        <span>附上收容所提醒與保留條款</span>
+      </label>
+      <div class="btnbar">
+        <button class="ghost" id="modBuild">組合補件通知</button>
+        <button class="ghost" id="modCore">只留固定題</button>
+      </div>
+      <details style="margin-top:12px">
+        <summary class="hint" style="cursor:pointer">認養流程與評等對照</summary>
+        <div class="hint" style="margin-top:6px;line-height:2">
+① 基本資料　│ 不提供社群<br>
+          ② 價值觀評估　│ 不提供社群<br>
+          ③ 日常觀察　│ 提供 IG，不回追<br>
+          ④ 雙向互動　│ 視情況回追，IG 私訊／語音／視訊<br>
+          ⑤ 公開見面　│ 仍以 IG 聯絡<br>
+          ⑥ 見面後　│ 雙方都想繼續，才討論 LINE<br>
+          <br>
+          評等：C 婉拒｜B・A- 第一階段｜A 第二階段<br>
+          A+ 第三階段｜⭐S 第四階段<br>
+          <br>
+          回追 IG＝願意雙向了解。答應見面＝願意驗證相處感受。<br>
+          交換 LINE＝見過面後，願意讓對方更進入私人生活。
+        </div>
+      </details>
+    </fieldset>
+
+    <fieldset>
+      <legend>第二階段題庫</legend>
+      <p class="hint" style="margin:0 0 8px">十類共 48 題，依對方的資料挑四到八題就好，不用全問。</p>
+      <div id="s2List"></div>
+      <div class="btnbar">
+        <button class="ghost" id="s2Build">組合第二階段問卷</button>
+        <button class="ghost" id="s2Clear">清空勾選</button>
+        <span class="saved" id="s2Msg"></span>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>表單回覆匯入</legend>
+      <p class="hint" style="margin:0 0 8px">從表單的回覆試算表全選複製，貼進來，或上傳下載好的 CSV。</p>
+      <textarea id="intakeText" rows="4" placeholder="貼上試算表內容（第一列要是標題列）"></textarea>
+      <div class="btnbar">
+        <button class="ghost" id="intakeLoad">讀入</button>
+        <label class="ghost" for="intakeFile" style="border:1px solid var(--rule);border-radius:2px;
+               padding:6px 12px;font-size:12px;cursor:pointer;margin:0;letter-spacing:.08em">上傳 CSV</label>
+        <input id="intakeFile" type="file" accept=".csv,.tsv,text/csv" style="display:none">
+        <button id="intakeScore">評分並亮燈</button>
+        <button class="ghost" id="intakeClear">清空</button>
+        <span class="saved" id="intakeMsg"></span>
+      </div>
+      <div id="intakeList"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>申請人名冊</legend>
+      <input id="rosterSearch" type="search" placeholder="搜尋姓名或備註" style="font-size:13px;padding:7px 10px">
+      <div id="rosterList"></div>
+      <div class="row" style="margin-top:12px">
+        <div style="flex:2"><label for="rosterName">新增申請人</label>
+          <input id="rosterName" placeholder="稱呼"></div>
+        <div><label for="rosterStage">階段</label>
+          <select id="rosterStage">
+            <option value="1" selected>一 · 書面審查</option>
+            <option value="2">二 · 價值觀評估</option>
+            <option value="3">三 · 日常觀察</option>
+            <option value="4">四 · 雙向互動</option>
+            <option value="5">五 · 第一次見面</option>
+            <option value="6">六 · 見面後持續認識</option>
+            <option value="0">未通過／已停止</option>
+          </select></div>
+      </div>
+      <input id="rosterNote" placeholder="備註（選填）" style="margin-top:8px">
+      <div class="btnbar">
+        <button class="ghost" id="rosterAdd">加入名冊</button>
+        <span class="saved" id="rosterCount"></span>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>設定備份</legend>
+      <p class="hint" style="margin:0 0 8px">改版或換裝置前先匯出，新版本匯入就能接續使用。</p>
+      <div class="btnbar" style="margin-top:0">
+        <button class="ghost" id="bkExport">匯出設定檔</button>
+        <label class="ghost" for="bkFile" style="border:1px solid var(--rule);border-radius:2px;
+               padding:6px 12px;font-size:12px;cursor:pointer;margin:0;letter-spacing:.08em">匯入設定檔</label>
+        <input id="bkFile" type="file" accept="application/json,.json" style="display:none">
+        <span class="saved" id="bkMsg"></span>
+      </div>
+    </fieldset>
+
+    <fieldset id="histBox" data-empty="1">
+      <legend>審查紀錄</legend>
+      <label for="histSearch">搜尋（姓名、地區、職業、紀錄內容都找得到）</label>
+      <input id="histSearch" type="search" placeholder="例：台中 工程師">
+      <div id="histList"></div>
+      <div class="btnbar">
+        <button class="ghost" id="exportCsv">匯出 CSV</button>
+        <span class="saved" id="histCount"></span>
+      </div>
+    </fieldset>
+  </div>
+
+  <!-- 右欄：輸入與輸出 -->
+  <div>
+    <fieldset>
+      <legend>申請人自介</legend>
+      <label for="applicant">貼上對方私訊或自介文的全文</label>
+      <textarea id="applicant" rows="9" placeholder="貼上對方的自介⋯⋯&#10;&#10;多封時這樣分隔：&#10;第一封內容&#10;---&#10;第二封內容"></textarea>
+      <div class="btnbar">
+        <button id="go">判斷該用哪封罐頭</button>
+        <button id="goBatch" class="ghost">批次分流</button>
+        <button id="goFull" class="ghost">完整面談紀錄</button>
+        <button class="ghost" id="clear">清空</button>
+        <span class="hint" id="status"></span>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px">
+        <label style="display:flex;gap:7px;align-items:center;margin:0">
+          <input type="checkbox" id="addScore" checked style="width:auto;margin:0"><span>附評估表與流程進度</span></label>
+        <label style="display:flex;gap:7px;align-items:center;margin:0">
+          <input type="checkbox" id="addNext" checked style="width:auto;margin:0"><span>附目前進度說明</span></label>
+        <label style="display:flex;gap:7px;align-items:center;margin:0">
+          <input type="checkbox" id="addClause" checked style="width:auto;margin:0"><span>附收容所保留條款</span></label>
+      </div>
+      <p class="hint" style="margin:8px 0 0">批次分流：一次貼多封，每封之間空一行打 <code>---</code> 隔開，最多 15 封。</p>
+    </fieldset>
+
+    <div id="out">
+      <div class="empty">還沒有待審件。<br>貼上一份自介，這裡會出現私訊短版＋完整面談紀錄。</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/supabase-client.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const OWNER_EMAIL = 'arink393@gmail.com';
+/* 私人工具用的儲存：綁在站長本人帳號下的 owner_kv 資料表，取代原本的沙盒 window.storage */
+window.storage = {
+  get: (key) => DB.ownerKvGet(key),
+  set: (key, value) => DB.ownerKvSet(key, value),
+  delete: (key) => DB.ownerKvDelete(key)
+};
+const DEFAULT_PROFILE = `待認養 No.0715「小橘」／INTJ／1994年尾出生／151cm／研究所在讀
+親人程度 ⭐⭐⭐⭐⭐、慢熱、聰明、喜歡閱讀創作與貓
+健康：焦慮管理中、氣喘病史、睡眠與免疫需留意、曾接受婦科手術，醫師目前不建議以生育為人生目標，未來若有規劃需視健康狀況再評估（並非完全沒有可能，但風險較高）
+性格提醒：容易把別人的情緒當自己的責任、習慣逞強、害怕被冷落與失聯
+禁忌：冷暴力、已讀不回卻無說明、欺騙、情緒勒索、長期忽視、否定她的努力
+認養資格：具經濟能力、年滿30歲以上、有時間照顧`;
+const DEFAULT_LINES = `【硬條件｜不符合直接列為 C 級婉拒】
+1. 年齡 25～45 歲
+2. 兵役：已服完兵役（義務役、替代役皆可）、免役，或無兵役義務者
+3. 年收入不低於 72 萬（月薪約 6 萬），需能經濟自立
+4. 生育規劃：目前不以生育為人生目標，未來若有規劃需視健康狀況評估，風險較高。這點必須雙方有共識
+5. 需要能接受並一起照顧兩隻貓
+
+【重要但非硬條件】
+6. 不接受冷暴力與長時間已讀不回
+7. 低潮或生病時仍願意留下，比條件好更重要
+8. 文字表達與溝通能力是核心評估項目`;
+
+let history = [];
+
+/* ── 儲存位置（固定不再改版，避免舊資料被遺留） ── */
+const K = {
+  profile:'shelter:profile', lines:'shelter:lines', formurl:'shelter:formurl',
+  canned:'shelter:canned',   appform:'shelter:appform', history:'shelter:history',
+  faq:'shelter:faq',       roster:'shelter:roster'
+};
+/* 早期版本用過的位置，載入時自動搬過來 */
+const LEGACY_CANNED = ['shelter:canned:v7','shelter:canned:v6','shelter:canned:v5',
+                       'shelter:canned:v4','shelter:canned:v3','shelter:canned:v2'];
+
+/* 合併規則：預設內容為底，你改過的文字一律保留；已被移除的罐頭也不丟掉 */
+function mergeCanned(saved){
+  const merged = DEFAULT_CANNED.map(d => {
+    const hit = saved.find(x => x.id === d.id);
+    return (hit && hit.text) ? Object.assign({}, d, {text: hit.text}) : d;
+  });
+  saved.forEach(x => {
+    if(x && x.id && !merged.some(m => m.id === x.id)){
+      merged.push({id:x.id, name:(x.name||x.id) + '（舊版自訂）', text:x.text});
+    }
+  });
+  return merged;
+}
+
+async function loadCanned(){
+  let saved = null, from = null;
+  try{ const r = await window.storage.get(K.canned); if(r){ saved = JSON.parse(r.value); from = K.canned; } }catch(e){}
+  if(!saved){
+    for(const key of LEGACY_CANNED){
+      try{ const r = await window.storage.get(key); if(r){ saved = JSON.parse(r.value); from = key; break; } }catch(e){}
+    }
+  }
+  if(saved){
+    canned = mergeCanned(saved);
+    if(from !== K.canned){                      /* 舊版資料搬到固定位置 */
+      try{ await window.storage.set(K.canned, JSON.stringify(canned)); }catch(e){}
+    }
+  }
+}
+
+/* ── 設定備份：匯出成檔案，之後任何新版本都能匯入 ── */
+async function exportAll(){
+  const data = {
+    format:'warmsun-shelter', version:2, exported:new Date().toISOString(),
+    profile:$('profile').value, lines:$('lines').value, formUrl:$('formUrl').value,
+    appform:$('appForm').value, canned:canned, faq:faqs, roster:roster, history:history
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type:'application/json'}));
+  const a = document.createElement('a');
+  a.href = url; a.download = `暖陽動物之家設定_${fmtDate(new Date().toISOString()).replace(/\//g,'')}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  $('bkMsg').textContent = '已匯出';
+  setTimeout(()=>$('bkMsg').textContent='',2500);
+}
+
+async function importAll(file){
+  const text = await file.text();
+  let d;
+  try{ d = JSON.parse(text); }catch(e){ $('bkMsg').textContent = '檔案讀不出來'; return; }
+  if(d.format !== 'warmsun-shelter'){ $('bkMsg').textContent = '這不是本工具的設定檔'; return; }
+  if(!confirm(`要匯入 ${fmtDate(d.exported)} 的設定嗎？\n目前畫面上的內容會被取代。`)) return;
+
+  if(d.profile != null) $('profile').value = d.profile;
+  if(d.lines   != null) $('lines').value   = d.lines;
+  if(d.formUrl != null) $('formUrl').value = d.formUrl;
+  if(d.appform != null) $('appForm').value = d.appform;
+  if(Array.isArray(d.canned))  canned  = mergeCanned(d.canned);
+  if(Array.isArray(d.faq))     faqs    = mergeFaq(d.faq);
+  if(Array.isArray(d.roster))  roster  = d.roster;
+  if(Array.isArray(d.history)) history = d.history;
+
+  try{
+    await window.storage.set(K.profile, $('profile').value);
+    await window.storage.set(K.lines,   $('lines').value);
+    await window.storage.set(K.formurl, $('formUrl').value);
+    await window.storage.set(K.appform, $('appForm').value);
+    await window.storage.set(K.canned,  JSON.stringify(canned));
+    await window.storage.set(K.faq,     JSON.stringify(faqs));
+    await window.storage.set(K.roster,  JSON.stringify(roster));
+    await window.storage.set(K.history, JSON.stringify(history));
+  }catch(e){}
+  renderCanned(); renderFaq(); renderRoster(); renderHist();
+  $('bkMsg').textContent = '已匯入';
+  setTimeout(()=>$('bkMsg').textContent='',3000);
+}
+
+/* ── 第二階段：價值觀題庫 ── */
+const S2_CATS = [
+ {key:'space',  label:'一、獨立空間與陪伴', qs:[
+   '如果另一半因為工作、研究所或健康因素，需要一整天安靜休息，您會怎麼看待？',
+   '對方沒有即時回覆訊息時，您會怎麼調適自己的情緒？',
+   '您認為健康的陪伴，和過度依賴之間，差別是什麼？',
+   '如果兩個人同時低電量，其中一方又需要安慰，您會怎麼溝通？']},
+ {key:'emotion',label:'二、情緒支持', qs:[
+   '如果她躲起來哭、不想說原因，您會怎麼陪伴？',
+   '如果她只想安靜，不需要建議或解決方案，您能接受嗎？',
+   '如果低潮持續好幾週，而不是一兩天，您會怎麼陪伴？',
+   '您自己情緒低落時，通常會主動分享，還是自己消化？']},
+ {key:'repair', label:'三、衝突與修復', qs:[
+   '如果雙方都覺得自己有道理，您通常會怎麼處理？',
+   '您習慣當下談清楚，還是先冷靜之後再談？',
+   '您認為「冷靜」和「冷戰」有什麼不同？',
+   '上一次向別人道歉，是因為什麼事？',
+   '如果您的原意沒有惡意，但對方確實受傷了，您會怎麼處理？',
+   '您願意為了對方調整表達方式，而不只是強調「我只是說實話」嗎？']},
+ {key:'trust',  label:'四、安全感與界線', qs:[
+   '您怎麼看待伴侶交換手機密碼這件事？',
+   '如果另一半因為過去受過傷，需要比較高的透明度，您會怎麼回應？',
+   '您能接受伴侶有異性朋友嗎？界線在哪裡？',
+   '您認為報備、分享與控制之間，差別是什麼？',
+   '您怎麼區分「需要理解」和「過度控制」？']},
+ {key:'money',  label:'五、金錢與家庭責任', qs:[
+   '您怎麼看待約會時的 AA、輪流請客，或由一方負擔？',
+   '若未來共同生活，家用您希望怎麼分配？',
+   '您支持共同帳戶與個人帳戶並存嗎？',
+   '對財務透明度，您的期待是什麼？',
+   '如果其中一方暫時無法工作，您會怎麼安排生活與支出？',
+   '如果收入下降或工作失利，您會主動讓伴侶知道嗎？']},
+ {key:'care',   label:'六、健康與長期照護', qs:[
+   '如果她因為健康因素需要長時間休養、暫時無法工作，您會怎麼安排？',
+   '家務、經濟與醫療壓力，您希望怎麼分擔？',
+   '如果照護期比預期更久，您會怎麼維持自己的身心狀態？',
+   '您會怎麼避免讓生病的伴侶覺得自己是負擔？',
+   '您認為一個人的價值，會因為無法工作而降低嗎？']},
+ {key:'pets',   label:'七、毛孩共同生活', qs:[
+   '如果您的貓和小橘的貓沒辦法馬上相處，您願意怎麼磨合？',
+   '如果貓咪需要昂貴的醫療，您會怎麼討論費用？',
+   '如果小橘生病住院，您願意獨立處理貓咪的照護嗎？',
+   '您怎麼看待毛孩在家庭裡的位置？']},
+ {key:'family', label:'八、家庭與原生家庭界線', qs:[
+   '如果伴侶和您的家人意見不同，您會怎麼協調？',
+   '您認為伴侶與原生家庭之間，應該保有什麼樣的界線？',
+   '如果家人對生育規劃有意見，您會怎麼處理？',
+   '未來您希望與家人同住，還是建立獨立的家庭？']},
+ {key:'growth', label:'九、人生規劃與成長', qs:[
+   '五年後，您希望自己過著什麼樣的生活？',
+   '工作、伴侶、健康與家人，您的排序是什麼？',
+   '如果兩人的職涯方向不同，您會怎麼討論？',
+   '您能接受伴侶有自己的夢想，而不是完全圍繞家庭嗎？',
+   '您認為「兩個人一起成長」，具體是什麼意思？']},
+ {key:'self',   label:'十、自我認識', qs:[
+   '您認為自己的缺點是什麼？',
+   '朋友通常怎麼形容您？',
+   '上一段感情讓您學到什麼？',
+   '您最容易在關係裡出現什麼盲點？',
+   '您希望伴侶怎麼提醒您？']}
+];
+
+function renderS2(){
+  $('s2List').innerHTML = S2_CATS.map((c,ci) => `
+    <details style="margin-bottom:6px">
+      <summary class="hint" style="cursor:pointer">${esc(c.label)}</summary>
+      ${c.qs.map((q,qi) => `
+        <label style="display:flex;gap:8px;align-items:flex-start;margin:5px 0 5px 6px">
+          <input type="checkbox" class="s2Chk" value="${ci}-${qi}" style="width:auto;margin:3px 0 0">
+          <span style="font-size:13px;line-height:1.6">${esc(q)}</span>
+        </label>`).join('')}
+    </details>`).join('');
+  s2Count();
+}
+function s2Picked(){
+  return [...document.querySelectorAll('.s2Chk:checked')].map(c => {
+    const [ci,qi] = c.value.split('-').map(Number);
+    return S2_CATS[ci].qs[qi];
+  });
+}
+function s2Count(){
+  const n = document.querySelectorAll('.s2Chk:checked').length;
+  $('s2Msg').textContent = n ? `已選 ${n} 題` : '';
+  return n;
+}
+document.addEventListener('change', e => { if(e.target.classList.contains('s2Chk')) s2Count(); });
+
+$('s2Build').onclick = () => {
+  const qs = s2Picked();
+  if(!qs.length){ $('s2Msg').textContent = '請先勾幾題（建議四到八題）'; return; }
+  const body =
+`🐾 暖陽動物之家｜第二階段　價值觀評估
+
+您好，謝謝您完成第一階段的書面資料😊
+
+第二階段沒有標準答案，也不是面試。
+第一階段看的是「目前的生活是什麼樣子」，第二階段想了解的是「遇到真實的人生問題時，您會怎麼想、怎麼做」。
+
+${qs.map((q,i) => `Q${i+1}　${q}`).join('\n\n')}
+
+不用急著回覆，慢慢想再告訴收容所就好。
+回答不需要完美，誠實與前後一致，比漂亮更重要🌼🐈`;
+
+  $('out').innerHTML = `
+  <div class="record">
+    <div class="bhead"><b>第二階段　價值觀評估</b>
+      <span class="btag" style="color:var(--teal);border-color:var(--teal)">${qs.length} 題</span></div>
+    <textarea id="s2Text" rows="18" style="margin-top:10px">${esc(body)}</textarea>
+    <div class="btnbar">
+      <button id="s2Copy">複製這封</button>
+      <span class="saved" id="s2CopyMsg"></span>
+    </div>
+  </div>`;
+  $('s2Copy').onclick = () => {
+    copy(withForm($('s2Text').value));
+    $('s2CopyMsg').textContent = '已複製'; setTimeout(()=>$('s2CopyMsg').textContent='',2000);
+  };
+};
+$('s2Clear').onclick = () => { document.querySelectorAll('.s2Chk').forEach(c => c.checked = false); s2Count(); };
+
+/* ── Email：從表單欄位抓信箱，開啟郵件程式並帶入內容 ── */
+const EMAIL_KW = ['電子郵件','Email','E-mail','信箱','email'];
+function emailOf(rec){
+  if(!rec) return '';
+  const v = fieldValue(rec, EMAIL_KW);
+  return /@/.test(v) ? v.trim() : '';
+}
+function openMail(to, body){
+  const subject = '暖陽動物之家｜認養申請回覆';
+  const url = 'mailto:' + encodeURIComponent(to||'') +
+              '?subject=' + encodeURIComponent(subject) +
+              '&body=' + encodeURIComponent(body||'');
+  window.open(url, '_blank');
+}
+
+/* ── 階段對照與下一步說明 ── */
+/* 每封罐頭寄出後，對方實際所處的階段 */
+const CANNED_STAGE = {
+  form_entry:1, supplement:1, greeting_only:1, s1_supp:1, phase2:2,
+  s1_pass:2, s2_hold:2, s2_pass:3, s3_notice:3, s4_notice:4,
+  s5_invite:5, s5_yes:6, s6_after:6, age_gap:1,
+  s1_reject:0, not_selected:0, s5_no:0
+};
+const STAGE_TIME = [
+  '收到申請後約 3～7 天回覆',
+  '約 1～2 週，依回覆速度而定',
+  '至少 1～2 週，沒有期限',
+  '約 2～4 週，依雙方節奏而定',
+  '依雙方時間安排',
+  '不設期限'
+];
+function nextStepBlock(stage){
+  if(stage === undefined || stage === 0) return '';
+  const cur = STAGES[stage-1], nxt = STAGES[stage] || null;
+  return '🧭 目前進度說明\n' +
+    `您現在在：${cur}\n` +
+    `這一階段大約：${STAGE_TIME[stage-1]}\n` +
+    (nxt ? `若雙方都仍有意願，下一步是：${nxt}\n` : '這是流程的最後一階段。\n') +
+    '任何階段都可以隨時告訴收容所想停下來，不需要理由，收容所也不會追問。';
+}
+function stageOf(o){
+  const st = CANNED_STAGE[o.canned];
+  return (st !== undefined) ? st : gradeToStage(o.grade);
+}
+
+/* ── 申請人檔案：一個人一筆，所有互動掛在他底下 ── */
+let roster = [];
+let openPerson = null;
+const STAGE_TINT = ['var(--bad)','var(--warn)','var(--warn)','var(--teal)','var(--teal)','var(--ok)','var(--ok)'];
+const EVENT_ICON = {judge:'⚖', stage:'↕', note:'✎', form:'📋', create:'＋'};
+
+async function saveRoster(){
+  try{ await window.storage.set(K.roster, JSON.stringify(roster)); }catch(e){}
+}
+const norm = t => (t||'').trim().toLowerCase().replace(/\s+/g,'');
+
+function findPerson(name){
+  const n = norm(name);
+  if(!n) return null;
+  return roster.find(p => norm(p.name) === n) ||
+         roster.find(p => norm(p.name).includes(n) || n.includes(norm(p.name))) || null;
+}
+
+/* 同一個人再次出現時，不新增一筆，而是把事件掛進他的檔案 */
+function upsertPerson(name, opts){
+  opts = opts || {};
+  let p = findPerson(name);
+  const now = new Date().toISOString();
+  if(!p){
+    p = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2,7),
+      name: (name||'未具名').trim(),
+      stage: opts.stage === undefined ? 1 : opts.stage,
+      rec: opts.rec || null, missing: opts.missing || [], email: emailOf(opts.rec),
+      created: now, updated: now,
+      timeline: [{at:now, type:'create', text:'建立檔案'}]
+    };
+    roster.unshift(p);
+  }else{
+    if(opts.stage !== undefined && opts.stage !== p.stage){
+      p.timeline.push({at:now, type:'stage',
+        text:`階段：${stageName(p.stage)} → ${stageName(opts.stage)}`});
+      p.stage = opts.stage;
+    }
+    if(opts.rec){ p.rec = opts.rec; p.missing = opts.missing || []; p.email = emailOf(opts.rec) || p.email; }
+    p.updated = now;
+  }
+  if(opts.event) p.timeline.push(Object.assign({at:now}, opts.event));
+  p.updated = now;
+  return p;
+}
+function stageName(st){ return st === 0 ? '未通過／已停止' : STAGES[st-1]; }
+
+async function movePerson(id, delta){
+  const p = roster.find(x => x.id === id); if(!p) return;
+  const to = Math.max(0, Math.min(6, p.stage + delta));
+  if(to === p.stage) return;
+  p.timeline.push({at:new Date().toISOString(), type:'stage',
+    text:`階段：${stageName(p.stage)} → ${stageName(to)}`});
+  p.stage = to; p.updated = new Date().toISOString();
+  await saveRoster(); renderRoster();
+  if(openPerson === id) renderPerson(id);
+}
+
+function bgOf(p){
+  if(!p.rec) return '';
+  return SHOW_FIELDS.map(k => {
+    const f = REQUIRED.find(r => r.key === k);
+    const v = f ? fieldValue(p.rec, f.kw) : '';
+    return v ? `${k}：${v}` : '';
+  }).filter(Boolean).join('　');
+}
+function personText(p){
+  return [p.name, p.note, bgOf(p),
+          (p.timeline||[]).map(t => t.text).join(' '),
+          p.rec ? Object.values(p.rec).join(' ') : ''].join(' ').toLowerCase();
+}
+
+/* 停滯提醒：14 天未動標黃，30 天標紅 */
+function staleDays(p){
+  return Math.floor((Date.now() - new Date(p.updated).getTime()) / 86400000);
+}
+
+function renderRoster(){
+  const box = $('rosterList');
+  if(!roster.length){
+    box.innerHTML = '<p class="hint" style="padding:8px 0">名冊還是空的。判斷完一封，或從表單匯入，按「加入名冊」就會出現在這裡。</p>';
+    $('rosterCount').textContent = '';
+    return;
+  }
+  const q = norm($('rosterSearch').value);
+  let html = '';
+  [1,2,3,4,5,6,0].forEach(st => {
+    const people = roster.filter(p => p.stage === st)
+                         .filter(p => !q || personText(p).includes(q));
+    if(!people.length) return;
+    html += `<div style="margin-top:12px">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;
+           color:${STAGE_TINT[st]};border-bottom:1px solid var(--rule);padding-bottom:4px">
+        ${esc(stageName(st))}　${people.length}</div>`;
+    people.forEach(p => {
+      const d = staleDays(p);
+      const stale = (st > 0 && d >= 30) ? `<span class="missing">停滯 ${d} 天</span>`
+                  : (st > 0 && d >= 14) ? `<span style="color:var(--warn);font-size:12px">停滯 ${d} 天</span>` : '';
+      html += `<div class="hist" data-id="${p.id}" style="align-items:flex-start">
+        <div class="h-main">
+          <span class="h-title">${esc(p.name)}</span>
+          <span class="h-date">${fmtDate(p.updated)}　${(p.timeline||[]).length} 筆紀錄　${stale}</span>
+          ${bgOf(p) ? `<div class="bgline">${esc(bgOf(p))}</div>` : ''}
+          ${(p.missing&&p.missing.length) ? `<div class="missing">⚠ 缺少：${esc(p.missing.join('、'))}</div>` : ''}
+        </div>
+        <button class="del up" title="推進一階段">▲</button>
+        <button class="del down" title="退回一階段">▼</button>
+      </div>`;
+    });
+    html += '</div>';
+  });
+  box.innerHTML = html || '<p class="hint" style="padding:8px 0">沒有符合的申請人。</p>';
+  $('rosterCount').textContent = `共 ${roster.length} 人`;
+
+  box.querySelectorAll('.hist').forEach(row => {
+    const id = row.dataset.id;
+    row.querySelector('.h-main').onclick = () => renderPerson(id);
+    row.querySelector('.up').onclick   = (e) => { e.stopPropagation(); movePerson(id, +1); };
+    row.querySelector('.down').onclick = (e) => { e.stopPropagation(); movePerson(id, -1); };
+  });
+}
+
+/* 個人檔案：背景、缺件、完整時間軸 */
+function renderPerson(id){
+  const p = roster.find(x => x.id === id); if(!p) return;
+  openPerson = id;
+  const fields = p.rec ? Object.keys(p.rec).filter(h => !/時間戳記|Timestamp/.test(h) && p.rec[h]) : [];
+  const tl = (p.timeline||[]).slice().reverse();
+
+  $('out').innerHTML = `
+  <div class="record" style="border-left:4px solid ${STAGE_TINT[p.stage]}">
+    <div class="bhead">
+      <b style="font-size:17px">${esc(p.name)}</b>
+      <span class="btag" style="color:${STAGE_TINT[p.stage]};border-color:${STAGE_TINT[p.stage]}">${esc(stageName(p.stage))}</span>
+    </div>
+    <div class="meta" style="margin-top:10px">
+      <span>建檔 ${fmtDate(p.created)}</span>
+      <span>最後互動 ${fmtDate(p.updated)}　停滯 ${staleDays(p)} 天</span>
+    </div>
+    ${p.email ? `<div class="bgline">✉ ${esc(p.email)}</div>` : ''}
+
+    ${(p.missing&&p.missing.length) ? `<div class="missing" style="margin-bottom:10px">⚠ 資料不全，缺少：${esc(p.missing.join('、'))}</div>` : ''}
+
+    ${fields.length ? `<h3 style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;
+        color:var(--teal);margin:6px 0 6px">背景資料</h3>
+      <table class="md" style="width:100%;border-collapse:collapse;font-size:13px">
+        ${fields.map(h => `<tr>
+          <td style="border:1px solid var(--rule);padding:5px 8px;width:36%;background:var(--paper-2)">${esc(h)}</td>
+          <td style="border:1px solid var(--rule);padding:5px 8px">${esc(p.rec[h])}</td></tr>`).join('')}
+      </table>` : '<p class="hint">還沒有表單資料。從「表單回覆匯入」加入時會自動帶進來。</p>'}
+
+    <h3 style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;
+        color:var(--teal);margin:20px 0 6px">互動紀錄　${tl.length} 筆</h3>
+    <div>${tl.map(t => `<div style="border-left:2px solid var(--rule);padding:4px 0 4px 10px;margin-bottom:5px">
+        <span class="h-date">${EVENT_ICON[t.type]||'・'} ${fmtDate(t.at)}</span>
+        <div style="font-size:13px">${esc(t.text)}</div>
+      </div>`).join('')}</div>
+
+    <div class="btnbar" style="margin-top:16px">
+      <button class="ghost" id="pUp">推進階段</button>
+      <button class="ghost" id="pDown">退回階段</button>
+      <button class="ghost" id="pNote">加備註</button>
+      <button class="ghost" id="pCopy">複製背景</button>
+      ${p.email ? '<button class="ghost" id="pMail">寄 Email</button>' : ''}
+      <button class="ghost" id="pDel">刪除檔案</button>
+      <span class="saved" id="pMsg"></span>
+    </div>
+  </div>`;
+
+  $('pUp').onclick   = () => movePerson(id, +1);
+  $('pDown').onclick = () => movePerson(id, -1);
+  $('pNote').onclick = async () => {
+    const t = prompt('要記下什麼？');
+    if(!t) return;
+    p.timeline.push({at:new Date().toISOString(), type:'note', text:t});
+    p.updated = new Date().toISOString();
+    await saveRoster(); renderRoster(); renderPerson(id);
+  };
+  $('pCopy').onclick = () => {
+    copy(fields.map(h => `${h}：${p.rec[h]}`).join('\n'));
+    $('pMsg').textContent = '已複製'; setTimeout(()=>$('pMsg').textContent='',2000);
+  };
+  if($('pMail')) $('pMail').onclick = () => openMail(p.email, '');
+  $('pDel').onclick = async () => {
+    if(!confirm(`刪除「${p.name}」的整份檔案？含所有互動紀錄，無法復原。`)) return;
+    roster = roster.filter(x => x.id !== id);
+    openPerson = null;
+    await saveRoster(); renderRoster();
+    $('out').innerHTML = '<div class="empty">檔案已刪除。</div>';
+  };
+}
+
+/* 舊資料升級：補上時間軸 */
+function migrateRoster(){
+  roster.forEach(p => {
+    if(!p.timeline){
+      p.timeline = [{at:p.updated || new Date().toISOString(), type:'create',
+                     text:'建立檔案' + (p.note ? '　'+p.note : '')}];
+    }
+    if(!p.created) p.created = p.updated || new Date().toISOString();
+  });
+}
+
+/* ── 表單回覆匯入：解析、缺件檢查、燈號評分 ── */
+const REQUIRED = [
+  {key:'年齡',     kw:['年齡']},
+  {key:'居住地',   kw:['居住地','居住縣市']},
+  {key:'職業',     kw:['工作','職業']},
+  {key:'兵役',     kw:['兵役','役別','服役']},
+  {key:'年收入',   kw:['收入','年薪','薪資']},
+  {key:'居住狀況', kw:['居住狀況']},
+  {key:'關係期待', kw:['關係']},
+  {key:'生育規劃', kw:['生育']},
+  {key:'貓',       kw:['貓']},
+  {key:'溝通例子', kw:['溝通','衝突','價值觀不同']},
+  {key:'五年規劃', kw:['五年']}
+];
+const SHOW_FIELDS = ['年齡','居住地','職業','兵役','年收入','關係期待'];
+let intake = [];
+
+/* CSV / TSV 解析（支援引號內換行與逗號） */
+function parseTable(text){
+  text = (text||'').replace(/\r\n/g,'\n').trim();
+  if(!text) return [];
+  const delim = (text.split('\n')[0].split('\t').length > text.split('\n')[0].split(',').length) ? '\t' : ',';
+  const rows = []; let row = [], cell = '', q = false;
+  for(let i = 0; i < text.length; i++){
+    const ch = text[i];
+    if(q){
+      if(ch === '"' && text[i+1] === '"'){ cell += '"'; i++; }
+      else if(ch === '"'){ q = false; }
+      else cell += ch;
+    }else{
+      if(ch === '"') q = true;
+      else if(ch === delim){ row.push(cell); cell = ''; }
+      else if(ch === '\n'){ row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+  }
+  row.push(cell); rows.push(row);
+  if(rows.length < 2) return [];
+  const head = rows[0].map(h => h.trim());
+  return rows.slice(1).filter(r => r.some(c => (c||'').trim())).map(r => {
+    const o = {};
+    head.forEach((h,i) => { o[h] = (r[i]||'').trim(); });
+    return o;
+  });
+}
+
+function fieldValue(rec, kws){
+  const hit = Object.keys(rec).find(h => kws.some(k => h.includes(k)));
+  return hit ? rec[hit] : '';
+}
+function checkMissing(rec){
+  return REQUIRED.filter(f => !fieldValue(rec, f.kw)).map(f => f.key);
+}
+function nameOf(rec){
+  return fieldValue(rec, ['稱呼','姓名','暱稱']) || fieldValue(rec, ['年齡']) || '未具名申請人';
+}
+function summarise(rec){
+  return Object.keys(rec)
+    .filter(h => !/時間戳記|Timestamp/.test(h))
+    .map(h => `${h}：${rec[h]}`).join('\n').slice(0, 2200);
+}
+
+function lampOf(item){
+  if(item.light) return item.light;
+  return item.missing.length >= 4 ? 'red' : (item.missing.length ? 'yellow' : 'yellow');
+}
+
+function renderIntake(){
+  const box = $('intakeList');
+  if(!intake.length){ box.innerHTML = ''; $('intakeMsg').textContent = ''; return; }
+  const counts = {green:0, yellow:0, red:0};
+  intake.forEach(i => counts[lampOf(i)]++);
+
+  box.innerHTML = `<p class="hint" style="margin:12px 0 0">
+      <span class="lamp lamp-green"></span>可進下一階段 ${counts.green}
+      　<span class="lamp lamp-yellow"></span>待審查 ${counts.yellow}
+      　<span class="lamp lamp-red"></span>不建議 ${counts.red}</p>` +
+    intake.map((it, idx) => {
+      const L = lampOf(it);
+      const bg = SHOW_FIELDS.map(k => {
+        const f = REQUIRED.find(r => r.key === k);
+        const v = f ? fieldValue(it.rec, f.kw) : '';
+        return v ? `${k}：${v}` : '';
+      }).filter(Boolean).join('　');
+      return `<div class="icard ${L[0]}" data-i="${idx}">
+        <div><span class="lamp lamp-${L}"></span><b>${esc(it.name)}</b>
+          ${it.grade ? `<span class="btag" style="margin-left:8px;color:var(--teal);border-color:var(--teal)">${esc(it.grade)}</span>` : ''}
+        </div>
+        ${bg ? `<div class="bgline">${esc(bg)}</div>` : ''}
+        ${it.why ? `<div class="hint" style="margin-top:3px">${esc(it.why)}</div>` : ''}
+        ${emailOf(it.rec) ? `<div class="bgline">✉ ${esc(emailOf(it.rec))}</div>` : ''}
+        ${it.missing.length ? `<div class="missing">⚠ 資料不全，缺少：${esc(it.missing.join('、'))}</div>` : ''}
+        <div class="btnbar" style="margin-top:7px">
+          <button class="ghost iAdd">加入名冊</button>
+          <button class="ghost iCopy">複製全文</button>
+          <span class="saved iMsg"></span>
+        </div>
+      </div>`;
+    }).join('');
+
+  box.querySelectorAll('.icard').forEach(card => {
+    const it = intake[+card.dataset.i];
+    const msg = card.querySelector('.iMsg');
+    card.querySelector('.iAdd').onclick = async () => {
+      const st = gradeToStage(it.grade);
+      const existed = !!findPerson(it.name);
+      upsertPerson(it.name, {
+        stage: st === undefined ? 1 : st,
+        rec: it.rec, missing: it.missing,
+        event: {type:'form', text:`表單申請　${it.grade||''}　${it.why||''}${
+          it.missing.length ? '　缺：'+it.missing.join('、') : ''}`}
+      });
+      await saveRoster(); renderRoster();
+      msg.textContent = existed ? '已併入既有檔案' : '已建檔';
+      setTimeout(()=>msg.textContent='',2200);
+    };
+    card.querySelector('.iCopy').onclick = () => {
+      copy(summarise(it.rec));
+      msg.textContent = '已複製'; setTimeout(()=>msg.textContent='',2000);
+    };
+  });
+}
+
+function loadTable(text){
+  const recs = parseTable(text);
+  if(!recs.length){ $('intakeMsg').textContent = '讀不到資料，請確認有標題列'; return; }
+  intake = recs.map(rec => ({rec, name:nameOf(rec), missing:checkMissing(rec), light:null, grade:'', why:''}));
+  renderIntake();
+  $('intakeMsg').textContent = `讀入 ${intake.length} 筆，按「評分並亮燈」開始判斷`;
+}
+
+$('intakeLoad').onclick = () => loadTable($('intakeText').value);
+$('intakeFile').onchange = async (e) => {
+  const f = e.target.files[0]; if(!f) return;
+  loadTable(await f.text()); e.target.value = '';
+};
+$('intakeClear').onclick = () => { intake = []; $('intakeText').value = ''; renderIntake(); };
+
+$('intakeScore').onclick = async () => {
+  if(!intake.length){ $('intakeMsg').textContent = '請先讀入資料'; return; }
+  $('intakeScore').disabled = true;
+  for(let i = 0; i < intake.length; i++){
+    const it = intake[i];
+    try{
+      const raw = await ask(`你是「暖陽動物之家」的收容所審查員，正在評估第一階段申請表的回答品質。
+
+【待認養動物檔案】
+${$('profile').value}
+
+【飼主底線】
+${$('lines').value}
+
+【這位申請人的表單回答】
+${summarise(it.rec)}
+
+${it.missing.length ? `【系統偵測到缺少的欄位】${it.missing.join('、')}` : ''}
+
+硬條件（先檢查）：年齡 25～45 歲｜已服完兵役或無兵役義務｜年收入不低於 72 萬｜能接受不以生育為目標｜能接受兩隻貓。
+明確不符合任一項 → 一律 red，並在理由寫明是哪一項。沒提到 → 算資料不足，給 yellow。
+
+判斷標準：
+green = 回答完整、前後一致、看得出思考過，核心規劃沒有衝突，可進入第二階段價值觀評估
+yellow = 有誠意但資料不全、回答太簡短，或有幾點需要再確認，需補件後再看
+red = 核心規劃明顯衝突（例如堅持要生育、無法接受貓、距離或關係期待落差大），或回答敷衍
+
+只輸出一行，用半形直線分隔四個欄位，不要其他文字：
+燈號(green/yellow/red)|綜合評等(C/B/A-/A/A+/S)|20字內摘要|一句話說明理由
+
+範例：
+yellow|B|32歲工程師新竹|回答誠懇但沒說明生育規劃與貓的部分`, `評分中 ${i+1}/${intake.length}`);
+      const p = raw.split('\n').map(x=>x.trim()).filter(Boolean).pop().split(/\s*[|｜]\s*/);
+      it.light = /green|yellow|red/.test(p[0]) ? p[0].trim() : 'yellow';
+      it.grade = (p[1]||'').trim();
+      it.why   = (p[3]||'').trim() || (p[2]||'').trim();
+      if(it.missing.length && it.light === 'green') it.light = 'yellow';   /* 缺件一律不給綠燈 */
+      renderIntake();
+    }catch(e){
+      it.light = 'yellow'; it.why = '評分失敗：' + e.message; renderIntake();
+    }
+  }
+  $('intakeMsg').textContent = '評分完成';
+  $('intakeScore').disabled = false;
+};
+
+/* ── 登入閘門：綁在站長本人的 Supabase 會員帳號，只有 OWNER_EMAIL 能用 ── */
+function unlock(){ $('gate').style.display = 'none'; }
+function lock(hint){
+  $('gate').style.display = 'flex';
+  $('gateHint').textContent = hint || '這是站長本人專用工具，請用你的會員帳號登入';
+}
+async function lockNow(){ await DB.signOut(); location.reload(); }
+function gateStart(){
+  DB.onAuthChange(async (user) => {
+    if(!user){ lock(); return; }
+    if((user.email || '').toLowerCase() !== OWNER_EMAIL){
+      lock('此帳號沒有使用權限');
+      return;
+    }
+    unlock();
+    try{ await load(); }catch(e){}
+  });
+  $('gateGo').onclick = async () => {
+    const email = $('gateEmail').value.trim(), pass = $('gateInput').value;
+    if(!email || !pass){ $('gateMsg').textContent = '請輸入 Email 與密碼'; return; }
+    $('gateGo').disabled = true;
+    try{ await DB.signInEmail(email, pass); }
+    catch(e){ $('gateMsg').textContent = e.message || '登入失敗'; }
+    $('gateGo').disabled = false;
+  };
+  $('gateInput').onkeydown = e => { if(e.key === 'Enter') $('gateGo').click(); };
+}
+
+/* ── 左欄分頁 ── */
+const TABS = [
+  {key:'reply', label:'回覆庫',   legends:['罐頭回覆庫','常見問題 FAQ']},
+  {key:'apply', label:'補件與申請書', legends:['補件題組','認養申請書','第二階段題庫']},
+  {key:'setup', label:'設定',     legends:['待認養動物檔案','審查風格']},
+  {key:'roster',label:'名冊',     legends:['申請人名冊','表單回覆匯入']},
+  {key:'log',   label:'紀錄與備份', legends:['審查紀錄','設定備份']}
+];
+let CURRENT_TAB = 'reply';
+
+function showTab(k){
+  CURRENT_TAB = k;
+  document.querySelectorAll('.tabbtn').forEach(b => b.classList.toggle('on', b.dataset.k === k));
+  document.querySelectorAll('#leftCol fieldset').forEach(f => {
+    const empty = f.dataset.empty === '1';
+    f.style.display = (f.dataset.tab === k && !empty) ? '' : 'none';
+  });
+}
+
+function initTabs(){
+  const col = $('leftCol');
+  const bar = document.createElement('div');
+  bar.className = 'tabbar';
+  TABS.forEach(t => {
+    const b = document.createElement('button');
+    b.className = 'tabbtn'; b.dataset.k = t.key; b.textContent = t.label;
+    b.onclick = () => showTab(t.key);
+    bar.appendChild(b);
+  });
+  col.prepend(bar);
+
+  col.querySelectorAll('fieldset').forEach(f => {
+    const lg = (f.querySelector('legend') || {}).textContent || '';
+    const t = TABS.find(x => x.legends.some(l => lg.indexOf(l) >= 0));
+    f.dataset.tab = t ? t.key : 'setup';
+  });
+  showTab('reply');
+}
+
+/* ── 常見問題 FAQ ── */
+const CIRCLED = ['','①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮','⑯','⑰','⑱','⑲','⑳'];
+const DEFAULT_FAQ = [
+ {n:1, q:'為什麼用「認養」而不是直接交友？', a:
+`這只是小橘設計的一個小企劃，希望用比較輕鬆、有趣的方式認識新朋友。
+「認養」不代表誰高誰低，而是希望彼此都能抱著認真經營關係的心態，而不是只看幾張照片就決定。`},
+ {n:2, q:'為什麼要填這麼多問題？', a:
+`因為比起快速聊天，小橘更重視價值觀。
+很多問題沒有標準答案，只是希望了解彼此是否適合。
+真正重要的不是回答得多漂亮，而是回答是否一致、是否真誠。`},
+ {n:3, q:'為什麼公開自己的健康狀況？', a:
+`因為健康是未來共同生活的一部分。
+小橘希望彼此建立在知情與尊重之上，而不是交往很久之後才知道。
+如果因此覺得不適合，也完全可以理解。`},
+ {n:4, q:'關於健康與生育規劃', a:
+`目前身體狀況穩定，也持續追蹤治療中。
+醫師評估目前不建議以生育作為人生目標；若未來真的有生育規劃，也需要依照身體狀況再評估，並非完全沒有可能，只是風險較高。
+因此希望認養人在申請前能理解這件事。`},
+ {n:5, q:'可以聊聊童年經歷嗎？', a:
+`謝謝你的關心。
+成長經歷屬於比較私人的內容，目前還在認識階段，小橘暫時不會分享太多細節。
+其實不少家庭都有類似的成長背景。
+若未來建立足夠的信任，自然會慢慢分享。`},
+ {n:6, q:'為什麼需要這麼多安全感？', a:
+`每個人的需求不同。
+小橘重視的是：誠實、溝通、願意分享生活、願意一起解決問題。
+比起猜測，更希望彼此建立穩定的信任。`},
+ {n:7, q:'照片是真的嗎？', a:
+`目前公開的是 AI 輔助製作的示意圖。
+主要是希望保護個人隱私，避免公開照片被搜尋到。
+若後續彼此都有意願，也會在適當階段交換真人照片。`},
+ {n:8, q:'為什麼不直接交換 Line？', a:
+`目前仍依照認養流程進行，第一階段以 Dcard 為主。
+若彼此都有意願，會依序進入：
+第一階段　書面審查
+→ 第二階段　補件與價值觀交流
+→ 第三階段　日常觀察（FB／IG）
+→ 第四階段　交換聯絡方式或見面`},
+ {n:9, q:'為什麼不能直接聊天？', a:
+`因為目前收到的申請很多。
+如果每一位都直接聊天，小橘真的沒有辦法兼顧研究所、工作與兩隻貓咪。
+所以希望大家都依照流程，謝謝理解。`},
+ {n:10, q:'為什麼不接受單純聊天？', a:
+`目前小橘希望的是以伴侶關係為前提認識彼此。
+如果只是想聊天、交朋友，也很感謝你的善意，只是目前沒有開放一般陪聊服務。`},
+ {n:11, q:'可以認識妳嗎？', a:
+`歡迎😊
+不過目前仍採申請制度，先簡單介紹自己，再填寫認養申請書。
+如果彼此有緣，就有機會慢慢認識。`},
+ {n:12, q:'妳現在有工作嗎？經濟能獨立嗎？', a:
+`可以。目前經濟上能夠自主，也有自己的工作與人生規劃。
+若未來伴侶希望一起分擔生活，小橘也會很感謝；但並不是期待另一半一定要負擔自己的生活。`},
+ {n:13, q:'為什麼條件看起來很多？', a:
+`其實這些比較像是生活習慣與價值觀。
+
+其中只有少數幾項是基本門檻（例如年齡範圍、已完成兵役義務、能夠經濟自立、能接受兩隻貓與目前的生育規劃），這些不是在比高低，而是先確認雙方的生活現實能不能相容。
+
+其餘的都沒有標準答案。小橘不是在找最完美的人，而是在找真正適合一起生活的人。
+如果彼此不適合，也沒有誰對誰錯。`},
+ {n:14, q:'為什麼一直強調兩隻貓？', a:
+`因為牠們是家人。
+認識小橘，也代表會一起認識兩隻貓。
+因此希望未來的伴侶是真心接受牠們，而不是勉強忍受。`},
+ {n:15, q:'為什麼要先追蹤 FB／IG？', a:
+`第三階段主要是日常觀察。
+比起聊天，小橘更希望彼此先看看對方平常的生活、價值觀與步調。
+如果看完之後仍然覺得彼此適合，再繼續往下一步認識。`},
+ {n:16, q:'為什麼不直接回答所有私人問題？', a:
+`真正的信任是慢慢建立的。
+小橘願意分享自己，但也希望每一次分享都建立在足夠的安全感與信任上，而不是第一次聊天就把所有人生故事攤開。`},
+ {n:17, q:'為什麼審核這麼久？', a:
+`目前申請數量比預期多很多。
+而暖陽動物之家只有一位志工（小橘本人）負責閱讀每一份申請、回覆補件與整理資料。
+因此需要一些時間，也謝謝大家願意尊重每一位申請人的順序。`}
+];
+let faqs = JSON.parse(JSON.stringify(DEFAULT_FAQ));
+function faqByN(n){ return faqs.find(f => f.n === parseInt(n)); }
+
+function renderFaq(){
+  const sel = $('faqPick');
+  const keep = sel.value;
+  sel.innerHTML = faqs.map(f => `<option value="${f.n}">${CIRCLED[f.n]} ${esc(f.q)}</option>`).join('');
+  sel.value = faqByN(keep) ? keep : faqs[0].n;
+  $('faqText').value = faqByN(sel.value).a;
+}
+function faqQuote(n){
+  const f = faqByN(n);
+  if(!f) return '';
+  return `🐾 這個問題很多人都會詢問，暖陽動物之家已整理成 FAQ，請參考第 ${CIRCLED[f.n]} 題😊\n\n【${f.q}】\n${f.a}`;
+}
+function faqAll(){
+  return '🐾 暖陽動物之家｜常見問題 FAQ\n\n' +
+    faqs.map(f => `${CIRCLED[f.n]} ${f.q}\n${f.a}`).join('\n\n⸻\n\n');
+}
+$('faqPick').onchange = () => { $('faqText').value = faqByN($('faqPick').value).a; };
+$('faqCopy').onclick  = () => { copy(withForm(faqQuote($('faqPick').value))); faqMsg('已複製引用'); };
+$('faqPlain').onclick = () => { copy(withForm($('faqText').value)); faqMsg('已複製答案'); };
+$('faqAll').onclick   = () => { copy(withForm(faqAll())); faqMsg('已複製整份'); };
+$('faqSave').onclick  = async () => {
+  faqByN($('faqPick').value).a = $('faqText').value;
+  try{ await window.storage.set(K.faq, JSON.stringify(faqs)); faqMsg('已存檔'); }
+  catch(e){ faqMsg('存檔失敗'); }
+};
+$('faqReset').onclick = async () => {
+  if(!confirm('把 FAQ 還原成預設內容？你改過的版本會消失。')) return;
+  faqs = JSON.parse(JSON.stringify(DEFAULT_FAQ));
+  renderFaq();
+  try{ const r = await window.storage.get(K.roster); if(r) roster = JSON.parse(r.value); }catch(e){}
+  migrateRoster();
+  renderRoster();
+  try{ await window.storage.set(K.faq, JSON.stringify(faqs)); }catch(e){}
+  faqMsg('已還原');
+};
+function faqMsg(t){ $('faqMsg').textContent = t; setTimeout(()=>$('faqMsg').textContent='',2500); }
+function mergeFaq(saved){
+  return DEFAULT_FAQ.map(d => {
+    const hit = saved.find(x => x.n === d.n);
+    return (hit && hit.a) ? Object.assign({}, d, {a: hit.a}) : d;
+  });
+}
+
+/* ── 罐頭回覆庫 ── */
+const DEFAULT_CANNED = [
+ {id:'form_entry', full:true, name:'⓪ 申請入口引導（最常用，最短）★★★★★', text:
+`🐾 暖陽動物之家回覆
+
+您好😊
+目前收容所採認養申請制，若您希望認識小橘，歡迎先填寫第一階段認養申請。
+
+📋 申請入口：
+{{表單}}
+
+完成後，收容所會依序閱讀每一份申請，也謝謝您的耐心。🌼`},
+
+ {id:'supplement', name:'① 資料不足／請補件 ★★★★★', text:
+`🏥 暖陽動物之家 ─ 補件通知單
+審查階段：第一階段（書面）｜狀態：資料未齊
+
+謝謝您願意為小橘提出認養申請，收到的時候我們真的很開心😊
+
+只是目前收到的資料還不多，收容所想再多認識您一點，才能好好完成書面審查。
+方便的話，麻煩您補充以下幾項：
+
+📋 年齡、身高／體重
+📋 居住地、居住狀況（是否獨立居住）
+📋 工作與生活型態
+📋 興趣、個性
+📋 感情觀、婚姻規劃
+📋 是否接受小橘與兩隻貓咪共同生活
+📋 關於生育規劃：小橘目前不以生育為人生目標，未來若有規劃也需視健康狀況評估，風險較高。這部分您的想法是？
+📋 若另一半因工作、研究所或健康因素需要較多自己的時間，您通常會如何陪伴與溝通？
+
+這些問題不是門檻，只是希望在彼此投入之前，先確認方向是不是一致。
+
+🐾 收容所提醒
+收容所不會以收入高低、外表、職業或學歷評分，只會確認雙方都能經濟自立、生活穩定。
+比起條件的高低，我們更在意的是價值觀、責任感、溝通方式，以及在了解彼此之後，是否仍願意留下來。
+
+補件之後，收容所會依照認養流程慢慢看過；若理念契合，會邀請您進入第二階段。🌼
+
+✎ 志工小記：慢慢寫就好，我們不趕時間。`},
+
+ {id:'greeting_only', full:true, name:'② 一句話申請通用模板 ★★★★★', text:
+`🐾 暖陽動物之家回覆
+
+您好，謝謝您提出認養申請，也謝謝您願意主動來信。😊
+
+不過目前收容所對您的了解還不多，僅憑一句「想認養」，還無法完成第一階段書面審查。
+暖陽動物之家希望認識的是一位真實的人，而不只是收到一句「可以認識嗎」。
+
+若您是真心希望認識小橘，歡迎先補充以下資料：
+
+📋 第一階段認養申請（補件資料）
+・年齡、身高／體重、居住地
+・職業、生活型態與日常作息
+・興趣、個性與價值觀
+・婚姻、生育與未來生活規劃
+・是否接受小橘與兩隻貓咪共同生活
+・是否能接受小橘需要定期健康追蹤，並理解她目前不以生育為人生目標（未來若有規劃需視健康狀況評估，風險較高）
+・希望建立的是哪一種關係呢？
+　□ 以結婚為前提的長期穩定關係
+　□ 長期交往，順其自然發展
+　□ 先以朋友身分互相了解，再決定是否發展
+　□ 其他（歡迎分享您的想法）
+
+🌼 暖陽動物之家相信，沒有哪一種關係期待是對或錯。
+收容所只是希望在認識彼此之前，先確認雙方對未來的期待是否一致，避免日後因不同想法而產生誤解。
+
+完成補件後，收容所將依照認養流程進行第一階段書面審查；若理念契合，將邀請您進入第二階段補充評估。🌼
+
+🐾 收容所志工偷偷說（內部紀錄）
+📝 有主動表達認識意願，但目前資料不足，尚無法建立對申請人的基本認識。
+📝 暖陽動物之家鼓勵「先認識，再培養感情」，因此會先邀請完成第一階段書面申請，再依流程進行後續評估。
+
+📊 收容所初步評估
+📄 書面完整度：★☆☆☆☆（1/5）
+🤝 價值觀了解度：☆☆☆☆☆（0/5）
+🐈 認養適配度：待補件評估
+
+📌 目前流程
+☐ 第一階段：書面審查（待補件）
+☐ 第二階段：補充評估
+☐ 第三階段：日常觀察（A+ 開放）
+☐ 第四階段：第一次約會（朋友身分開始）
+☐ 第五階段：試養（以朋友身分相處）
+
+📜 收容所保留條款
+暖陽動物之家採分階段認養制度，希望彼此在建立信任的過程中，逐步認識對方，而非一次揭露所有資訊。真正的認養，不是比誰條件更好，而是找到願意一起走很久的人。🌻`},
+
+ {id:'thanks', name:'③ 謝謝欣賞 ★★★★★', text:
+`🏥 暖陽動物之家 ─ 來信致謝
+
+謝謝您的欣賞，看到這樣的留言，我們真的會開心一整天😊🧡
+很高興這個企劃有帶給您一些歡樂，也希望讓大家看見，交友除了傳統自介，還可以有別的樣子。
+
+也祝福您，早日遇見那個適合自己的人🐈✨
+
+✎ 志工小記：您的留言已經被貼在收容所的公佈欄上了。`},
+
+ {id:'status', name:'④ 目前有沒有被認養？ ★★★★☆', text:
+`🏥 暖陽動物之家 ─ 認養狀態查詢
+
+謝謝您的關心😊
+小橘目前還在所裡接受認養評估，尚未被認養。
+
+如果您也有認養意願，隨時歡迎提出申請，收容所會依序好好看過每一份🐈💛
+
+✎ 志工小記：她今天精神不錯，有曬到太陽。`},
+
+ {id:'no_chat', name:'⑤ 拒絕陪聊 ★★★★☆', text:
+`🏥 暖陽動物之家 ─ 服務範圍說明
+
+謝謝您的來訊😊
+收容所目前主要受理認養申請，暫時還沒有餘力提供陪聊服務，這點要先跟您說聲抱歉。
+
+如果您願意多認識小橘一點，歡迎依格式提出申請，我們會很樂意為您安排書面審查🐈
+也祝您有溫暖的一天🌼
+
+✎ 志工小記：不是不理您，是所裡的人手真的只有一位。`},
+
+ {id:'age_gap', name:'⑥ 年齡不符合但有誠意 ★★★★☆', text:
+`🏥 暖陽動物之家 ─ 條件差異說明
+審查階段：第一階段（書面）｜狀態：受理中
+
+謝謝您先誠實說明自己的年齡，這一點收容所很放在心上😊
+雖然與原先設定略有差距，但我們仍願意好好認識每一位真誠的申請人。
+
+歡迎您補充完整資料，收容所會綜合所有面向來看，不會只因為單一欄位就決定結果🐈
+
+✎ 志工小記：誠實這一項，在我們這裡是加分的。`},
+
+ {id:'phase2', name:'⑦ 第二階段 · 補充評估通知 ★★★★☆', text:
+`🏥 暖陽動物之家 ─ 第二階段通知
+審查階段：第二階段（補充評估）｜狀態：進行中
+
+謝謝您這麼用心完成認養申請，讀起來看得出您有認真想過😊
+書面資料收容所已經看過了，整體印象很好。
+
+為了讓彼此更了解，還想再多問您幾件事：
+（直接列補件）
+
+不用急著回覆，慢慢想再告訴我們就好。
+完成後收容所會再看一次；若理念契合，會邀請您進入第三階段的日常觀察🌼
+
+✎ 志工小記：這份寫得比多數申請書用心，先記上一筆。`},
+
+ {id:'no_hookup', name:'⑧ 拒絕亂槍打鳥／約砲感 ★★★★☆', text:
+`🏥 暖陽動物之家 ─ 申請規範說明
+
+謝謝您的來訊😊
+收容所採終身認養制度，所以會希望認養人先完整介紹自己，我們才有辦法判斷是不是適合一起生活。
+
+如果您是真心想認識小橘，很歡迎依照認養申請格式補充資料，收容所會認真看過。
+如果目前只是想找人聊天，這部分收容所暫時沒有辦法提供，還請您見諒🐈
+
+也祝您順利找到合拍的人🌼
+
+✎ 志工小記：終身認養的意思，就是一輩子。`},
+
+ {id:'comment_eq', name:'⑨ 評論區高EQ回覆 ★★★★☆', text:
+`🏥 暖陽動物之家 ─ 公開回覆
+
+謝謝您願意留言😊
+每個人喜歡的交友方式都不一樣，暖陽動物之家只是想分享一種比較有趣的形式，沒有要說服誰。
+
+認養從來不是強迫，大家都可以自由選擇適合自己的方式🐈
+
+✎ 志工小記：收容所的大門一直開著，來或不來都自由。`},
+
+ {id:'meme', name:'⑩ 回覆迷因／搞笑留言 ★★★★☆', text:
+`🏥 暖陽動物之家 ─ 民眾回饋收訖
+
+哈哈🤣 收容所收到您的回饋了，謝謝您陪我們一起玩！
+若符合認養資格，我們歡迎每一位願意好好照顧小橘一輩子的人提出申請🐈🧡
+
+✎ 志工小記：本則留言已由小橘親自已讀，並翻了個身。`},
+
+ {id:'s1_pass', name:'⑪ 第一階段 · 通過（邀進第二階段）', text:
+`🐾 暖陽動物之家回覆
+
+您好，謝謝您願意完整補充基本資料😊
+收容所已經對您的工作、居住狀況、生活型態、貓咪與未來關係方向有了初步了解。
+
+經過第一階段書面審查，目前沒有發現明顯的基本條件衝突，因此想邀請您進入第二階段「價值觀評估」。
+
+第二階段沒有標準答案，也不是面試，而是希望進一步了解您在面對共同生活、情緒、衝突與人生變動時，會怎麼思考與行動。🌼🐾`},
+
+ {id:'s1_supp', name:'⑫ 第一階段 · 補件通知（簡短版）', text:
+`🐾 暖陽動物之家｜第一階段補件通知
+
+您好，謝謝您願意分享自己的資料😊
+目前收容所已收到部分基本資訊，但關於工作、居住、貓咪或婚育規劃還有幾項需要確認。
+
+第一階段主要是了解雙方是否具備基本相容條件，不需要回答得很華麗，誠實說明目前的生活狀況就好。
+
+完成補件後，收容所會再判斷是否進入第二階段。謝謝您的耐心🌼🐈`},
+
+ {id:'s1_reject', name:'⑬ 第一階段 · 婉拒', text:
+`🐾 暖陽動物之家回覆
+
+謝謝您願意花時間參與認養流程，也謝謝您坦白分享自己的生活規劃😊
+
+經過第一階段評估，收容所認為雙方目前在居住地、婚育規劃、毛孩安排或未來生活方向上存在較明顯的差異，因此暫時不再安排後續流程。
+
+這並不代表任何一方不好，只是希望彼此在投入更多時間之前，先尊重現實條件與人生方向。
+
+也祝福您未來能遇見與自己生活規劃一致、相處自在的人🌼🐾`},
+
+ {id:'s2_pass', name:'⑭ 第二階段 · 通過（邀進第三階段）', text:
+`🐾 暖陽動物之家｜第二階段審查結果
+
+您好，謝謝您花時間完成第二階段的補充評估😊
+
+收容所感受到，您不是只回答「可以」或「沒問題」，而是真的願意思考共同生活、情緒陪伴、健康、財務與未來規劃。
+
+您的答案不需要完美，但目前沒有發現明顯的核心價值衝突，也看見您願意理解、溝通與投入關係的態度。
+
+因此，暖陽動物之家決定邀請您進入第三階段「日常觀察期」🌼🐾`},
+
+ {id:'s2_hold', name:'⑮ 第二階段 · 暫緩（維持現階段）', text:
+`🐾 暖陽動物之家回覆
+
+謝謝您願意完成補件，也謝謝您分享自己的想法😊
+
+目前收容所已對您的價值觀與生活安排有更多了解。不過，有些部分仍需要透過時間與自然交流慢慢觀察，因此暫時先維持在第二階段，不急著進入下一階段。
+
+這不是負面評價，而是希望雙方不要因為一時熱情快速推進，也讓彼此有空間確認真正適合的相處方式🌼🐈`},
+
+ {id:'s3_notice', name:'⑯ 第三階段 · 日常觀察期通知（唯一給 IG）', text:
+`🐾 暖陽動物之家｜第三階段通知
+
+您好，經過前兩階段的綜合評估，收容所決定邀請您進入第三階段「日常觀察期」😊
+
+第三階段主要透過社群，慢慢了解彼此的生活環境、興趣、價值觀與生活步調。
+
+🐾 日常觀察入口
+Instagram：eugenie_chuang1116
+
+也想先說明，第三階段：
+・小橘會提供 Instagram，但這個階段暫時不會回追
+・不是陪聊服務
+・不需要每天早安、晚安
+・不需要報備行程
+・不代表已進入曖昧或戀愛關係
+・不保證每則留言、私訊都會即時回覆
+
+小橘仍需兼顧研究所、工作與貓咪。這個階段主要是讓彼此保有原本的生活，看看真實的日常是不是自己欣賞、願意靠近的樣子。
+
+如果經過一段時間，雙方都仍有進一步認識的意願，才會再安排下一階段的雙向互動🌼🐈`},
+
+ {id:'s4_notice', name:'⑰ 第四階段 · 雙向互動期通知', text:
+`🐾 暖陽動物之家｜第四階段通知
+
+您好，經過一段時間的日常觀察，小橘也慢慢看見您在社群互動中的態度與生活方式😊
+
+目前雙方的生活步調與價值觀沒有出現明顯衝突，也感受到彼此仍有繼續認識的意願，因此想邀請您進入第四階段「雙向互動期」。
+
+第四階段開始，小橘會視情況回追 Instagram，之後以 IG 私訊、語音或視訊交流。
+可以開始比較自然地聊天、分享生活與交流想法。
+
+回追對小橘來說代表：願意雙向了解，而不只是被觀察。
+
+不過，這仍然不是正式交往或承諾關係，也不需要全天候陪聊、秒回訊息或每天固定報備。
+
+這一階段主要想確認：
+・對話是否雙向
+・是否能尊重彼此的節奏
+・能不能自在談論不同意見
+・文字裡的價值觀與實際互動是否一致
+・雙方是否都產生實際見面的意願
+
+希望彼此都能在沒有壓力的情況下，自然地多認識一點🌼🐾`},
+
+ {id:'s5_invite', name:'⑱ 第五階段 · 公開見面說明', text:
+`🐾 暖陽動物之家｜第五階段見面說明
+
+經過日常觀察與雙向互動之後，若雙方都仍有進一步認識的意願，才會安排第一次公開見面😊
+
+第一次見面仍會以 Instagram 作為主要聯絡管道，不需要事前交換 LINE 或其他比較私人的聯絡方式。
+
+見面會安排在白天或傍晚的公共場所，雙方各自前往、各自返家；暫不安排前往私人住處、搭乘對方車輛或長途出遊。
+
+見面不代表已經確認戀愛關係，而是希望了解在文字與社群之外，彼此實際相處是不是自在🌼🐾`},
+
+ {id:'s5_yes', name:'⑲ 見面後 · 想繼續認識', text:
+`🐾 暖陽動物之家回覆
+
+謝謝您今天願意出來見面，也謝謝您尊重小橘的步調😊
+
+今天的相處讓小橘覺得整體氣氛很自然，也有一些想再多了解您的地方。
+
+目前不急著替關係下定義，可以先維持交流與見面，慢慢觀察真實相處是不是持續舒服。
+
+謝謝您讓第一次見面成為一段輕鬆、沒有壓力的經驗🌼🐾`},
+
+ {id:'s5_no', name:'⑳ 見面後 · 不適合繼續', text:
+`🐾 暖陽動物之家回覆
+
+謝謝您願意花時間見面，也謝謝您在過程中給予的尊重與體諒😊
+
+經過實際相處，小橘覺得彼此在互動方式或生活節奏上，可能比較適合停留在目前的位置。
+
+這並不是您有哪裡不好，只是文字聊得來與真實相處是否契合，確實要見過面才知道。
+
+為了不讓彼此繼續投入不同的期待，小橘想誠實地將認養流程停在這裡。
+
+也祝福您未來遇見真正適合自己、能自在相處的人🌼🐾`},
+
+ {id:'s6_after', name:'㉑ 第六階段 · 見面後持續認識（是否交換 LINE）', text:
+`🐾 暖陽動物之家｜見面後續通知
+
+謝謝您願意和小橘完成第一次見面😊
+
+若雙方都覺得實際相處自然，也仍希望繼續認識，才會再討論是否交換 LINE，進入比較穩定、私人的聯絡階段。
+
+交換 LINE 並不代表正式交往，而是代表雙方經過書面評估、日常觀察、雙向交流與公開見面之後，都願意讓彼此更進一步走進自己的生活。
+
+若任何一方還沒準備好，也可以繼續使用 Instagram 聯絡，不需要勉強交換🌼`},
+
+ {id:'flow_public', full:true, name:'㉒ 認養流程公開說明（貼文／FAQ 用）', text:
+`🐾 暖陽動物之家｜認養流程說明
+
+為了讓每一位申請人都清楚自己現在在哪裡、接下來會發生什麼，收容所把流程完整公開如下🌼
+
+📍 第一階段　基本資料書面審查
+・透過申請表了解基本條件是否相容
+・不提供任何社群或聯絡方式
+・約 3～7 天回覆
+
+📍 第二階段　價值觀與相處模式評估
+・依您的資料挑選 4～8 題，了解面對真實問題時的想法
+・沒有標準答案，誠實與前後一致比漂亮重要
+・不提供社群
+・約 1～2 週
+
+📍 第三階段　日常觀察
+・收容所提供 Instagram，讓您看看真實的日常
+・這個階段暫時不會回追，也不是陪聊服務
+・至少 1～2 週，沒有期限
+
+📍 第四階段　雙向互動
+・小橘會視情況回追，之後以 IG 私訊、語音或視訊交流
+・回追代表：願意雙向了解，而不只是被觀察
+・約 2～4 週
+
+📍 第五階段　第一次公開見面
+・仍以 Instagram 聯絡，不需事先交換 LINE
+・白天或傍晚、公共場所、各自前往各自返家
+・依雙方時間安排
+
+📍 第六階段　見面後持續認識
+・若雙方都覺得自在，才會討論是否交換 LINE
+・交換 LINE 不代表正式交往，而是願意讓彼此更走進生活
+
+🌱 關於節奏
+・每一層界線都有意義：回追＝願意雙向了解；見面＝願意驗證相處感受；交換 LINE＝願意讓對方進入私人生活
+・收容所只有一位志工（小橘本人），回覆會慢，謝謝您的耐心
+
+🕊 隨時可以喊停
+任何階段都可以直接告訴收容所您想停下來，不需要理由，收容所不會追問，也不會影響對您的評價。
+這套流程不是考試，是希望雙方都能在舒服的節奏裡，確認彼此適不適合🐈`},
+
+ {id:'footer', name:'㉓ 流程說明段（第一、二階段用，不含聯絡方式）', text:
+`完成補件後，收容所會依照認養流程，慢慢看過您的資料。
+若彼此理念契合，會邀請您進入第二階段的補充評估，我們再一起往下走🌼`}
+];
+
+let canned = JSON.parse(JSON.stringify(DEFAULT_CANNED));
+
+$('appCopy').onclick = () => { copy(withForm($('appForm').value)); $('appMsg').textContent='已複製'; setTimeout(()=>$('appMsg').textContent='',2000); };
+$('appSave').onclick = async () => {
+  try{ await window.storage.set(K.appform, $('appForm').value); $('appMsg').textContent='已存檔'; }
+  catch(e){ $('appMsg').textContent='存檔失敗'; }
+  setTimeout(()=>$('appMsg').textContent='',2500);
+};
+$('appReset').onclick = async () => {
+  if(!confirm('還原成預設版本？你改過的內容會消失。')) return;
+  $('appForm').value = DEFAULT_APPFORM;
+  try{ await window.storage.set(K.appform, DEFAULT_APPFORM); }catch(e){}
+  $('appMsg').textContent='已還原'; setTimeout(()=>$('appMsg').textContent='',2500);
+};
+
+function cannedById(id){ return canned.find(c => c.id === id); }
+
+function renderCanned(){
+  const sel = $('cannedPick');
+  const keep = sel.value;
+  sel.innerHTML = canned.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  sel.value = cannedById(keep) ? keep : canned[0].id;
+  $('cannedText').value = cannedById(sel.value).text;
+}
+$('cannedPick').onchange = () => { $('cannedText').value = cannedById($('cannedPick').value).text; };
+$('cannedCopy').onclick = () => { copy(withForm($('cannedText').value)); $('cannedMsg').textContent = '已複製'; setTimeout(()=>$('cannedMsg').textContent='',2000); };
+$('cannedSave').onclick = async () => {
+  cannedById($('cannedPick').value).text = $('cannedText').value;
+  try{ await window.storage.set(K.canned, JSON.stringify(canned)); $('cannedMsg').textContent = '已存檔'; }
+  catch(e){ $('cannedMsg').textContent = '存檔失敗'; }
+  setTimeout(()=>$('cannedMsg').textContent='',2500);
+};
+$('cannedReset').onclick = async () => {
+  if(!confirm('把所有罐頭回覆還原成預設內容？你改過的版本會消失。')) return;
+  canned = JSON.parse(JSON.stringify(DEFAULT_CANNED));
+  renderCanned();
+  renderModules();
+  try{ await window.storage.set(K.canned, JSON.stringify(canned)); }catch(e){}
+  $('cannedMsg').textContent = '已還原';
+  setTimeout(()=>$('cannedMsg').textContent='',2500);
+};
+
+/* ── 存檔 ── */
+async function load(){
+  try{ const r = await window.storage.get(K.profile); if(r) $('profile').value = r.value; }
+  catch(e){ $('profile').value = DEFAULT_PROFILE; }
+  if(!$('profile').value) $('profile').value = DEFAULT_PROFILE;
+  try{ const r = await window.storage.get(K.lines); if(r) $('lines').value = r.value; }
+  catch(e){ $('lines').value = DEFAULT_LINES; }
+  if(!$('lines').value) $('lines').value = DEFAULT_LINES;
+  try{ const r = await window.storage.get(K.formurl); if(r && r.value) $('formUrl').value = r.value; }catch(e){}
+  if(!$('formUrl').value) $('formUrl').value = 'https://forms.gle/xtGMXjj2q2Yah5NF9';
+  try{ const r = await window.storage.get(K.appform); $('appForm').value = r ? r.value : DEFAULT_APPFORM; }
+  catch(e){ $('appForm').value = DEFAULT_APPFORM; }
+  if(!$('appForm').value) $('appForm').value = DEFAULT_APPFORM;
+  await loadCanned();
+  try{ const r = await window.storage.get(K.faq); if(r) faqs = mergeFaq(JSON.parse(r.value)); }catch(e){}
+  renderFaq();
+  try{ const r = await window.storage.get(K.roster); if(r) roster = JSON.parse(r.value); }catch(e){}
+  migrateRoster();
+  renderRoster();
+  renderCanned();
+  try{
+    const r = await window.storage.get(K.history);
+    if(r){
+      history = JSON.parse(r.value).map((h,i) => ({
+        id: h.id || ('legacy-' + i), ...h, id: h.id || ('legacy-' + i)
+      }));
+      renderHist();
+    }
+  }catch(e){}
+}
+$('save').onclick = async () => {
+  try{
+    await window.storage.set(K.profile, $('profile').value);
+    await window.storage.set(K.lines, $('lines').value);
+    await window.storage.set(K.formurl, $('formUrl').value);
+    $('savedMsg').textContent = '已存檔';
+  }catch(e){ $('savedMsg').textContent = '存檔失敗，這次仍可使用'; }
+  setTimeout(()=>$('savedMsg').textContent='', 2500);
+};
+
+const MAX_HIST = 50;
+
+async function saveHist(){
+  try{ await window.storage.set(K.history, JSON.stringify(history)); }
+  catch(e){ $('histCount').textContent = '存檔失敗'; }
+}
+
+function fmtDate(iso){
+  const d = iso ? new Date(iso) : null;
+  if(!d || isNaN(d)) return '—';
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())}`;
+}
+
+function searchText(h){
+  const o = h.data || {};
+  return [h.title, h.applicant, h.canned, h.grade, o.why,
+          (cannedById(h.canned)||{}).name || ''].join(' ').toLowerCase();
+}
+
+function renderHist(){
+  $('histBox').dataset.empty = history.length ? '0' : '1';
+  if(CURRENT_TAB) showTab(CURRENT_TAB);
+  if(!history.length) return;
+
+  const q = $('histSearch').value.trim().toLowerCase();
+  const terms = q ? q.split(/\s+/) : [];
+  const hits = history.filter(h => terms.every(t => searchText(h).includes(t)));
+
+  $('histList').innerHTML = '';
+  if(!hits.length){
+    $('histList').innerHTML = '<p class="hint" style="padding:10px 0">沒有符合的紀錄，換個關鍵字試試。</p>';
+  }
+  hits.forEach(h => {
+    const row = document.createElement('div');
+    row.className = 'hist';
+
+    const main = document.createElement('div');
+    main.className = 'h-main';
+    main.innerHTML = `<span class="h-title">${esc(h.title||'未命名申請')}</span>
+                      <span class="h-date">${fmtDate(h.date)} · ${esc((cannedById(h.canned)||{}).name||h.canned||'')}</span>`;
+    main.onclick = () => renderOne(h.data);
+
+    const del = document.createElement('button');
+    del.className = 'del'; del.textContent = '×';
+    del.title = '刪除這筆紀錄';
+    del.onclick = async (e) => {
+      e.stopPropagation();
+      if(!confirm(`刪除「${h.title||'未命名申請'}」？這筆紀錄無法復原。`)) return;
+      history = history.filter(x => x.id !== h.id);
+      await saveHist();
+      renderHist();
+    };
+
+    row.append(main, del);
+    $('histList').appendChild(row);
+  });
+
+  $('histCount').textContent = terms.length
+    ? `${hits.length} / ${history.length} 筆`
+    : `${history.length} / ${MAX_HIST} 筆`;
+}
+
+$('histSearch').oninput = renderHist;
+
+$('exportCsv').onclick = () => {
+  if(!history.length) return;
+  const q = ['日期','來訊摘要','綜合評等','建議罐頭','判斷理由','原訊息'];
+  const cell = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';
+  const rows = history.map(h => [
+    fmtDate(h.date), h.title, h.grade,
+    ((cannedById(h.canned)||{}).name || h.canned || ''), (h.data||{}).why, h.applicant
+  ].map(cell).join(','));
+  const csv = '\uFEFF' + q.map(cell).join(',') + '\n' + rows.join('\n');
+  const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `面談紀錄_${fmtDate(new Date().toISOString()).replace(/\//g,'')}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  $('histCount').textContent = '已匯出';
+  setTimeout(renderHist, 2500);
+};
+
+/* ── 極簡 Markdown ── */
+function md(src){
+  const lines = (src||'').split('\n');
+  let out = '', tbl = [];
+  const flushTbl = () => {
+    if(!tbl.length) return;
+    const rows = tbl.map(r => r.replace(/^\||\|$/g,'').split('|').map(c=>c.trim()));
+    const body = rows.filter(r => !r.every(c => /^-{2,}$/.test(c)));
+    out += '<table>';
+    body.forEach((r,i)=>{
+      const t = i===0 ? 'th' : 'td';
+      out += '<tr>' + r.map(c=>`<${t}>${inline(c)}</${t}>`).join('') + '</tr>';
+    });
+    out += '</table>'; tbl = [];
+  };
+  let inList = false;
+  const closeList = () => { if(inList){ out += '</ul>'; inList = false; } };
+  for(let raw of lines){
+    const l = raw.trim();
+    if(l.startsWith('|')){ closeList(); tbl.push(l); continue; }
+    flushTbl();
+    if(!l){ closeList(); continue; }
+    if(/^(---+|⸻)$/.test(l)){ closeList(); out += '<hr>'; continue; }
+    if(l.startsWith('### ')){ closeList(); out += `<h3>${inline(l.slice(4))}</h3>`; continue; }
+    if(l.startsWith('## ')){ closeList(); out += `<h2>${inline(l.slice(3))}</h2>`; continue; }
+    if(l.startsWith('# ')){ closeList(); out += `<h2>${inline(l.slice(2))}</h2>`; continue; }
+    if(/^[-*・]\s+/.test(l)){ if(!inList){ out += '<ul>'; inList = true; } out += `<li>${inline(l.replace(/^[-*・]\s+/,''))}</li>`; continue; }
+    closeList(); out += `<p>${inline(l)}</p>`;
+  }
+  closeList(); flushTbl();
+  return out;
+}
+function esc(s){ return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function inline(s){ return esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); }
+
+/* ── 呼叫模型 ── */
+const TIMEOUT_MS = 45000;
+let lastRaw = '';   /* 供診斷用：最後一次收到的原始內容 */
+
+async function askOnce(prompt){
+  if(!DB.hasClaudeProxy()) throw new Error('尚未設定 AI 代理網址（js/config.js 的 CLAUDE_PROXY_URL）');
+  let timer;
+  const clock = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("等了 45 秒還沒回應")), TIMEOUT_MS);
+  });
+  try{
+    const text = await Promise.race([DB.askClaude(prompt), clock]);
+    lastRaw = text.slice(0, 400);
+    if(!text.trim()) throw new Error("這次回了空白內容");
+    return text;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+/* 失敗自動重試兩次，狀態列會顯示第幾次 */
+async function ask(prompt, label){
+  let last;
+  for(let i = 1; i <= 3; i++){
+    try{
+      $('status').textContent = label + (i > 1 ? ` · 第 ${i} 次嘗試` : '');
+      return await askOnce(prompt);
+    }catch(e){
+      last = e;
+      if(i < 3) await new Promise(r => setTimeout(r, 1200 * i));
+    }
+  }
+  throw new Error(last.message + "（已重試 3 次）");
+}
+
+function baseContext(applicant){
+  return `你是「暖陽動物之家」的收容所分流人員。主人翁把自己寫成一隻待認養的貓「小橘」，在交友版收到各式各樣的私訊，你的工作是判斷每封訊息該用哪一封現成的罐頭回覆。
+
+【待認養動物檔案】
+${$('profile').value}
+
+【飼主底線】
+${$('lines').value}
+
+【收到的訊息】
+${applicant}`;
+}
+
+const CANNED_MENU = `supplement = 有認養意願但資料不足，需要補件
+form_entry = 尚未填申請表的人（最常用）：只丟一句話、問可不可以認識、想認養、或自介零散不完整。優先選這封，直接請對方去填表
+greeting_only = 已經知道要填表但仍只丟一句話，或你想給完整說明版，例如「哈囉」「想認識」「可以聊聊嗎」「想認養」，沒有任何自介
+thanks = 純粹稱讚這個企劃有趣，沒有申請意願
+status = 只是問小橘有沒有被認養
+no_chat = 只想找人聊天，沒有認養意願
+age_gap = 年齡與設定不符，但態度誠懇、有提供資料
+phase2 = 資料相當完整、印象良好，可進入第二階段補件
+no_hookup = 亂槍打鳥、明顯只想約、或訊息輕浮
+s1_pass = 第一階段書面審查通過，邀請進入第二階段價值觀評估
+s1_supp = 第一階段資料還缺幾項，簡短補件
+s1_reject = 第一階段基本條件明顯不合，婉拒
+s2_pass = 第二階段價值觀評估通過，邀請進入第三階段日常觀察
+s2_hold = 第二階段先暫緩，維持現階段再觀察
+s3_notice = 第三階段日常觀察期通知（唯一會給 IG 的一封）
+s4_notice = 第四階段雙向互動期通知
+s5_invite = 第五階段第一次公開見面說明（仍以 IG 聯絡，不交換 LINE）
+s5_yes = 見面後想繼續認識
+s5_no = 見面後覺得不適合繼續
+s6_after = 見面後雙方都想繼續，說明是否交換 LINE
+flow_public = 對方問流程怎麼走、還要多久、後面有什麼，直接給完整流程說明
+not_selected = 核心規劃不合，需要婉拒
+comment_eq = 質疑、酸這個企劃或這種交友方式
+meme = 迷因、玩梗、搞笑留言
+none = 以上都不適合`;
+
+/* 只回一行純文字，不用 JSON，格式：代號|分流|摘要|理由 */
+function triagePrompt(one){
+  return `${baseContext(one)}
+
+可選的罐頭回覆：
+${CANNED_MENU}
+
+硬條件（先檢查這一關）：
+若對方明確不符合【硬條件】任一項（年齡不在 25～45、尚未服兵役、收入明顯低於門檻、堅持要生育、無法接受貓），一律給 C，並在理由中直接寫明是哪一項。
+若對方沒有提到某項硬條件，不要當作不符合，而是列為資料不足（B），需補件確認。
+
+綜合評等標準：
+C = 資料不足，或核心規劃明顯不合，需婉拒
+B = 有意願但資料不齊，需要補件
+A- = 資料不錯但仍有不清楚之處，仍需補件
+A = 資料完整、印象良好，可進入第二階段補充評估
+A+ = 價值觀契合度高，可開放第三階段日常觀察
+S = 極少數。價值觀高度契合、坦誠分享優缺點、尊重界線不急著推進關係、回答一致且有實際例子支持
+
+如果對方問的是常見問題，可引用 FAQ（沒有就寫 0）：
+${faqs.map(f=>`${f.n} = ${f.q}`).join('\n')}
+
+可依對方背景插入的補件模組（固定題不用選，系統會自動附上）：
+${MODULES.filter(m=>m.cat!=='core').map(m=>`${m.id} = ${m.name}`).join('\n')}
+
+只輸出一行，用半形直線分隔六個欄位，不要任何其他文字、不要換行、不要 JSON：
+代號|綜合評等|20字內的訊息摘要|一句話說明為什麼|書面完整度,溝通能力,價值觀契合度,認養適配度（各給 1-5 整數）|要插入的模組代號（逗號分隔，最多 4 個，沒有就寫 none）|要引用的 FAQ 題號（單一數字，沒有就寫 0）
+
+範例：
+supplement|B|33歲工程師喜歡旅行|態度誠懇但沒提到貓與生育規劃|3,3,2,3|eng,travel|0
+form_entry|C|問為什麼不能直接給 Line|這題 FAQ 已有標準說明|1,1,1,1|none|8`;
+}
+
+function parseTriage(text){
+  const line = (text||'').split('\n').map(x=>x.trim()).filter(Boolean).pop() || '';
+  const p = line.split(/\s*[|｜]\s*/);
+  if(p.length < 2) throw new Error('回覆格式不如預期：' + line.slice(0,60));
+  return {
+    canned: p[0].trim(),
+    grade: (p[1]||'').trim().toUpperCase(),
+    title: (p[2]||'').trim(),
+    why: (p[3]||'').trim(),
+    stars: (p[4]||'').split(/[,，、\s]+/).map(x=>parseInt(x)).filter(x=>!isNaN(x)).slice(0,4),
+    mods: (p[5]||'').split(/[,，、\s]+/).map(x=>x.trim()).filter(x=>x && x!=='none').slice(0,4),
+    faq: parseInt(p[6]) || 0
+  };
+}
+
+/* ── 單封判斷 ── */
+$('go').onclick = async () => {
+  const applicant = $('applicant').value.trim();
+  if(!applicant){ $('status').textContent = '請先貼上對方的訊息'; return; }
+  $('go').disabled = $('goFull').disabled = $('goBatch').disabled = true;
+  try{
+    const raw = await ask(triagePrompt(applicant), '判斷中⋯⋯');
+    const o = parseTriage(raw);
+    renderOne(o);
+    history.unshift({
+      id: Date.now() + '-' + Math.random().toString(36).slice(2,7),
+      date: new Date().toISOString(),
+      title: o.title || '未命名來訊',
+      canned: o.canned,
+      grade: o.grade,
+      applicant: applicant.slice(0,300),
+      data: o
+    });
+    history = history.slice(0, MAX_HIST);
+    renderHist(); await saveHist();
+    $('status').textContent = '';
+  }catch(err){
+    $('out').innerHTML = errBox(err);
+    $('status').textContent = '';
+  }finally{
+    $('go').disabled = $('goFull').disabled = $('goBatch').disabled = false;
+  }
+};
+
+/* ── 完整面談紀錄（分兩段寫，避免被長度上限截斷） ── */
+function looksCut(t){
+  return !/[。！？」』）…]\s*$/.test((t||'').trim());
+}
+
+$('goFull').onclick = async () => {
+  const applicant = $('applicant').value.trim();
+  if(!applicant){ $('status').textContent = '請先貼上對方的自介'; return; }
+  $('go').disabled = $('goFull').disabled = $('goBatch').disabled = true;
+  const ctx = baseContext(applicant);
+  const rule = `語氣：${$('tone').value}。
+直接輸出 markdown，不要 JSON、不要圍欄、不要開場白。可用 ## 標題、清單、| 表格 |。
+提到健康或情緒相關內容時保持尊重，不獵奇、不誇大。資訊不足就寫「資料不足」，不要編造。`;
+
+  const show = (t) => { $('out').innerHTML = `<div class="record"><div class="md">${md(t)}</div></div>`; };
+
+  try{
+    const p1 = await ask(`${ctx}
+
+寫這位申請人的面談紀錄前半，只寫這三段：基本條件、性格評估、與本動物適配分析。
+每段約 100-150 字，寫完就停，不要寫後面的段落。
+${rule}`, '完整紀錄 1/2');
+    show(p1);
+
+    let p2 = await ask(`${ctx}
+
+面談紀錄的前半已經寫好了：
+「${p1.slice(0, 500)}」
+
+請接著寫後半，只寫這兩段：需進一步確認、收容所志工偷偷寫的評語。
+不要重複前半的內容。志工評語寫 3-4 句，每句都要完整結束。
+${rule}`, '完整紀錄 2/2');
+
+    /* 若最後一句被切斷，補一次收尾 */
+    if(looksCut(p2)){
+      try{
+        const tail = await ask(`以下這段文字的最後一句被中斷了，請只輸出「接續的部分」，把那句話寫完並自然收尾，不要重寫前面已有的內容，不要加開場白：
+
+${p2.slice(-300)}`, '補完最後一段');
+        p2 = p2 + tail;
+      }catch(e){
+        p2 = p2.replace(/[^。！？」』]*$/, '');   /* 補不到就把殘句去掉 */
+      }
+    }
+
+    show(p1 + '\n\n' + p2);
+    $('status').textContent = '';
+  }catch(err){
+    $('out').innerHTML = errBox(err);
+    $('status').textContent = '';
+  }finally{
+    $('go').disabled = $('goFull').disabled = $('goBatch').disabled = false;
+  }
+};
+
+function errBox(err){
+  return `<div class="err"><b>沒能完成判斷</b><br>${esc(err.message)}<br>
+    <span class="hint">網路不穩或伺服器忙碌時會這樣，再按一次通常就好。</span>
+    ${lastRaw ? `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">診斷資訊</summary>
+      <pre style="white-space:pre-wrap;font-size:11px;color:var(--ink-soft);margin:6px 0 0">${esc(lastRaw)}</pre></details>` : ''}
+  </div>`;
+}
+
+$('clear').onclick = () => { $('applicant').value = ''; $('applicant').focus(); };
+
+/* ── 單封結果：判斷 + 可直接改寫的罐頭全文 ── */
+function renderOne(o){
+  const g = gradeOf(o.grade);
+  const c = cannedById(o.canned);
+  const open = (o.grade||'').toUpperCase() === 'A+' || (o.grade||'').toUpperCase() === 'S';
+  $('out').innerHTML = `
+  <div class="record" style="border-left:4px solid ${g?g.color:'var(--rule)'}">
+    <div class="bhead">
+      <b>${esc(o.title||'來訊')}</b>
+      ${g ? `<span class="btag" style="color:${g.color};border-color:${g.color}">${esc(g.label)}</span>` : ''}
+    </div>
+    ${o.why ? `<div class="hint" style="margin-top:4px">${esc(o.why)}</div>` : ''}
+    ${(o.faq && faqByN(o.faq)) ? `<div class="hint" style="margin-top:4px">引用 FAQ 第 ${CIRCLED[o.faq]} 題　${esc(faqByN(o.faq).q)}</div>` : ''}
+    ${(o.mods&&o.mods.length) ? `<div class="hint" style="margin-top:4px">插入模組：${
+      esc(o.mods.map(id=>(modById(id)||{}).name).filter(Boolean).join('、')||'無')}</div>` : ''}
+    <h3 style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;
+        color:var(--teal);margin:18px 0 6px">建議使用 · ${esc(c ? c.name : '沒有合適的罐頭，請自行撰寫')}</h3>
+    <textarea id="oneText" rows="18">${esc(assemble(o))}</textarea>
+    <div class="btnbar">
+      <button id="oneCopy">複製這封</button>
+      <button class="ghost" id="oneRebuild">依目前勾選重組</button>
+      <button class="ghost" id="oneRoster">加入名冊</button>
+      <button class="ghost" id="oneMail">用 Email 寄出</button>
+      <span class="saved" id="oneMsg"></span>
+    </div>
+    <p class="hint" style="margin-top:6px">${open
+      ? '此等級已開放日常觀察，回覆中含 FB／IG。'
+      : '此等級尚未開放聯絡方式，這封不含 FB／IG。'}</p>
+  </div>`;
+  $('oneCopy').onclick = () => {
+    copy($('oneText').value);
+    $('oneMsg').textContent = '已複製'; setTimeout(()=>$('oneMsg').textContent='',2000);
+  };
+  $('oneRebuild').onclick = () => { $('oneText').value = assemble(o); };
+  $('oneMail').onclick = () => {
+    const p = findPerson(o.title || '');
+    const to = prompt('寄給哪個信箱？', (p && p.email) || '');
+    if(to === null) return;
+    openMail(to, $('oneText').value);
+  };
+  $('oneRoster').onclick = async () => {
+    const st = gradeToStage(o.grade);
+    const name = prompt('用什麼稱呼記錄這位申請人？', o.title || '');
+    if(!name) return;
+    const existed = !!findPerson(name);
+    const c = cannedById(o.canned);
+    const p = upsertPerson(name, {
+      stage: st === undefined ? 1 : st,
+      event: {type:'judge', text:`判斷 ${o.grade||''}　${o.why||''}${c ? '　→ '+c.name.replace(/\s*★+☆*$/,'') : ''}`}
+    });
+    await saveRoster(); renderRoster();
+    $('oneMsg').textContent = existed ? '已併入既有檔案' : '已建立檔案';
+    setTimeout(()=>$('oneMsg').textContent='',2800);
+  };
+}
+
+const GRADES = {
+  'C' :{label:'C · 婉拒或資料不足',   color:'var(--stamp)'},
+  'B' :{label:'B · 請補件',           color:'var(--tab)'},
+  'A-':{label:'A- · 補件（資料不錯）', color:'var(--tab)'},
+  'A' :{label:'A · 第二階段 價值觀評估', color:'var(--teal)'},
+  'A+':{label:'A+ · 第三階段 日常觀察', color:'var(--teal)'},
+  'S' :{label:'⭐ S · 第四階段 雙向互動', color:'var(--tab)'}
+};
+function gradeOf(g){
+  const k = (g||'').trim().toUpperCase().replace(/[^A-Z+\-]/g,'');
+  return GRADES[k] ? Object.assign({key:k}, GRADES[k]) : null;
+}
+
+const STAGES = [
+  '第一階段　基本資料書面審查',
+  '第二階段　價值觀與相處模式評估',
+  '第三階段　日常觀察（提供 IG，不回追）',
+  '第四階段　雙向互動（視情況回追 IG）',
+  '第五階段　第一次公開見面',
+  '第六階段　見面後持續認識'
+];
+/* 等級對應目前所在階段：C 未通過｜B、A- 第一階段｜A 第二階段｜A+ 第三階段｜S 第四階段 */
+function gradeToStage(g){
+  const k = (g||'').toUpperCase();
+  return {'C':0,'B':1,'A-':1,'A':2,'A+':3,'S':4}[k];
+}
+function progressRows(stage){
+  return STAGES.map((t,i) => {
+    const n = i + 1;
+    if(stage === 0) return (n===1 ? '□ ' : '□ ') + t + (n===1 ? '：本次未通過' : '');
+    if(n <  stage) return '☑ ' + t + '：通過';
+    if(n === stage) return '▶ ' + t + '：進行中';
+    return '□ ' + t;
+  });
+}
+
+const RESERVE_CLAUSE =
+`📜 收容所保留條款
+暖陽動物之家在意的，是彼此適不適合一起生活，而不是任何單一條件。認養流程分階段進行，是希望信任可以慢慢建立，再逐步開放更多資訊與互動。
+收容所保留補件、延長觀察、提前結束評估或婉拒申請的權利。也希望每位申請人知道：真正的認養，不是比誰條件更好，而是找到願意一起走很久的人。🌻`;
+
+const STAR_ITEMS = ['書面完整度','溝通能力','價值觀契合度','認養適配度'];
+function starLine(n){ n = Math.max(0, Math.min(5, parseInt(n)||0)); return '★'.repeat(n) + '☆'.repeat(5-n); }
+function scoreBlock(stars){
+  if(!stars || !stars.length) return '';
+  /* 對外不顯示綜合評等，等級只留在工具內部作為分流依據 */
+  return '📊 收容所評估\n' + STAR_ITEMS.map((t,i) => `${t}：${starLine(stars[i])}`).join('\n');
+}
+function progressBlock(stage){
+  return (stage === undefined) ? '' : '📍 目前流程\n' + progressRows(stage).join('\n');
+}
+const NEEDS_MODULES = ['supplement','phase2','age_gap','s1_supp'];
+function moduleBlock(o){
+  if(!NEEDS_MODULES.includes(o.canned)) return '';
+  const core = MODULES.filter(m => m.cat === 'core');
+  const extra = (o.mods||[]).map(modById).filter(m => m && m.cat !== 'core');
+  const all = core.concat(extra);
+  return '📋 想再多了解幾件事\n\n' + all.map(m => m.text).join('\n\n');
+}
+function withForm(t){
+  const u = ($('formUrl').value||'').trim();
+  return (t||'').replace(/\{\{表單\}\}/g, u || '（尚未填入申請表單連結）');
+}
+function assemble(o){
+  const c = cannedById(o.canned);
+  if(c && c.full){
+    const q = (o.faq && faqByN(o.faq)) ? '\n\n⸻\n\n' + faqQuote(o.faq) : '';
+    return withForm(c.text + q);
+  }          /* 這封本身已含評估、流程與條款 */
+  const isC = (o.grade||'').toUpperCase() === 'C';
+  const parts = [c ? c.text : ''];
+  const mb = moduleBlock(o); if(mb) parts.push(mb);
+  if(o.faq && faqByN(o.faq)) parts.push(faqQuote(o.faq));
+  if($('addScore').checked){
+    /* 婉拒時不附星等，避免變成對人的評分 */
+    if(!isC){ const sb = scoreBlock(o.stars); if(sb) parts.push(sb); }
+    const st = stageOf(o);
+    const pb = progressBlock(st); if(pb) parts.push(pb);
+    if($('addNext').checked){ const nb = nextStepBlock(st); if(nb) parts.push(nb); }
+  }
+  if($('addClause').checked) parts.push(RESERVE_CLAUSE);
+  return withForm(parts.filter(Boolean).join('\n\n⸻\n\n'));
+}
+function copy(t){
+  const done = () => { $('copyMsg').textContent = '已複製'; setTimeout(()=>$('copyMsg').textContent='',2000); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(done).catch(()=>fallback(t,done));
+  } else fallback(t,done);
+}
+function fallback(t,done){
+  const ta = document.createElement('textarea');
+  ta.value = t; ta.style.position='fixed'; ta.style.opacity=0;
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); done(); }catch(e){ $('copyMsg').textContent='複製失敗，請手動選取'; }
+  document.body.removeChild(ta);
+}
+
+/* ── 批次分流 ── */
+function splitBatch(t){
+  return t.split(/\n\s*(?:-{3,}|={3,}|—{2,}|⸻+|\*{3,})\s*\n/)
+          .map(x => x.trim()).filter(x => x.length > 3);
+}
+
+function renderBatchCard(card, o, n, source){
+  const t = gradeOf(o.grade);
+  const c = cannedById(o.canned);
+  card.style.borderLeftColor = t ? t.color : 'var(--rule)';
+  card.innerHTML = `
+    <div class="bhead">
+      <span class="bnum">第 ${n} 封</span>
+      <b>${esc(o.title||'來訊')}</b>
+      ${t ? `<span class="btag" style="color:${t.color};border-color:${t.color}">${esc(t.label)}</span>` : ''}
+    </div>
+    ${o.why ? `<div class="hint">${esc(o.why)}</div>` : ''}
+    <div class="bsrc">${esc(source.replace(/\s+/g,' ').slice(0,60))}…</div>
+    <div class="btnbar" style="margin-top:8px">
+      ${c ? `<button class="ghost bC">複製完整回覆：${esc(c.name.replace(/\s*★+☆*$/,''))}</button>` : '<span class="hint">沒有合適的罐頭，這封要自己寫</span>'}
+      <span class="saved bMsg"></span>
+    </div>`;
+  const msg = card.querySelector('.bMsg');
+  const bc = card.querySelector('.bC');
+  if(bc) bc.onclick = () => {
+    $('cannedPick').value = c.id; $('cannedText').value = c.text; copy(assemble(o));
+    msg.textContent = '已複製'; setTimeout(()=>msg.textContent='',2000);
+  };
+}
+
+$('goBatch').onclick = async () => {
+  const chunks = splitBatch($('applicant').value);
+  if(chunks.length < 2){
+    $('status').textContent = '請貼上兩封以上，中間用單獨一行 --- 分隔';
+    return;
+  }
+  const list = chunks.slice(0, 15);
+  const over = chunks.length - list.length;
+  $('go').disabled = $('goFull').disabled = $('goBatch').disabled = true;
+  $('out').innerHTML = `<div id="batchList"></div>${over ? `<p class="hint">一次最多 15 封，剩下的 ${over} 封請分批再跑一次。</p>` : ''}`;
+  const box = $('batchList');
+  let ok = 0;
+
+  for(let i = 0; i < list.length; i++){
+    const card = document.createElement('div');
+    card.className = 'bcard';
+    card.innerHTML = `<div class="hint">第 ${i+1} 封 · 審查中⋯⋯</div>`;
+    box.appendChild(card);
+    try{
+      const raw = await ask(triagePrompt(list[i]), `批次分流 ${i+1}/${list.length}`);
+      const o = parseTriage(raw);
+      renderBatchCard(card, o, i+1, list[i]);
+      history.unshift({
+        id: Date.now() + '-' + Math.random().toString(36).slice(2,7),
+        date: new Date().toISOString(),
+        title: (o.title||'來訊') + '（批次）',
+        canned: o.canned, grade: o.grade,
+        applicant: list[i].slice(0,300),
+        data: o
+      });
+      ok++;
+    }catch(e){
+      card.innerHTML = `<div style="color:var(--stamp)">第 ${i+1} 封沒跑成功：${esc(e.message)}</div>`;
+    }
+  }
+
+  history = history.slice(0, MAX_HIST);
+  renderHist();
+  await saveHist();
+  $('status').textContent = `完成 ${ok}/${list.length} 封`;
+  $('go').disabled = $('goFull').disabled = $('goBatch').disabled = false;
+};
+
+/* ── 補件題組：固定題 + 依背景插入 ── */
+const MODULES = [
+ /* 固定題（補件時一律附上） */
+ {id:'rel',      cat:'core', name:'關係期待', text:
+`・希望建立的是哪一種關係呢？
+　□ 以結婚為前提的長期穩定關係
+　□ 長期交往，順其自然發展
+　□ 先以朋友身分互相了解，再決定是否發展
+　□ 其他（歡迎分享您的想法）`},
+ {id:'service',  cat:'core', name:'兵役與經濟狀況', text:
+`・兵役狀況：□ 已服完義務役　□ 已服完替代役　□ 免役　□ 無兵役義務　□ 尚未服役
+・目前的年收入區間大約是？（可只填區間）
+・目前是否有房貸、信貸、學貸或其他長期負債？
+・是否能在經濟上維持自己的基本生活？`},
+ {id:'cats',     cat:'core', name:'兩隻貓', text:
+`・小橘家裡有兩隻貓咪，牠們也是一起生活的家人。這部分您能接受嗎？`},
+ {id:'health',   cat:'core', name:'健康追蹤與生育', text:
+`・小橘需要定期健康追蹤。
+・關於生育：醫師目前不建議以生育作為人生目標；未來若真的有規劃，也需要依身體狀況再評估，並非完全沒有可能，只是風險較高。
+　這兩件事，您的想法是？`},
+ {id:'marriage', cat:'core', name:'婚姻與五年規劃', text:
+`・對婚姻的想法是什麼？
+・五年後，您希望自己過著什麼樣的生活？`},
+ {id:'conflict', cat:'core', name:'衝突處理（請舉例）', text:
+`・和另一半意見不同時，您通常會怎麼處理？
+　方便的話，可以分享一次印象最深刻的溝通經驗嗎？`},
+ {id:'weakness', cat:'core', name:'自己的缺點', text:
+`・如果請您說一個自己的缺點，您會說什麼？`},
+
+ /* 依職業插入 */
+ {id:'eng',      cat:'job', name:'工程師｜工時與生活平衡', text:
+`・工作需要輪班或常態加班嗎？平常一週工時大約多少？
+・忙起來的時候，您會怎麼兼顧生活與陪伴？`},
+ {id:'teacher',  cat:'job', name:'老師｜教育理念', text:
+`・工作之外，您怎麼安排自己的休息時間？
+・如果未來要一起生活，您希望家裡是什麼樣的氛圍？`},
+ {id:'medical',  cat:'job', name:'醫療背景｜面對健康議題', text:
+`・您平常怎麼看待伴侶的身體與情緒健康？
+・如果另一半需要長期回診，您會怎麼陪伴？`},
+ {id:'startup',  cat:'job', name:'創業／自營｜時間分配', text:
+`・目前工作的時間彈性如何？
+・創業期間，您會怎麼分配給自己與伴侶的時間？`},
+ {id:'oversea',  cat:'job', name:'海外／外派｜居住規劃', text:
+`・未來一到三年的居住地規劃是什麼？
+・如果需要長期分隔兩地，您會怎麼經營關係？`},
+ {id:'busy',     cat:'job', name:'工作狂｜時間彈性', text:
+`・平常一週大概有多少時間是真正屬於自己的？
+・如果另一半希望多一點陪伴，您會怎麼調整？`},
+
+ /* 依興趣插入 */
+ {id:'travel',   cat:'fun', name:'旅行｜健康彈性', text:
+`・旅行時，如果同行的人體力比較有限、需要多一點休息，您通常會怎麼安排？`},
+ {id:'fitness',  cat:'fun', name:'健身｜運動落差', text:
+`・如果另一半因為身體狀況沒辦法一起運動，您會怎麼看待這件事？`},
+ {id:'outdoor',  cat:'fun', name:'戶外高活動量｜體力落差', text:
+`・如果另一半的體力沒辦法跟上，您會怎麼安排你們的假日？`},
+ {id:'dog',      cat:'fun', name:'養狗｜與兩隻貓相處', text:
+`・家中的毛孩與小橘的兩隻貓，未來有可能一起生活嗎？您怎麼安排？`},
+ {id:'vegan',    cat:'fun', name:'飲食習慣｜互相尊重', text:
+`・如果兩個人的飲食習慣不同，您希望怎麼互相配合？`},
+ {id:'religion', cat:'fun', name:'宗教｜互相尊重', text:
+`・如果兩人的信仰不同，您希望彼此怎麼相處？`},
+
+ /* 依紅旗插入 */
+ {id:'photo_only', cat:'flag', name:'只有照片、沒有介紹', text:
+`・收容所想認識的是「人」，照片可以之後再說。
+　可以用文字介紹一下自己嗎？`},
+ {id:'looks',      cat:'flag', name:'一直強調外貌', text:
+`・除了外表之外，您希望對方是一個什麼樣的人？`},
+ {id:'ai_intro',   cat:'flag', name:'像 AI 代寫的自介', text:
+`・如果用您自己的話，不用任何範本，您會怎麼介紹自己？`},
+ {id:'ask_line',   cat:'flag', name:'直接要 LINE／IG', text:
+`・收容所採分階段認識，聯絡方式會在後面的階段才開放。
+　現階段我們先用文字認識彼此就好，謝謝您理解🌼`},
+ {id:'ask_illness',cat:'flag', name:'直接追問病情', text:
+`・小橘的健康狀況屬於個人隱私，會在雙方更熟悉之後再慢慢分享。
+　現階段收容所想先了解的是您，希望您能理解🌼`},
+ {id:'nickname',   cat:'flag', name:'暱稱需要確認', text:
+`・好奇一下，您目前的暱稱是怎麼來的呢？`},
+ {id:'partner',    cat:'flag', name:'生活重心全在伴侶', text:
+`・除了感情之外，您平常有哪些屬於自己的事情或興趣？`},
+ {id:'rush',       cat:'flag', name:'想先培養感情再說', text:
+`・收容所希望先認識，再慢慢培養感情。
+　這樣的節奏，您能接受嗎？`},
+ {id:'age15',      cat:'flag', name:'年齡差距較大', text:
+`・年齡差距在生活步調與人生規劃上可能會有落差，您怎麼看？`},
+ {id:'single_p',   cat:'flag', name:'單親／離婚', text:
+`・過去的部分不用勉強細說。
+　收容所比較想了解的是：您現在的生活狀態，以及未來希望的樣子。`},
+ {id:'income',     cat:'flag', name:'強調收入與資產', text:
+`・比起條件，收容所更好奇的是日常：
+　您理想中的一起生活，大概是什麼樣子？`}
+];
+
+const CATS = [
+  {key:'core', label:'固定題（每份補件都附）'},
+  {key:'job',  label:'依職業'},
+  {key:'fun',  label:'依興趣'},
+  {key:'flag', label:'依紅旗'}
+];
+function modById(id){ return MODULES.find(m => m.id === id); }
+
+const DEFAULT_APPFORM =
+`🐾 暖陽動物之家《認養申請書》
+Adoption Application Form
+
+提醒：本所採終身認養制度，請勿因一時新鮮感提出申請。
+這份申請書適用於已完成第一階段表單、進入補充評估的申請人。
+
+⸻
+
+📌 認養人基本資料
+
+稱呼（暱稱即可）：________________
+年齡：____________________________
+職業：____________________________
+居住地：__________________________
+
+＊本階段不需提供聯絡方式，收容所將於審核後主動聯繫。
+
+⸻
+
+🏠 居住環境評估
+
+□ 可提供穩定的居住環境
+□ 家中可以養貓
+□ 家中已有其他毛孩（請說明：____________）
+□ 能接受偶爾貓毛滿天飛
+□ 能接受床上可能會有一隻（或多隻）貓
+□ 願意一起打造一個溫暖的家
+
+⸻
+
+❤️ 認養動機（可複選）
+
+□ 想陪她一起慢慢變老
+□ 希望成為彼此的避風港
+□ 想分享生活中的大小事
+□ 喜歡她原本的樣子，而不是想改變她
+□ 願意陪她一起面對未來的困難
+□ 我只是覺得她笑起來很好看
+
+⸻
+
+🧸 請確認您是否能接受以下事項
+
+【日常生活】
+☐ 她可能會突然分享今天看到的新知識
+☐ 她可能因為一本書、一部電影而興奮很久
+☐ 她很喜歡貓，看到路邊的貓會停下來打招呼
+☐ 她偶爾需要自己的安靜時間充電
+☐ 她喜歡兩個人一起吃飯、散步、逛超市，即使什麼都不做也很好
+
+【情緒照護】
+☐ 她不是每天都很有精神
+☐ 壓力大的時候，她可能會變得安靜
+☐ 她有時候會一直說「對不起」
+☐ 她其實沒有那麼堅強，只是不太會麻煩別人
+☐ 她需要的是理解，而不是「你想太多了」
+
+【健康照護】
+☐ 能接受她需要定期健康追蹤
+☐ 願意提醒她按時吃藥、好好休息
+☐ 理解她目前不以生育為人生目標，未來若有規劃需視健康狀況評估，並尊重這項判斷
+☐ 願意一起把健康放在人生的重要順位
+
+【與貓共同生活】
+☐ 願意一起照顧家裡的貓咪
+☐ 能接受生活中本來就有牠們的位置
+
+⸻
+
+🚫 以下情況，收容所不予受理
+
+這一段不是指控，只是先把界線說清楚，對雙方都好。
+
+□ 把冷暴力當成正常
+□ 習慣失聯數天卻沒有任何說明
+□ 認為溝通很麻煩
+□ 覺得道歉就是認輸
+□ 習慣用情緒控制別人
+□ 喜歡曖昧卻不願負責
+□ 認為承諾只是說說
+
+⸻
+
+🌼 加分題（非必填，但收容所會認真讀）
+
+Q1　如果她因為工作或生活壓力偷偷躲起來哭，你會怎麼做？
+
+Q2　如果某一天，她不再像剛認識時那麼有精神，而是因為生病、工作、人生低潮而變得沉默，你還會願意牽著她的手嗎？
+
+Q3　你認為「愛一個人」是什麼？
+
+Q4　如果你們的想法不同，你通常會怎麼溝通？可以舉一個實際發生過的例子嗎？
+
+⸻
+
+📋 最終評估（由收容所填寫）
+
+□ 第二階段　補充評估：通過
+□ 第三階段　日常觀察：開放
+□ 第四階段　第一次約會：可安排
+□ 第五階段　試養（朋友身分相處）：可安排
+□ 建議繼續觀察
+□ 本次未通過（理由：________________）
+
+⸻
+
+📜 認養切結書
+
+本人已詳細閱讀《小橘認養須知》。
+
+本人了解：
+・她不是一個需要被修好的人
+・她有自己的夢想、工作與人生
+・她不是誰的附屬品，也不是用來填補孤單的工具
+
+本人願意：
+✓ 用尊重代替控制
+✓ 用溝通代替猜測
+✓ 用陪伴代替忽略
+✓ 用行動證明承諾，而不是只說漂亮的話
+
+⸻
+
+「真正的認養，不是在最可愛的時候把她帶回家，
+　而是在她生病、疲憊、低潮時，依然選擇留下。」
+
+認養人簽名：________________
+日期：______ 年 ____ 月 ____ 日`;
+
+const CORE_NOTE =
+`🐾 收容所提醒
+收容所不會以收入高低、外表、職業或學歷評分，只會確認雙方都能經濟自立、生活穩定。
+比起條件的高低，我們更在意的是價值觀、責任感、溝通方式，以及在了解彼此之後，是否仍願意留下來。`;
+
+function renderModules(){
+  $('modList').innerHTML = CATS.map(c => `
+    <details ${c.key==='core'?'open':''} style="margin-bottom:6px">
+      <summary class="hint" style="cursor:pointer">${esc(c.label)}</summary>
+      ${MODULES.filter(m => m.cat===c.key).map(m => `
+        <label style="display:flex;gap:8px;align-items:center;margin:4px 0 4px 6px">
+          <input type="checkbox" class="modChk" value="${m.id}" ${c.key==='core'?'checked':''} style="width:auto;margin:0">
+          <span>${esc(m.name)}</span>
+        </label>`).join('')}
+    </details>`).join('');
+}
+$('modCore').onclick = () => {
+  document.querySelectorAll('.modChk').forEach(c => {
+    c.checked = (modById(c.value)||{}).cat === 'core';
+  });
+};
+$('modBuild').onclick = () => {
+  const picked = [...document.querySelectorAll('.modChk:checked')]
+    .map(c => MODULES.find(m => m.id === c.value)).filter(Boolean);
+  if(!picked.length){ $('status').textContent = '至少勾一個題組'; return; }
+  const foot = $('modFooter').checked
+    ? '\n\n' + CORE_NOTE + '\n\n' + (cannedById('footer')||{text:''}).text
+      + '\n\n⸻\n\n' + RESERVE_CLAUSE : '';
+  const body =
+`🏥 暖陽動物之家 ─ 補件通知單
+審查階段：第一階段（書面）｜狀態：資料未齊
+
+感謝您為小橘提出認養申請😊
+以下欄位補齊後，收容所即可安排後續審查：
+
+📋 想再多了解幾件事
+
+${picked.map(m => m.text).join('\n\n')}
+
+暖陽動物之家採終身認養制度，希望雙方先充分了解，再決定是否進入下一階段。${foot}
+
+✎ 志工小記：補件不是門檻，是想讓後面的對話比較好聊。`;
+
+  $('out').innerHTML = `
+  <div class="record">
+    <div class="bhead"><b>補件通知單</b><span class="btag" style="color:var(--teal);border-color:var(--teal)">${picked.length} 個題組</span></div>
+    <textarea id="modText" rows="20" style="margin-top:10px">${esc(body)}</textarea>
+    <div class="btnbar">
+      <button id="modCopy">複製這封</button>
+      <span class="saved" id="modMsg"></span>
+    </div>
+  </div>`;
+  $('modCopy').onclick = () => {
+    copy($('modText').value);
+    $('modMsg').textContent = '已複製'; setTimeout(()=>$('modMsg').textContent='',2000);
+  };
+};
+
+$('bkExport').onclick = exportAll;
+$('bkFile').onchange = (e) => { if(e.target.files[0]) importAll(e.target.files[0]); e.target.value=''; };
+
+$('rosterAdd').onclick = async () => {
+  const nm = $('rosterName').value.trim();
+  if(!nm){ $('rosterCount').textContent = '請先輸入稱呼'; return; }
+  const note = $('rosterNote').value.trim();
+  const p = upsertPerson(nm, {
+    stage: parseInt($('rosterStage').value),
+    event: note ? {type:'note', text:note} : null
+  });
+  $('rosterName').value = ''; $('rosterNote').value = '';
+  await saveRoster(); renderRoster(); renderPerson(p.id);
+};
+$('rosterSearch').oninput = renderRoster;
+
+renderS2();
+$('gateLock').onclick = lockNow;
+gateStart();
+
+initTabs();
+load();
+</script>
