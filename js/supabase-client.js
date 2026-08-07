@@ -116,20 +116,30 @@
     if (del2.error) throw del2.error;
   }
 
-  // ── 診療點數（模擬付費，用來限流 AI 呼叫） ──
-  async function spendCredit(amount, why) {
-    const p = await getMyProfile();
-    if (!p || p.credits < amount) return { ok: false, profile: p };
-    const log = (Array.isArray(p.credit_log) ? p.credit_log.slice() : []);
-    log.unshift({ at: new Date().toISOString(), t: why, d: -amount });
-    const profile = await saveMyProfile({ credits: p.credits - amount, credit_log: log.slice(0, 50) });
-    return { ok: true, profile };
+  // ── 診療點數：一律透過 Postgres 安全函式，前端連 SQL 都下不了（見 supabase-schema.sql 第 9 節） ──
+  // p_action 對應資料庫 spend_credits_for() 裡的 case 分支；金額由伺服器決定，前端不能傳金額。
+  async function spendCreditFor(action, detail) {
+    const { data, error } = await sb.rpc('spend_credits_for', { p_action: action, p_detail: detail || null });
+    if (error) return { ok: false, profile: await getMyProfile(), error };
+    return { ok: true, profile: data };
   }
-  async function topupCredit(amount, why) {
-    const p = await getMyProfile();
-    const log = (Array.isArray(p.credit_log) ? p.credit_log.slice() : []);
-    log.unshift({ at: new Date().toISOString(), t: why, d: amount });
-    return await saveMyProfile({ credits: (p.credits || 0) + amount, credit_log: log.slice(0, 50) });
+  // 提出認養申請：扣掛號費＋建立申請案件，包在同一個交易裡（見 apply_to()）
+  async function applyTo(toId, answers) {
+    const { data, error } = await sb.rpc('apply_to', { p_to: toId, p_answers: answers });
+    if (error) throw error;
+    return data;
+  }
+  // 退回逾期未處理的掛號費：伺服器自己重新驗證天數／歸屬／是否已退過
+  async function refundApplication(appId) {
+    const { data, error } = await sb.rpc('refund_application', { p_app_id: appId });
+    if (error) throw error;
+    return data;
+  }
+  // 管理員專用：手動加點（人工儲值、活動贈點）。ref 給未來接金流回調用（訂單編號防重複加點）。
+  async function adminAddCredits(targetId, amount, reason, ref) {
+    const { data, error } = await sb.rpc('admin_add_credits', { target: targetId, amount, reason, ref: ref || null });
+    if (error) throw error;
+    return data;
   }
   async function listProfiles() {
     const user = await getUser();
@@ -160,14 +170,6 @@
     const user = await getUser();
     const { data, error } = await sb.from('applications').select('*')
       .eq('from_user', user.id).eq('to_user', toId).maybeSingle();
-    if (error) throw error;
-    return data;
-  }
-  async function createApplication(toId, a1, extra) {
-    const user = await getUser();
-    const { data, error } = await sb.from('applications').insert(Object.assign({
-      from_user: user.id, to_user: toId, stage: 1, status: 'open', a1
-    }, extra || {})).select().single();
     if (error) throw error;
     return data;
   }
@@ -300,8 +302,9 @@
     signUpEmail, signInEmail, signInGoogle, signOut, getUser, onAuthChange,
     ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles,
     adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminRemoveProfile,
-    listOutbox, listInbox, findApplicationTo, createApplication, updateApplication,
-    hasClaudeProxy, askClaude, askClaudeRaw, spendCredit, topupCredit,
+    listOutbox, listInbox, findApplicationTo, updateApplication,
+    applyTo, refundApplication, adminAddCredits,
+    hasClaudeProxy, askClaude, askClaudeRaw, spendCreditFor,
     avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto,
     submitReport, adminListReports, adminMarkReportDone,
     getTemplateMaster, adminSaveTemplateMaster,

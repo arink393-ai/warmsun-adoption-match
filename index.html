@@ -877,18 +877,15 @@ function openApply(toId){
     const ans = [...document.querySelectorAll('.a1q')].map(t => t.value.trim());
     if(ans.some(a => !a)){ flash('applyMsg','每一題都要回答'); return; }
     if(!isApproved(myProfile)){ flash('applyMsg','你的照片尚未通過審核，無法提出申請'); return; }
-    if((myProfile.credits||0) < APPLY_COST){ flash('applyMsg','掛號費不足，請到「診療室」儲值'); return; }
+    if((myProfile.credits||0) < APPLY_COST){ flash('applyMsg','掛號費不足，請到「診療室」查看加值方式'); return; }
     if(!confirm(`送出這份申請會扣 ${APPLY_COST} 點掛號費，確定嗎？`)) return;
-    const spent = await DB.spendCredit(APPLY_COST, `掛號　向 ${to.name} 提出申請`);
-    if(!spent.ok){ flash('applyMsg','掛號費不足，請到「診療室」儲值'); return; }
-    myProfile = spent.profile;
     try{
-      const app = await DB.createApplication(toId, ans, {paid: APPLY_COST});
+      const app = await DB.applyTo(toId, ans);
+      myProfile = await DB.getMyProfile();
       apps.push(app);
       box.remove(); renderBoard(); flash('boardMsg','申請已送出');
     }catch(e){
-      myProfile = await DB.topupCredit(APPLY_COST, '退回掛號費（申請送出失敗）');
-      flash('applyMsg', (e.message || '送出失敗') + '，已退回掛號費');
+      flash('applyMsg', e.message || '送出失敗');
     }
   };
 }
@@ -931,9 +928,8 @@ function bindOutbox(){
     const a = apps.find(x => x.id === b.dataset.app);
     if(!canRefund(a)) return;
     try{
-      const updated = await DB.updateApplication(a.id, {refunded: true});
-      Object.assign(a, updated);
-      myProfile = await DB.topupCredit(a.paid, '退回掛號費（對方逾期未處理）');
+      myProfile = await DB.refundApplication(a.id);
+      a.refunded = true;
       renderOutbox();
     }catch(e){ alert(e.message || '操作失敗'); }
   });
@@ -1029,14 +1025,8 @@ function bindInbox(){
 function renderClinic(){
   if(!myProfile) return;
   $('balance').textContent = myProfile.credits ?? 0;
-  $('topupBar').innerHTML = PACKS.map((p,i) =>
-    `<button class="ghost pack" data-i="${i}">${p.label}　${p.n} 點　NT$${p.price}</button>`).join('');
-  $('topupBar').querySelectorAll('.pack').forEach(b => b.onclick = async () => {
-    const p = PACKS[+b.dataset.i];
-    if(!confirm(`原型版本不會實際收費。\n模擬購買「${p.label}」${p.n} 點（定價 NT$${p.price}）？`)) return;
-    myProfile = await DB.topupCredit(p.n, `儲值　${p.label}（模擬）`);
-    renderClinic();
-  });
+  $('topupBar').innerHTML = PACKS.map(p =>
+    `<span class="pill">${p.label}　${p.n} 點　NT$${p.price}</span>`).join('');
   const log = Array.isArray(myProfile.credit_log) ? myProfile.credit_log : [];
   $('ledger').innerHTML = log.length
     ? log.slice(0,30).map(l => `<div class="qa">
@@ -1044,7 +1034,7 @@ function renderClinic(){
         ${esc(l.t)}　<span style="color:${l.d>0?'var(--ok)':'var(--brand)'}">${l.d>0?'+':''}${l.d} 點</span>
       </div>`).join('')
     : '<div class="empty">還沒有紀錄。</div>';
-  $('clinicMsg').textContent = '原型版本的儲值為模擬，不會實際扣款。';
+  $('clinicMsg').textContent = '線上儲值尚未開放。若需要加值，請私訊站方，由管理員為你手動加點。';
 }
 
 /* ── 我的回覆範本：站方預設範本（template_master）＋ 個人覆寫（profiles.canned） ── */
@@ -1100,7 +1090,7 @@ async function vetReview(app, from){
     return;
   }
   if((myProfile.credits||0) < VET_COST){
-    box.innerHTML = '<p class="hint">診療點數不足，請到「診療室」儲值。</p>';
+    box.innerHTML = '<p class="hint">診療點數不足，請到「診療室」查看加值方式。</p>';
     return;
   }
   if(!confirm(`這次評估會消耗 ${VET_COST} 點診療費，要繼續嗎？`)) return;
@@ -1133,7 +1123,7 @@ ${app.a2 ? '【第二階段回答】\n' + qa(q2, app.a2) : ''}
 不要編造對方沒說的事；資料不足就說資料不足。`;
   try{
     const text = await DB.askClaude(prompt);
-    const spent = await DB.spendCredit(VET_COST, `診療　主治獸醫評估 ${from.name}`);
+    const spent = await DB.spendCreditFor('vet_review', from.name);
     if(spent.ok) myProfile = spent.profile;
     const updated = await DB.updateApplication(app.id, {vet: text, vet_at: new Date().toISOString()});
     Object.assign(app, updated);
@@ -1236,11 +1226,31 @@ async function renderAdminHome(){
   if(!$('adminStats')){
     body.innerHTML = `
       <fieldset><legend>全站統計</legend><p class="hint" id="adminStats">讀取中⋯⋯</p></fieldset>
+      <fieldset><legend>手動加點</legend>
+        <p class="hint" style="margin:0 0 8px">線上儲值尚未開放，人工加值（例如轉帳收款後）請用這裡，會走安全函式，不是直接改資料庫。</p>
+        <div class="row">
+          <div><label>選擇會員</label><select id="grantWho"></select></div>
+          <div><label>點數（可負數＝扣點）</label><input id="grantAmt" placeholder="例：10"></div>
+          <div><label>原因</label><input id="grantWhy" placeholder="例：轉帳 NT$120 加值"></div>
+        </div>
+        <div class="bar"><button class="ghost" id="grantGo">送出</button><span class="msg" id="grantMsg"></span></div>
+      </fieldset>
       <fieldset><legend>檢舉處理</legend><div id="reportList"><p class="hint">讀取中⋯⋯</p></div></fieldset>
       <fieldset><legend>範本主檔管理</legend><div id="tplMasterList"></div></fieldset>
       <div id="auditMount"></div>`;
     $('auditMount').appendChild($('pane-audit'));
     $('pane-audit').classList.add('on');
+    $('grantGo').onclick = async () => {
+      const target = $('grantWho').value;
+      const amt = parseInt($('grantAmt').value, 10);
+      const why = $('grantWhy').value.trim() || '管理員手動調整';
+      if(!target || !amt){ flash('grantMsg','請選擇會員並輸入非 0 的點數'); return; }
+      try{
+        await DB.adminAddCredits(target, amt, why);
+        $('grantAmt').value = ''; $('grantWhy').value = '';
+        flash('grantMsg','已完成');
+      }catch(e){ flash('grantMsg', e.message || '操作失敗'); }
+    };
   }
 
   let allProfiles, allApps, reports;
@@ -1253,6 +1263,12 @@ async function renderAdminHome(){
   const approved = allProfiles.filter(p => p.photo_status === 'approved' && p.verify_status === 'approved').length;
   $('adminStats').textContent =
     `登記總數：${allProfiles.length}　已通過審核：${approved}　申請總數：${allApps.length}　未處理檢舉：${reports.filter(r=>!r.done).length}`;
+
+  const keepWho = $('grantWho').value;
+  $('grantWho').innerHTML = allProfiles
+    .slice().sort((a,b) => (a.name||'').localeCompare(b.name||''))
+    .map(p => `<option value="${p.id}">${esc(p.name || '（未命名）')}　${esc(p.id.slice(0,8))}　${p.credits ?? 0} 點</option>`).join('');
+  if([...$('grantWho').options].some(o => o.value === keepWho)) $('grantWho').value = keepWho;
 
   const nameOf = id => { const p = allProfiles.find(x => x.id === id); return p ? p.name : '（已刪除）'; };
   $('reportList').innerHTML = reports.length ? reports.map(r => `

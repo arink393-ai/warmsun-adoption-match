@@ -104,6 +104,24 @@ bucket 與對應權限的 SQL，跑過整份腳本就會自動建好，不用另
 4. 這個工具裡產生審查草稿一樣透過 Claude 代理（見上面第 4 步），沒設定 `CLAUDE_PROXY_URL`
    的話會顯示「尚未設定 AI 代理網址」，但存檔、罐頭回覆、名冊等其他功能不受影響。
 
+### 7. 安全性補強：擋掉自己改自己權限／點數的漏洞
+
+早期版本的 `profiles_update_own` 只檢查「改的是不是自己那一列」，沒檢查「改的是哪一欄」——
+任何登入的人在瀏覽器 devtools 執行 `DB.saveMyProfile({is_admin:true, credits:999999})` 就會直接成功。
+`supabase-schema.sql` 第 9 節已經補上防護（trigger 擋住 `is_admin`／`credits`／`credit_log`／
+`bonus_given` 被非管理員直接改，也擋住自己把 `photo_status`／`verify_status` 設成 `approved`），
+並把掛號費、診療費、退款、加點都改成專用的 Postgres 安全函式（`apply_to`、`spend_credits_for`、
+`refund_application`、`admin_add_credits`），前端不再能直接改點數欄位。
+
+**如果你的 Supabase 專案是舊版本、已經在跑了**，重新貼一次整份 `supabase-schema.sql` 執行即可
+（跟之前每次補欄位一樣，是安全的重複執行，不會動到既有會員資料）。這次也把「診療室」的模擬
+儲值按鈕拿掉了（自己給自己加點本身就是同一種漏洞的 UI 版），改成「線上儲值尚未開放，請洽站方
+人工加值」，管理員可以到「管理後台 → 手動加點」幫指定會員加點——這是目前唯一合法的加點入口
+（送出申請的掛號費、逾期退款、AI 診療費用扣點則都各自走專用安全函式，使用者自己不能繞過）。
+
+真的要接金流（例如綠界 ECPay）時，`admin_add_credits` 的邏輯可以直接被金流回調的 Edge Function
+重用（用 service_role 呼叫、訂單編號當 `ref` 防止重複回調），不用整套重寫。
+
 ## 已知限制（原型階段）
 
 - `applications.keeper_note`（飼主的私人筆記）目前只在前端畫面上不顯示給對方看，

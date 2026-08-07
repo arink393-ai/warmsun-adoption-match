@@ -471,7 +471,192 @@ create trigger trg_owner_kv_touch before update on public.owner_kv
   for each row execute function public.touch_updated_at();
 
 -- ============================================================
--- 9) 把自己設成管理員（審核台權限）
+-- 9) 安全性補強：擋掉「自己改自己權限／點數」的漏洞
+--
+--    之前 profiles_update_own 只檢查「改的是不是自己那一列」，
+--    沒有檢查「改的是哪一欄」——任何登入的人在瀏覽器 devtools 執行
+--      DB.saveMyProfile({is_admin:true, credits:999999, photo_status:'approved'})
+--    這種寫法就會直接成功，因為 RLS 從欄位層級來看完全放行。
+--
+--    這裡用一個 trigger 擋住：is_admin／credits／credit_log／bonus_given
+--    這幾欄，非管理員一律強制還原成舊值；photo_status／verify_status
+--    不能被自己改成 'approved'（但換照片後系統自動幫你設成 checking/
+--    pending/rejected 的既有流程完全不受影響，那是你自己的帳號、自己
+--    的操作，不是「核准」）。
+--
+--    真正需要改動點數的地方（掛號費、診療費、退回掛號費）一律改用下面
+--    的安全函式，函式內部用 set_config 開一個「後門旗標」讓 trigger
+--    放行，前端／devtools 呼叫不到這個旗標，摸不到後門。
+-- ============================================================
+
+create or replace function public.guard_profile_privileged()
+returns trigger language plpgsql as $$
+begin
+  -- 只管「透過 API 用 authenticated 身分打進來」的請求；
+  -- 你自己在 Supabase 後台 SQL Editor／Table Editor 用 postgres/service_role 身分
+  -- 直接編輯資料列不受影響（那已經是需要登入你自己 Supabase 帳號才碰得到的層級）。
+  if auth.role() = 'authenticated'
+     and coalesce(current_setting('app.bypass_profile_guard', true), '') <> 'on'
+     and not public.is_admin(auth.uid()) then
+    new.is_admin    := old.is_admin;
+    new.credits     := old.credits;
+    new.credit_log  := old.credit_log;
+    new.bonus_given := old.bonus_given;
+    new.verify_deleted_at := old.verify_deleted_at;
+    if new.photo_status = 'approved' and old.photo_status is distinct from 'approved' then
+      new.photo_status := old.photo_status; new.photo_reason := old.photo_reason;
+    end if;
+    if new.verify_status = 'approved' and old.verify_status is distinct from 'approved' then
+      new.verify_status := old.verify_status; new.verify_reason := old.verify_reason;
+    end if;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_guard_profile_privileged on public.profiles;
+create trigger trg_guard_profile_privileged before update on public.profiles
+  for each row execute function public.guard_profile_privileged();
+
+-- 小工具：在 credit_log 最前面加一筆紀錄，並裁到最多 50 筆
+create or replace function public.credit_log_prepend(old_log jsonb, entry_obj jsonb, cap int default 50)
+returns jsonb language sql immutable as $$
+  select coalesce(
+    (select jsonb_agg(elem)
+     from (
+       select elem
+       from jsonb_array_elements(jsonb_build_array(entry_obj) || coalesce(old_log, '[]'::jsonb)) with ordinality as t(elem, ord)
+       order by ord limit cap
+     ) s),
+    jsonb_build_array(entry_obj)
+  )
+$$;
+
+-- 扣點：申請人自己呼叫，扣什麼、扣多少一律由伺服器這張表決定，
+-- 不接受前端傳金額（跟前端顯示的 VET_COST 常數只是給 UI 看，實際收費以這裡為準，
+-- 之後要調價記得兩邊一起改）。之後要加新的扣點項目，在 case 裡加一行就好。
+create or replace function public.spend_credits_for(p_action text, p_detail text default null)
+returns public.profiles
+language plpgsql security definer set search_path = public as $$
+declare v_cost int; v_label text; v_bal int; v_row public.profiles;
+begin
+  case p_action
+    when 'vet_review' then v_cost := 1; v_label := '診療　主治獸醫評估';
+    else raise exception '未知的扣點項目：%', p_action;
+  end case;
+
+  select credits into v_bal from public.profiles where id = auth.uid() for update;
+  if v_bal is null then raise exception '找不到你的帳號資料'; end if;
+  if v_bal < v_cost then raise exception '點數不足'; end if;
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles set
+    credits = credits - v_cost,
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', v_label || coalesce('　' || p_detail, ''), 'd', -v_cost))
+  where id = auth.uid()
+  returning * into v_row;
+  perform set_config('app.bypass_profile_guard', '', true);
+  return v_row;
+end $$;
+
+-- 提出認養申請：扣掛號費＋建立申請案件，包在同一個交易裡。
+-- 只要有一步失敗（例如已經申請過、對方尚未審核通過），整個都會回滾，
+-- 不會出現「錢扣了但申請沒送出」這種需要另外退款的中間狀態。
+create or replace function public.apply_to(p_to uuid, p_answers jsonb)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare
+  v_cost constant int := 1;   -- 掛號費，價格由伺服器決定，不接受前端傳金額
+  v_bal int; v_app public.applications;
+begin
+  if p_to = auth.uid() then raise exception '不能對自己提出申請'; end if;
+  if not exists (
+    select 1 from public.profiles
+    where id = p_to and photo_status = 'approved' and verify_status = 'approved'
+  ) then
+    raise exception '對方尚未通過審核，暫時無法申請';
+  end if;
+
+  select credits into v_bal from public.profiles where id = auth.uid() for update;
+  if v_bal is null or v_bal < v_cost then raise exception '掛號費不足'; end if;
+
+  insert into public.applications(from_user, to_user, stage, status, a1, paid)
+  values (auth.uid(), p_to, 1, 'open', p_answers, v_cost)
+  returning * into v_app;
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles set
+    credits = credits - v_cost,
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '掛號　向 ' || (select name from public.profiles where id = p_to) || ' 提出申請', 'd', -v_cost))
+  where id = auth.uid();
+  perform set_config('app.bypass_profile_guard', '', true);
+
+  return v_app;
+end $$;
+
+-- 退回逾期未處理的掛號費：伺服器自己重新檢查一次天數／歸屬／是否已退過，
+-- 不相信前端傳來的任何數字，前端只能傳「是哪一筆申請」。
+create or replace function public.refund_application(p_app_id uuid)
+returns public.profiles
+language plpgsql security definer set search_path = public as $$
+declare v_app public.applications; v_row public.profiles;
+begin
+  select * into v_app from public.applications where id = p_app_id for update;
+  if v_app is null then raise exception '找不到這筆申請'; end if;
+  if v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
+  if v_app.refunded then raise exception '已經退過了'; end if;
+  if v_app.status <> 'open' or v_app.stage <> 1 then raise exception '目前階段無法退款'; end if;
+  if coalesce(v_app.paid, 0) <= 0 then raise exception '這筆申請沒有付款紀錄'; end if;
+  if now() - v_app.created_at <= interval '14 days' then raise exception '還沒超過 14 天，暫時無法退款'; end if;
+
+  update public.applications set refunded = true where id = p_app_id;
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles set
+    credits = credits + v_app.paid,
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '退回掛號費（對方逾期未處理）', 'd', v_app.paid))
+  where id = auth.uid()
+  returning * into v_row;
+  perform set_config('app.bypass_profile_guard', '', true);
+
+  return v_row;
+end $$;
+
+-- 管理員手動加點（人工儲值、活動贈點）；也給未來的金流回調重用——
+-- 回調是用 service_role 金鑰打進來的，沒有使用者 JWT，所以除了「呼叫者是管理員」，
+-- 也放行「呼叫者是 service_role」這個後端專用身分。ref 給訂單編號用，同一筆 ref
+-- 重複呼叫不會重複加點（金流商常會重送回調，這裡先把防呆做好）。
+create or replace function public.admin_add_credits(target uuid, amount int, reason text, ref text default null)
+returns public.profiles
+language plpgsql security definer set search_path = public as $$
+declare v_row public.profiles;
+begin
+  if not (public.is_admin(auth.uid()) or auth.role() = 'service_role') then
+    raise exception '只有管理員可以使用';
+  end if;
+  if amount = 0 then raise exception '金額不能是 0'; end if;
+
+  if ref is not null and exists (
+    select 1 from public.profiles, jsonb_array_elements(coalesce(credit_log, '[]'::jsonb)) elem
+    where id = target and elem->>'ref' = ref
+  ) then
+    select * into v_row from public.profiles where id = target;
+    return v_row;   -- 同一筆訂單重複呼叫，直接回傳目前狀態，不重複加點
+  end if;
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles set
+    credits = credits + amount,
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', reason, 'd', amount, 'ref', ref))
+  where id = target
+  returning * into v_row;
+  perform set_config('app.bypass_profile_guard', '', true);
+
+  if v_row is null then raise exception '找不到這個帳號'; end if;
+  return v_row;
+end $$;
+
+-- ============================================================
+-- 10) 把自己設成管理員（審核台權限）
 --    這行不會自動執行——執行完上面全部之後，自己先用這個帳號登入一次，
 --    再回到 SQL Editor，把 <你的帳號 email> 換成自己的 email，單獨執行這一段：
 --
