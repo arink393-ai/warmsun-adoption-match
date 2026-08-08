@@ -270,9 +270,14 @@
     if (error) throw error;
     return data;
   }
-  // 一鍵通關：對方開放的話，付 10 點直接跳到第三階段互相解鎖
-  async function skipToUnlock(appId) {
-    const { data, error } = await sb.rpc('skip_to_unlock', { p_app_id: appId });
+  // 快速邀請：申請人先邀請，不扣點；收件方接受後才完成扣點與解鎖。
+  async function requestFastTrack(appId) {
+    const { data, error } = await sb.rpc('request_fast_track', { p_app_id: appId });
+    if (error) throw error;
+    return data;
+  }
+  async function acceptFastTrack(appId) {
+    const { data, error } = await sb.rpc('accept_fast_track', { p_app_id: appId });
     if (error) throw error;
     return data;
   }
@@ -440,7 +445,7 @@
     listMessages, sendMessage, closeChat, subscribeMessages,
     applyTo, refundApplication, adminAddCredits,
     unlockA1, sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
-    skipToUnlock, settleBonusCredits,
+    requestFastTrack, acceptFastTrack, settleBonusCredits,
     getPrivateNote, savePrivateNote,
     hasClaudeProxy, askClaude, askClaudeRaw, spendCreditFor,
     avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto,

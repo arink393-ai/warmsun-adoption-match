@@ -317,6 +317,8 @@ alter table public.applications add column if not exists vet_scores jsonb;
 alter table public.applications add column if not exists vet_stage int;
 -- 一鍵通關：跳過三階段審核直接解鎖時標記，讓畫面知道這筆沒有真的作答
 alter table public.applications add column if not exists skipped boolean not null default false;
+alter table public.applications add column if not exists fast_invite_from boolean not null default false;
+alter table public.applications add column if not exists fast_invite_to boolean not null default false;
 
 alter table public.applications enable row level security;
 
@@ -1046,6 +1048,8 @@ begin
     new.unlock_from := old.unlock_from;
     new.unlock_to   := old.unlock_to;
     new.skipped     := old.skipped;
+    new.fast_invite_from := old.fast_invite_from;
+    new.fast_invite_to := old.fast_invite_to;
   end if;
   return new;
 end $$;
@@ -1306,30 +1310,54 @@ begin
   end if;
 end $$;
 
--- 一鍵通關：對方開放的話，申請人可以付 10 點直接跳到第三階段、雙方互相解鎖，
--- 不用照走問卷與人工審核。這 10 點會加進登記人的帳上，但標記 14 天後到期，
--- 到期沒花完的部分會被上面的 settle_bonus_credits 收回。
+-- 舊版單方「一鍵通關」停用：不能再由一方付款替另一方表示同意。
 create or replace function public.skip_to_unlock(p_app_id uuid)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+begin
+  raise exception '一鍵通關已停用，請改用雙方同意的快速邀請';
+end $$;
+
+-- 申請人先送出快速邀請，不扣點、不解鎖。
+create or replace function public.request_fast_track(p_app_id uuid)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare v_app public.applications; v_owner public.match_profiles; v_bal int;
+begin
+  select * into v_app from public.applications where id = p_app_id for update;
+  if v_app is null or v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
+  if v_app.status <> 'open' or v_app.stage >= 3 then raise exception '目前階段不能送快速邀請'; end if;
+  select * into v_owner from public.match_profiles where id = v_app.to_user;
+  if v_owner is null or not coalesce(v_owner.allow_skip, false) then raise exception '對方沒有開放快速邀請'; end if;
+  select credits into v_bal from public.match_profiles where id = auth.uid();
+  if coalesce(v_bal,0) < 10 then raise exception '點數不足；對方接受時需要 10 點'; end if;
+  perform set_config('app.bypass_app_guard', 'on', true);
+  update public.applications set fast_invite_from = true where id = p_app_id returning * into v_app;
+  perform set_config('app.bypass_app_guard', '', true);
+  return v_app;
+end $$;
+
+-- 收件方接受後才扣申請人 10 點並快速解鎖；雙方都已明確表示同意。
+create or replace function public.accept_fast_track(p_app_id uuid)
 returns public.applications
 language plpgsql security definer set search_path = public as $$
 declare
   v_cost constant int := 10;
   v_app public.applications; v_owner public.match_profiles; v_bal int;
 begin
-  perform public.settle_bonus_credits(auth.uid());
-
   select * into v_app from public.applications where id = p_app_id for update;
   if v_app is null then raise exception '找不到這筆申請'; end if;
-  if v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
+  if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
   if v_app.status <> 'open' then raise exception '這筆申請已經結束了'; end if;
   if v_app.stage >= 3 then raise exception '這筆申請已經在第三階段了'; end if;
+  if not v_app.fast_invite_from then raise exception '對方尚未送出快速邀請'; end if;
 
   select * into v_owner from public.match_profiles where id = v_app.to_user for update;
   if v_owner is null or not coalesce(v_owner.allow_skip, false) then
-    raise exception '對方沒有開放一鍵通關';
+    raise exception '你目前沒有開放快速邀請';
   end if;
 
-  select credits into v_bal from public.match_profiles where id = auth.uid();
+  select credits into v_bal from public.match_profiles where id = v_app.from_user for update;
   if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
@@ -1337,21 +1365,21 @@ begin
     stage = 3, a1_unlocked = true, stage2_paid = true,
     unlock_from = true, unlock_to = true,
     consent_at = coalesce(consent_at, now()),
-    skipped = true
+    skipped = true, fast_invite_to = true
   where id = p_app_id returning * into v_app;
   perform set_config('app.bypass_app_guard', '', true);
 
   perform set_config('app.bypass_profile_guard', 'on', true);
   update public.match_profiles set
     credits = credits - v_cost,
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '一鍵通關　跳過審查流程', 'd', -v_cost))
-  where id = auth.uid();
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '快速邀請　雙方同意後快速解鎖', 'd', -v_cost))
+  where id = v_app.from_user;
 
   update public.match_profiles set
     credits = credits + v_cost,
     bonus_credits = coalesce(bonus_credits, '[]'::jsonb)
       || jsonb_build_array(jsonb_build_object('amount', v_cost, 'granted_at', now(), 'expires_at', now() + interval '14 days')),
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '有人使用一鍵通關　獎勵點數（14 天內要花完）', 'd', v_cost))
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '接受快速邀請　獎勵點數（14 天內要花完）', 'd', v_cost))
   where id = v_app.to_user;
   perform set_config('app.bypass_profile_guard', '', true);
 
@@ -1420,10 +1448,12 @@ revoke all on function public.match_is_admin(uuid), public.spend_credits_for(tex
   public.admin_add_credits(uuid,int,text,text), public.unlock_a1(uuid),
   public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid),
   public.consent_unlock_to(uuid), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
+  public.request_fast_track(uuid), public.accept_fast_track(uuid),
   public.submit_stage2(uuid,jsonb,jsonb) from public, anon;
 grant execute on function public.match_is_admin(uuid), public.spend_credits_for(text,text),
   public.apply_to(uuid,jsonb,jsonb), public.refund_application(uuid),
   public.admin_add_credits(uuid,int,text,text), public.unlock_a1(uuid),
   public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid),
   public.consent_unlock_to(uuid), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
+  public.request_fast_track(uuid), public.accept_fast_track(uuid),
   public.submit_stage2(uuid,jsonb,jsonb) to authenticated;

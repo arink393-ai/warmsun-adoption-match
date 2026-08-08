@@ -371,9 +371,9 @@
 
     <label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px">
       <input type="checkbox" id="mAllowSkip" style="width:auto;margin:4px 0 0">
-      <span style="font-size:13px;color:var(--ink)">開放「一鍵通關」：申請人可以付 <b>10 點</b>
-        直接跳過三個階段的審核與問答，直接互相解鎖。這 10 點會進到你的帳號，但限
-        <b>14 天</b>內用完，逾期沒花完的部分會被收回。</span>
+      <span style="font-size:13px;color:var(--ink)">開放「快速邀請」：申請人可先提出邀請，<b>不會立即扣點或解鎖</b>。
+        只有你主動接受後，系統才從對方扣 10 點並讓雙方快速解鎖；你可以拒絕或繼續正常階段。
+        這 10 點會進到你的帳號，但限 <b>14 天</b>內用完。</span>
     </label>
 
     <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 詳細資料（必填．會公開）—</div>
@@ -481,7 +481,7 @@
       <b>解鎖費</b>　通過三階段審查後解鎖對方的日常觀察資訊：<span id="clinicStage3Cost">3</span> 點<br>
       <b>診療費</b>　請主治獸醫評估一位申請人：<span id="clinicVetCost">1</span> 點<br>
       <b>進階診斷</b>　請主治獸醫客製第二階段問題：<span id="clinicDeepCost">3</span> 點<br>
-      <b>一鍵通關</b>　登記人開放的話，可以付 <span id="clinicSkipCost">10</span> 點直接跳過三階段審核（點數會進到對方帳號，限14天內用完）<br>
+      <b>快速邀請</b>　登記人開放時可提出邀請；對方接受後才扣 <span id="clinicSkipCost">10</span> 點並快速解鎖（點數會進到對方帳號，限14天內用完）<br>
       收費是為了讓雙方都慎重：申請前先想清楚，收到申請的人也不會被大量亂投的訊息淹沒。<br>
       若對方超過 <span id="clinicRefundDays">14</span> 天未處理你的申請，可以在「我送出的申請」退回掛號費。
     </p>
@@ -658,7 +658,7 @@ const DEEP_COST = 3;       /* 進階診斷：AI 客製第二階段問題（實�
 const UNLOCK_A1_COST = 1;  /* 調閱第一階段詳細回答（實際收費以資料庫 unlock_a1 為準） */
 const UNLOCK_STAGE3_COST = 3; /* 申請人解鎖對方的日常觀察資訊（實際收費以資料庫 unlock_stage3 為準） */
 const STAGE2_COST = 2;     /* 發出第二階段問卷（實際收費以資料庫 send_stage2 為準） */
-const SKIP_COST = 10;      /* 一鍵通關（實際收費以資料庫 skip_to_unlock 為準），點數會進到登記人帳號，限14天內用完 */
+const SKIP_COST = 10;      /* 雙方同意快速邀請：接受後才扣點，限14天內用完 */
 const REFUND_DAYS = 14;    /* 對方超過幾天未處理可退點 */
 const PHOTO_BONUS = 5;     /* 照片審核通過＋資料填妥的獎勵點數 */
 const PACKS = [
@@ -1451,7 +1451,7 @@ async function renderOutbox(){
     return `<fieldset><legend>${esc(to.name)}</legend>
       <div class="stage s${a.status==='rejected'?0:a.stage}">${stageText(a)}</div>
       ${a.note ? `<p class="hint">對方留言：${esc(a.note)}</p>` : ''}
-      ${a.skipped ? `<p class="hint">⚡ 這筆申請使用了「一鍵通關」，跳過了正常的問卷與審核流程。</p>` : ''}
+      ${a.skipped ? `<p class="hint">⚡ 雙方已同意快速邀請，略過剩餘問卷並完成解鎖。</p>` : ''}
       ${needQ2 ? `<div class="q2form" data-app="${a.id}">`
                + q2.map((q,i) => questionBlock(q, i, 'a2q-' + a.id)).join('')
                + `<div class="bar"><button class="sendQ2" data-app="${a.id}" data-n="${q2.length}">送出回答</button></div></div>` : ''}
@@ -1461,8 +1461,10 @@ async function renderOutbox(){
         </div>` : ''}
       ${a.stage === 3 && a.unlock_from && !a.unlock_to ? `<p class="hint">已解鎖你這邊，等待對方同意解鎖。</p>` : ''}
       ${(to.allow_skip && a.status === 'open' && a.stage < 3 && !a.skipped) ? `<div class="notice">
-          ⚡ ${esc(to.name)} 開放「一鍵通關」：付 ${SKIP_COST} 點可以直接跳過剩下的階段，馬上互相解鎖。
-          <div class="bar"><button class="ghost skip" data-app="${a.id}">一鍵通關（${SKIP_COST} 點）</button></div>
+          ⚡ ${esc(to.name)} 開放「快速邀請」。送出邀請不扣點；對方接受後才扣 ${SKIP_COST} 點並完成快速解鎖。
+          <div class="bar">${a.fast_invite_from
+            ? '<span class="hint">邀請已送出，等待對方決定。</span>'
+            : `<button class="ghost fastInvite" data-app="${a.id}">送出快速邀請</button>`}</div>
         </div>` : ''}
       ${(a.stage >= 2 && to.stage1_photo) ? `<div style="margin-top:10px">
           <p class="hint" style="margin-bottom:4px">🎁 第一階段加碼照片</p>
@@ -1531,12 +1533,12 @@ function bindOutbox(){
       renderOutbox(); renderBoard();
     }catch(e){ alert(e.message || '操作失敗'); }
   });
-  $('outbox').querySelectorAll('.skip').forEach(b => b.onclick = async () => {
+  $('outbox').querySelectorAll('.fastInvite').forEach(b => b.onclick = async () => {
     const a = apps.find(x => x.id === b.dataset.app);
     if((myProfile.credits||0) < SKIP_COST){ alert('點數不足，請到「診療室」查看加值方式。'); return; }
-    if(!confirm(`一鍵通關會扣 ${SKIP_COST} 點，直接跳過剩下的階段並互相解鎖，確定嗎？`)) return;
+    if(!confirm(`送出邀請現在不扣點；只有對方接受後才會扣 ${SKIP_COST} 點並快速解鎖。確定送出？`)) return;
     try{
-      const updated = await DB.skipToUnlock(a.id);
+      const updated = await DB.requestFastTrack(a.id);
       Object.assign(a, updated);
       myProfile = await DB.getMyProfile();
       renderOutbox(); renderBoard();
@@ -1564,7 +1566,7 @@ async function renderInbox(){
       <div>${[from.age && from.age+' 歲', from.area, from.job].filter(Boolean)
              .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
       ${a.skipped ? `<div class="notice" style="margin-top:12px">
-          ⚡ 這位申請人使用了「一鍵通關」，付點數跳過了問卷與逐階段審核，已經直接互相解鎖。
+          ⚡ 你們雙方已同意快速邀請，略過剩餘問卷並完成解鎖。
         </div>` : a.a1
         ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1)
         : `<div class="lock" style="margin-top:12px">
@@ -1576,6 +1578,10 @@ async function renderInbox(){
              </div>
            </div>`}
       ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
+      ${a.fast_invite_from && !a.fast_invite_to && a.status === 'open' && a.stage < 3 ? `<div class="notice">
+        對方送來快速邀請。只有你按下接受後，才會扣對方 ${SKIP_COST} 點並快速解鎖；你也可以不接受，繼續正常審查。
+        <div class="bar"><button class="ghost acceptFastInvite" data-app="${a.id}">接受快速邀請</button></div>
+      </div>` : ''}
       ${a.stage >= 2 && a.status === 'open' ? `<div class="bar"><button class="ghost openChat" data-app="${a.id}" data-name="${esc(from.name)}">開啟第二階段對話</button></div>` : ''}
       <div class="bar">
         ${a.status === 'open' && a.stage === 1 && a.a1 ? `
@@ -1660,6 +1666,12 @@ function bindInbox(){
   $('inbox').querySelectorAll('.deep').forEach(b => b.onclick = () => {
     const a = apps.find(x => x.id === b.dataset.app);
     deepReview(a, inboxFromProfiles[a.from_user] || {name:'申請人'});
+  });
+  $('inbox').querySelectorAll('.acceptFastInvite').forEach(b => b.onclick = async () => {
+    if(!confirm('接受後會從對方帳號扣 10 點，並讓雙方快速解鎖。確定接受？')) return;
+    const a = apps.find(x => x.id === b.dataset.app);
+    try{ const updated = await DB.acceptFastTrack(a.id); Object.assign(a, updated); renderInbox(); renderBoard(); }
+    catch(e){ alert(e.message || '操作失敗'); }
   });
   $('inbox').querySelectorAll('.openChat').forEach(b => b.onclick = () => openChat(b.dataset.app, b.dataset.name));
 }

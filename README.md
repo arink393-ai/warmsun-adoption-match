@@ -210,7 +210,7 @@ Cormorant Garamond／Lora 完全是兩回事。這次把兩個後台頁面的顏
 面談紀錄室裡那個旋轉的紅色印章（`.stamp`）刻意保留原樣沒有動——那是後台最有個性的元素，
 蓋章本來就該是紅的，換成金色反而弱掉。
 
-### 13. 後台配色改成暖陽動態漸層、加碼照片、一鍵通關
+### 13. 後台配色改成暖陽動態漸層、加碼照片、快速邀請
 
 第 12 節做的深墨頂欄／登入畫面被覺得太重、不像「暖陽」，改成會慢慢流動的金色漸層
 （`--sun-1`／`--sun-2`／`--sun-3` 三段色，`sunshift` 這個 `@keyframes` 讓漸層每 18 秒緩緩
@@ -224,20 +224,22 @@ RLS 政策會檢查申請人跟這個登記人之間的申請進度：進到第�
 解鎖回饋」的感覺。`match_profiles.stage1_photo`／`stage2_photo` 兩個布林欄位只是「有沒有上傳」
 的旗標，不是照片本身。
 
-**一鍵通關**：登記人可以在自己的登記表單勾選「開放一鍵通關」，開放後任何送出申請的人都可以
-付 10 點（`skip_to_unlock`），直接把這筆申請跳到第三階段、雙方互相解鎖，不用照走問卷與
-逐階段審核。這 10 點會轉給登記人，但限 14 天內用完——`match_profiles.bonus_credits` 記錄每一筆
+**快速邀請**：登記人可以勾選「開放快速邀請」。申請人先透過 `request_fast_track` 送出邀請，
+此時不扣點也不解鎖；只有登記人透過 `accept_fast_track` 明確接受後，系統才扣申請人 10 點、
+把申請推進第三階段並讓雙方解鎖。任一方未同意就維持正常審查流程。這 10 點會轉給登記人，
+但限 14 天內用完——`match_profiles.bonus_credits` 記錄每一筆
 獎勵點數的到期時間，到期還沒花完的部分會被 `settle_bonus_credits()` 收回（用「還剩多少
 可花」去扣，不會扣到負的）。因為沒有排程系統，改成「順手結算」：登入後會呼叫一次，其他
 會扣點的安全函式（`spend_credits_for`／`apply_to`／`unlock_a1`／`send_stage2`／
 `unlock_stage3`）開頭也都會先結算一次，盡量不要讓過期的點數一直掛在帳上又被拿去花用。
-`applications.skipped` 記錄這筆申請是不是用一鍵通關跳過的，讓收件方跟申請人兩邊的畫面都
+`applications.fast_invite_from`／`fast_invite_to` 記錄雙方同意，`skipped` 記錄是否已完成快速邀請，讓兩邊畫面都
 能顯示對應的說明文字，而不是誤判成「還沒填問卷」。
 
 `bonus_credits`／`skipped`／`allow_skip` 的欄位層級防護：`allow_skip` 是本人自由決定的
 一般設定，可以直接改；`bonus_credits`（會影響未來能不能被扣回）跟 `skipped`（跟
 `stage`／`unlock_from` 一樣是審核流程狀態）都鎖進第 9、11 節那兩個 guard trigger，只能
-透過 `skip_to_unlock`／`settle_bonus_credits` 這兩支安全函式改。
+透過 `request_fast_track`／`accept_fast_track`／`settle_bonus_credits` 這些安全函式改；舊版
+`skip_to_unlock` 已停用，避免單方付款替另一方表示同意。
 
 這幾個機制都先在本地真的 Postgres 16 上驗證過：付款後雙方點數與到期時間正確、點數不足會
 擋下、對方沒開放一鍵通關會擋下、直接 `update` 偽造 `stage`／`skipped`／`bonus_credits`
