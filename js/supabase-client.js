@@ -219,6 +219,18 @@
     if (error) throw error;
     return data;
   }
+  // 第三階段：申請人付 3 點解鎖對方的日常觀察資訊
+  async function unlockStage3(appId) {
+    const { data, error } = await sb.rpc('unlock_stage3', { p_app_id: appId });
+    if (error) throw error;
+    return data;
+  }
+  // 第三階段：收件方免費同意解鎖
+  async function consentUnlockTo(appId) {
+    const { data, error } = await sb.rpc('consent_unlock_to', { p_app_id: appId });
+    if (error) throw error;
+    return data;
+  }
 
   // ── AI 輔助評分／照片初審（選用，需部署 supabase/functions/claude） ──
   function hasClaudeProxy() {
@@ -359,7 +371,7 @@
     adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminRemoveProfile,
     listOutbox, listInbox, findApplicationTo, updateApplication,
     applyTo, refundApplication, adminAddCredits,
-    unlockA1, sendStage2, submitStage2, advanceStage3,
+    unlockA1, sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
     getPrivateNote, savePrivateNote,
     hasClaudeProxy, askClaude, askClaudeRaw, spendCreditFor,
     avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto,

@@ -424,11 +424,12 @@ async function renderRoster(){
           <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
         ${a.status==='open' && a.stage===1 && !a.a1 ? `
           <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
-        ${a.stage===3 && !(a.unlock_from && a.unlock_to) ? `
-          <button class="ghost unlockTo" data-app="${a.id}">${a.unlock_to ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>` : ''}
+        ${a.stage===3 && !a.unlock_to ? `
+          <button class="ghost unlockTo" data-app="${a.id}">同意解鎖日常觀察（免費）</button>` : ''}
         ${a.a1 ? `<button class="ghost aiJudge" data-app="${a.id}">AI 建議評分</button>` : ''}
       </div>
       ${a.a1 ? `<div class="hint aiOut" data-app="${a.id}" style="margin-top:8px;white-space:pre-wrap"></div>` : ''}
+      ${a.stage===3 && a.unlock_to && !a.unlock_from ? `<p class="hint">已同意解鎖，等待對方付點解鎖。</p>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="hint">🔓 對方已互相解鎖，可在配對站查看日常觀察資訊</div>` : ''}
       <label style="margin-top:14px">套用罐頭回覆（自動帶入對方名字）</label>
       <select class="cannedSel" data-name="${esc(from.name)}"></select>
@@ -469,7 +470,7 @@ function bindRoster(){
     try{ await upd(b.dataset.app, {status:'rejected', note: note||null}); }catch(e){ alert(e.message||'操作失敗'); }
   });
   $('roster').querySelectorAll('.unlockTo').forEach(b => b.onclick = async () => {
-    try{ await upd(b.dataset.app, {unlock_to: true}); }catch(e){ alert(e.message||'操作失敗'); }
+    try{ await DB.consentUnlockTo(b.dataset.app); await renderRoster(); }catch(e){ alert(e.message||'操作失敗'); }
   });
   $('roster').querySelectorAll('.aiJudge').forEach(b => {
     if(!DB.hasClaudeProxy()){

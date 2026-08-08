@@ -774,6 +774,10 @@ create trigger trg_notes_touch before update on public.application_private_notes
 --    收件方可以直接送 update applications set a1_unlocked = true 就白嫖解鎖，
 --    或者把 stage 從 1 改成 2 跳過第二階段的出題費。跟 profiles 一樣用 trigger 擋住，
 --    這幾欄只能由下面那些會扣點的安全函式來改。
+--
+--    unlock_from／unlock_to 也一起擋：這兩欄原本雙方都能直接 update（applications
+--    的 update 政策是整列層級，不分欄位），代表申請人或收件方其實可以直接把「對方」
+--    那一欄也設成 true，等於幫對方蓋章同意，不需要對方真的按下同意。這次順便修掉。
 create or replace function public.guard_application_privileged()
 returns trigger language plpgsql as $$
 begin
@@ -788,6 +792,8 @@ begin
     new.paid        := old.paid;
     new.refunded    := old.refunded;
     new.consent_at  := old.consent_at;
+    new.unlock_from := old.unlock_from;
+    new.unlock_to   := old.unlock_to;
   end if;
   return new;
 end $$;
@@ -945,6 +951,56 @@ begin
 
   perform set_config('app.bypass_app_guard', 'on', true);
   update public.applications set stage = 3 where id = p_app_id returning * into v_app;
+  perform set_config('app.bypass_app_guard', '', true);
+  return v_app;
+end $$;
+
+-- 第三階段：申請人付 3 點解鎖對方的日常觀察資訊。
+-- 收件方那邊仍然要自己免費按「同意解鎖」（見下面 consent_unlock_to），
+-- 兩邊都解鎖了才會互相看到——維持原本互相同意的精神，只是申請人這邊多一道付費關卡。
+create or replace function public.unlock_stage3(p_app_id uuid)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare
+  v_cost constant int := 3;
+  v_app public.applications; v_bal int;
+begin
+  select * into v_app from public.applications where id = p_app_id for update;
+  if v_app is null then raise exception '找不到這筆申請'; end if;
+  if v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
+  if v_app.stage <> 3 then raise exception '這筆申請還沒進入第三階段'; end if;
+  if v_app.unlock_from then return v_app; end if;   -- 已解鎖就不再收費
+
+  select credits into v_bal from public.profiles where id = auth.uid() for update;
+  if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
+
+  perform set_config('app.bypass_app_guard', 'on', true);
+  update public.applications set unlock_from = true where id = p_app_id returning * into v_app;
+  perform set_config('app.bypass_app_guard', '', true);
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles set
+    credits = credits - v_cost,
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '解鎖　對方的日常觀察資訊', 'd', -v_cost))
+  where id = auth.uid();
+  perform set_config('app.bypass_profile_guard', '', true);
+
+  return v_app;
+end $$;
+
+-- 收件方同意解鎖（免費，維持原本設計）
+create or replace function public.consent_unlock_to(p_app_id uuid)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare v_app public.applications;
+begin
+  select * into v_app from public.applications where id = p_app_id for update;
+  if v_app is null then raise exception '找不到這筆申請'; end if;
+  if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
+  if v_app.stage <> 3 then raise exception '這筆申請還沒進入第三階段'; end if;
+
+  perform set_config('app.bypass_app_guard', 'on', true);
+  update public.applications set unlock_to = true where id = p_app_id returning * into v_app;
   perform set_config('app.bypass_app_guard', '', true);
   return v_app;
 end $$;
