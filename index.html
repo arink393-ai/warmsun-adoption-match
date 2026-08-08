@@ -84,11 +84,18 @@
   details summary{cursor:pointer;font-family:var(--font-heading);font-weight:600;font-size:12.5px;color:var(--brand-dk)}
   details[open] summary{margin-bottom:8px}
 
-  #gate{position:fixed;inset:0;background:var(--paper);z-index:9999;display:flex;
-        align-items:center;justify-content:center;padding:24px}
-  #gate .box{max-width:380px;width:100%}
+  /* 登入／註冊改成右上角觸發的彈窗，不再擋住整個首頁 */
+  #gate{position:fixed;inset:0;background:color-mix(in srgb, var(--ink) 35%, transparent);z-index:9999;
+        display:none;align-items:center;justify-content:center;padding:24px}
+  #gate.show{display:flex}
+  #gate .box{max-width:380px;width:100%;background:var(--paper);border:1px solid var(--rule);
+             border-radius:8px;padding:22px 22px 10px;position:relative;box-shadow:0 12px 32px rgba(0,0,0,.18)}
+  #gate .box h1{font-size:22px}
   #gate h1{text-align:center}
   #gate .sub{text-align:center}
+  #gateClose{position:absolute;top:8px;right:10px;background:none;border:none;color:var(--ink-soft);
+             font-size:20px;line-height:1;cursor:pointer;padding:6px}
+  .topbar .guestBtns{display:flex;gap:8px;align-items:center}
   #gateForm .switcher{display:flex;gap:6px;justify-content:center;margin-top:14px;font-size:12px}
   #gateForm .switcher button{background:none;border:none;color:var(--brand);cursor:pointer;padding:2px;font-size:12px}
   .google-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;color:var(--ink);
@@ -100,9 +107,10 @@
 
 <div id="gate">
   <div class="box">
+    <button type="button" id="gateClose" aria-label="關閉">×</button>
     <span class="tag">ADOPTION CENTER</span>
     <h1>暖陽動物之家</h1>
-    <p class="sub">請先登入，才能瀏覽與登記</p>
+    <p class="sub" id="gateSub">登入才能瀏覽佈告欄與登記</p>
     <fieldset id="gateForm">
       <legend id="gateLegend">登入</legend>
       <button type="button" class="google-btn" id="gGoogle">
@@ -121,12 +129,18 @@
   </div>
 </div>
 
-<div class="wrap" id="app" style="display:none">
+<div class="wrap" id="app">
 <header>
   <div class="topbar">
-    <span id="whoami"></span>
-    <a href="dashboard.html">我的後台</a>
-    <a href="#" id="logout">登出</a>
+    <span class="guestBtns" id="topbarGuest">
+      <button class="ghost" id="topLogin">登入</button>
+      <button class="ghost" id="topSignup">註冊</button>
+    </span>
+    <span class="guestBtns" id="topbarUser" style="display:none">
+      <span id="whoami"></span>
+      <a href="dashboard.html">我的後台</a>
+      <a href="#" id="logout">登出</a>
+    </span>
   </div>
   <span class="tag">ADOPTION CENTER</span>
   <h1>暖陽動物之家｜認養配對所</h1>
@@ -141,8 +155,57 @@
 
 <div class="tabbar" id="tabbar"></div>
 
+<!-- 首頁 -->
+<div class="pane on" id="pane-home">
+  <section style="padding:10px 0 6px">
+    <span class="tag">ADOPTION · MATCHMAKING</span>
+    <h1 style="margin:14px 0 10px">借用嚴謹的認養手續，<br>找一輩子的家人。</h1>
+    <p class="sub" style="font-size:15px;line-height:1.8;max-width:64ch">
+      暖陽動物之家是一個交友平台，用「動物認養」的比喻，取代速食式的滑卡交友。
+      想認識誰，就提出一份認養申請，通過三階段審查後，才會漸進解鎖更深的聯繫方式。
+      我們相信，慎重不是門檻，而是對彼此人生的尊重。
+    </p>
+    <div class="bar" style="margin-top:14px">
+      <button id="homeToBoard">查看佈告欄</button>
+      <button class="ghost" id="homeToRegister">開始登記</button>
+    </div>
+  </section>
+
+  <div style="border-top:1px solid var(--rule);margin:22px 0"></div>
+
+  <section>
+    <p class="hint" style="text-transform:uppercase;letter-spacing:.08em;color:var(--brand);margin:0 0 10px">三階段，慢慢認識</p>
+    <div class="grid">
+      <div class="card">
+        <div class="kind">STAGE 01</div>
+        <h3>書面審查</h3>
+        <p class="bio">提出認養申請、回答五道題目，讓對方認識真實的你，雙方都還不提供任何聯絡方式。</p>
+      </div>
+      <div class="card">
+        <div class="kind">STAGE 02</div>
+        <h3>價值觀評估</h3>
+        <p class="bio">回答幾道情境題，沒有標準答案，誠實與前後一致，比漂亮的回答更重要。</p>
+      </div>
+      <div class="card">
+        <div class="kind">STAGE 03</div>
+        <h3>日常觀察解鎖</h3>
+        <p class="bio">雙方都同意後，才會互相顯示日常觀察資訊。解鎖是雙向的，單方同意不會揭露。</p>
+      </div>
+    </div>
+  </section>
+
+  <div style="border-top:1px solid var(--rule);margin:22px 0"></div>
+
+  <section>
+    <div class="notice">
+      還沒有帳號嗎？<a href="#" id="homeToSignup2">免費註冊</a>，或先
+      <a href="#" id="homeToHow">看看完整的認養流程說明</a>。
+    </div>
+  </section>
+</div>
+
 <!-- 佈告欄 -->
-<div class="pane on" id="pane-board">
+<div class="pane" id="pane-board">
   <fieldset>
     <legend>篩選</legend>
     <div class="row">
@@ -628,8 +691,10 @@ function setCheckGroup(containerId, values){
 
 let me = null, myProfile = null, profiles = [], apps = [], templateMaster = [];
 const OWNER_EMAIL = 'arink393@gmail.com';
+const PROTECTED_TABS = ['board', 'center', 'admin'];
+let pendingTab = null;
 
-/* ── 登入 gate ── */
+/* ── 登入 gate（右上角觸發的彈窗，不再擋住整個首頁） ── */
 let gateMode = 'login';
 function setGateMode(m){
   gateMode = m;
@@ -638,6 +703,17 @@ function setGateMode(m){
   $('gToSignup').textContent = m === 'login' ? '註冊一個' : '改成登入';
   $('gMsg').textContent = '';
 }
+function openGate(m){
+  setGateMode(m || 'login');
+  $('gateSub').textContent = pendingTab ? '登入才能繼續' : '登入才能瀏覽佈告欄與登記';
+  $('gate').classList.add('show');
+}
+function closeGate(){
+  $('gate').classList.remove('show');
+  pendingTab = null;
+}
+$('gateClose').onclick = closeGate;
+$('gate').onclick = (e) => { if(e.target.id === 'gate') closeGate(); };
 $('gToSignup').onclick = () => setGateMode(gateMode === 'login' ? 'signup' : 'login');
 $('gGoogle').onclick = async () => {
   try{ await DB.signInGoogle(); }
@@ -657,22 +733,33 @@ $('gGo').onclick = async () => {
   $('gGo').disabled = false;
 };
 $('logout').onclick = async (e) => { e.preventDefault(); await DB.signOut(); };
+$('topLogin').onclick = () => openGate('login');
+$('topSignup').onclick = () => openGate('signup');
+$('homeToBoard').onclick = () => gotoTab('board');
+$('homeToRegister').onclick = () => { gotoTab('center'); showSub('me'); };
+$('homeToSignup2').onclick = (e) => { e.preventDefault(); openGate('signup'); };
+$('homeToHow').onclick = (e) => { e.preventDefault(); gotoTab('how'); };
 
 DB.onAuthChange(async (user) => {
   if(!user){
     me = null; myProfile = null;
-    $('gate').style.display = 'flex'; $('app').style.display = 'none';
+    $('topbarGuest').style.display = 'flex'; $('topbarUser').style.display = 'none';
+    const activeBtn = $('tabbar').querySelector('.tabbtn.on');
+    if(activeBtn && PROTECTED_TABS.includes(activeBtn.dataset.k)) gotoTab('home');
     return;
   }
   me = user;
-  $('gate').style.display = 'none'; $('app').style.display = '';
+  $('gate').classList.remove('show');
+  $('topbarGuest').style.display = 'none'; $('topbarUser').style.display = 'flex';
   $('whoami').textContent = user.email || '';
   await boot();
+  if(pendingTab){ const k = pendingTab; pendingTab = null; gotoTab(k); }
+  else{ const activeBtn = $('tabbar').querySelector('.tabbtn.on'); if(activeBtn && activeBtn.dataset.k === 'home') gotoTab('board'); }
 });
 
 /* ── 分頁 ── */
 const PANES = [
-  {k:'board', t:'佈告欄'}, {k:'center', t:'個人中心'}, {k:'admin', t:'管理後台'},
+  {k:'home', t:'首頁'}, {k:'board', t:'佈告欄'}, {k:'center', t:'個人中心'}, {k:'admin', t:'管理後台'},
   {k:'how', t:'流程說明'}, {k:'privacy', t:'隱私權'}
 ];
 const SUBS = [
@@ -681,6 +768,7 @@ const SUBS = [
 ];
 let curSub = 'me';
 function gotoTab(k){
+  if(PROTECTED_TABS.includes(k) && !me){ pendingTab = k; openGate('login'); return; }
   const b = $('tabbar').querySelector(`.tabbtn[data-k="${k}"]`); if(!b) return;
   b.click();
 }
@@ -689,6 +777,7 @@ function initTabs(){
     `<button class="tabbtn${i?'':' on'}" data-k="${p.k}">${p.t}</button>`).join('');
   $('tabbar').onclick = e => {
     const b = e.target.closest('.tabbtn'); if(!b) return;
+    if(PROTECTED_TABS.includes(b.dataset.k) && !me){ pendingTab = b.dataset.k; openGate('login'); return; }
     document.querySelectorAll('#tabbar .tabbtn').forEach(x => x.classList.toggle('on', x === b));
     document.querySelectorAll('#app > .pane').forEach(x => x.classList.toggle('on', x.id === 'pane-' + b.dataset.k));
     if(b.dataset.k === 'board') renderBoard();
