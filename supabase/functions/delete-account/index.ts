@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 Deno.serve(async (req) => {
-  const origin = Deno.env.get("SITE_ORIGIN") || req.headers.get("Origin") || "null";
+  const origin = Deno.env.get("SITE_ORIGIN") || "https://arink393-ai.github.io";
   const headers = { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Content-Type": "application/json", "Vary": "Origin" };
   if (req.method === "OPTIONS") return new Response("ok", { headers });
   if (req.method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers });

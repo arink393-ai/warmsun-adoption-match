@@ -466,7 +466,7 @@ grant execute on function public.close_match_chat(uuid,text) to authenticated;
 -- 3) updated_at 自動更新
 -- ============================================================
 create or replace function public.touch_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   new.updated_at = now();
   return new;
@@ -759,7 +759,7 @@ create trigger trg_owner_kv_touch before update on public.owner_kv
 -- ============================================================
 
 create or replace function public.guard_profile_privileged()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   -- 只管「透過 API 用 authenticated 身分打進來」的請求；
   -- 你自己在 Supabase 後台 SQL Editor／Table Editor 用 postgres/service_role 身分
@@ -794,7 +794,7 @@ create trigger trg_guard_profile_privileged before update on public.match_profil
 
 -- 小工具：在 credit_log 最前面加一筆紀錄，並裁到最多 50 筆
 create or replace function public.credit_log_prepend(old_log jsonb, entry_obj jsonb, cap int default 50)
-returns jsonb language sql immutable as $$
+returns jsonb language sql immutable set search_path = '' as $$
   select coalesce(
     (select jsonb_agg(elem)
      from (
@@ -809,6 +809,7 @@ $$;
 -- 扣點：申請人自己呼叫，扣什麼、扣多少一律由伺服器這張表決定，
 -- 不接受前端傳金額（跟前端顯示的 VET_COST 常數只是給 UI 看，實際收費以這裡為準，
 -- 之後要調價記得兩邊一起改）。之後要加新的扣點項目，在 case 裡加一行就好。
+drop function if exists public.spend_credits_for(text, text);
 create or replace function public.spend_credits_for(p_action text, p_detail text default null)
 returns public.match_profiles
 language plpgsql security definer set search_path = public as $$
@@ -876,6 +877,7 @@ end $$;
 
 -- 退回逾期未處理的掛號費：伺服器自己重新檢查一次天數／歸屬／是否已退過，
 -- 不相信前端傳來的任何數字，前端只能傳「是哪一筆申請」。
+drop function if exists public.refund_application(uuid);
 create or replace function public.refund_application(p_app_id uuid)
 returns public.match_profiles
 language plpgsql security definer set search_path = public as $$
@@ -908,6 +910,7 @@ end $$;
 -- 回調是用 service_role 金鑰打進來的，沒有使用者 JWT，所以除了「呼叫者是管理員」，
 -- 也放行「呼叫者是 service_role」這個後端專用身分。ref 給訂單編號用，同一筆 ref
 -- 重複呼叫不會重複加點（金流商常會重送回調，這裡先把防呆做好）。
+drop function if exists public.admin_add_credits(uuid, int, text, text);
 create or replace function public.admin_add_credits(target uuid, amount int, reason text, ref text default null)
 returns public.match_profiles
 language plpgsql security definer set search_path = public as $$
@@ -1032,7 +1035,7 @@ create trigger trg_notes_touch before update on public.application_private_notes
 --    的 update 政策是整列層級，不分欄位），代表申請人或收件方其實可以直接把「對方」
 --    那一欄也設成 true，等於幫對方蓋章同意，不需要對方真的按下同意。這次順便修掉。
 create or replace function public.guard_application_privileged()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   if auth.role() = 'authenticated'
      and coalesce(current_setting('app.bypass_app_guard', true), '') <> 'on'
@@ -1061,7 +1064,7 @@ create trigger trg_guard_application before update on public.applications
 -- ── 我的答題紀錄：把送出的答案存進申請人自己的 profiles.answer_bank ──
 -- 以「題目文字」去重（同一題只留最新的答案），最多保留 100 筆。
 create or replace function public.answer_bank_merge(old_bank jsonb, entries jsonb, cap int default 100)
-returns jsonb language sql immutable as $$
+returns jsonb language sql immutable set search_path = '' as $$
   with all_rows as (
     -- 新答案排在前面（ord 小），舊的接在後面，這樣同一題會保留最新的那筆
     select elem, ord from jsonb_array_elements(coalesce(entries, '[]'::jsonb)) with ordinality as t(elem, ord)
@@ -1442,6 +1445,13 @@ grant select, insert, update, delete on table public.application_private_notes t
 grant select on table public.match_messages, public.match_blocks to authenticated;
 grant insert, select, update on table public.reports to authenticated;
 grant select on table public.match_moderation_actions to authenticated;
+
+drop policy if exists "match_ai_requests_no_client_access" on public.match_ai_requests;
+create policy "match_ai_requests_no_client_access" on public.match_ai_requests for all
+  to anon, authenticated using (false) with check (false);
+
+revoke all on function public.handle_new_match_user() from public, anon, authenticated;
+grant execute on function public.handle_new_match_user() to postgres, service_role;
 
 revoke all on function public.match_is_admin(uuid), public.spend_credits_for(text,text),
   public.apply_to(uuid,jsonb,jsonb), public.refund_application(uuid),
