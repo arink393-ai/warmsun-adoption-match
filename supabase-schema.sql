@@ -27,7 +27,8 @@ create table if not exists public.profiles (
   id          uuid primary key references auth.users(id) on delete cascade,
   name        text not null default '',
   kind        text not null default '' check (kind in ('', 'pet', 'keeper')),
-  species     text not null default '' check (species in ('', 'cat', 'dog')),
+  species     text not null default '',   -- 13 種動物，見 index.html 的 SPECIES 清單
+  gender      text not null default 'f',  -- f 女生／m 男生／x 不透露（與物種脫鉤）
   age         text default '',
   area        text default '',
   job         text default '',
@@ -103,6 +104,23 @@ alter table public.profiles add column if not exists consent boolean not null de
 alter table public.profiles add column if not exists consent_at timestamptz;
 alter table public.profiles add column if not exists bonus_given boolean not null default false;
 alter table public.profiles add column if not exists is_admin boolean not null default false;
+
+-- 病歷卡欄位（物種擴充、性別獨立、星等評分、禁忌、健康告知、獸醫備註）
+alter table public.profiles add column if not exists gender text not null default 'f';
+alter table public.profiles add column if not exists birth text default '';
+alter table public.profiles add column if not exists traits text default '';
+alter table public.profiles add column if not exists likes text default '';
+alter table public.profiles add column if not exists taboo text default '';
+alter table public.profiles add column if not exists health text default '';
+alter table public.profiles add column if not exists health_when text not null default 'stage2';
+alter table public.profiles add column if not exists vet_note text default '';
+alter table public.profiles add column if not exists stars jsonb not null default '{}'::jsonb;
+
+-- 物種從「只有貓／狗」放寬成 13 種，性別改用獨立的 gender 欄位表示。
+-- 先移除舊的 check 限制，再依現有資料把 gender 補上（貓→女生、狗→男生，符合舊版的隱含規則）。
+alter table public.profiles drop constraint if exists profiles_species_check;
+update public.profiles set gender = case when species = 'dog' then 'm' else 'f' end
+  where gender is null or gender = '';
 
 -- 詳細資料（選填，會公開）——自介的結構化欄位
 alter table public.profiles add column if not exists income text default '';
@@ -540,7 +558,8 @@ language plpgsql security definer set search_path = public as $$
 declare v_cost int; v_label text; v_bal int; v_row public.profiles;
 begin
   case p_action
-    when 'vet_review' then v_cost := 1; v_label := '診療　主治獸醫評估';
+    when 'vet_review'  then v_cost := 1; v_label := '診療　主治獸醫評估';
+    when 'deep_review' then v_cost := 3; v_label := '進階診斷　客製第二階段問題';
     else raise exception '未知的扣點項目：%', p_action;
   end case;
 

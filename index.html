@@ -130,7 +130,7 @@
   </div>
   <span class="tag">ADOPTION CENTER</span>
   <h1>暖陽動物之家｜認養配對所</h1>
-  <p class="sub">男生登記為 🐶 狗狗，女生登記為 🐱 貓咪。想認識誰，就提出認養申請，通過三階段審查才會解鎖日常觀察。</p>
+  <p class="sub">挑一種最像你的動物登記，性別另外選。想認識誰，就提出認養申請，通過三階段審查才會解鎖日常觀察。</p>
 </header>
 
 <div class="notice">
@@ -144,11 +144,12 @@
   <fieldset>
     <legend>篩選</legend>
     <div class="row">
-      <div><label>類別</label>
-        <select id="fSpecies">
+      <div><label>物種</label><select id="fSpecies"></select></div>
+      <div><label>性別</label>
+        <select id="fGender">
           <option value="">全部</option>
-          <option value="cat">🐱 貓咪（女生）</option>
-          <option value="dog">🐶 狗狗（男生）</option>
+          <option value="f">女生</option>
+          <option value="m">男生</option>
         </select></div>
       <div><label>身分</label>
         <select id="fKind">
@@ -174,10 +175,12 @@
           <option value="pet">待認養（我想被認識）</option>
           <option value="keeper">飼主（我想認識別人）</option>
         </select></div>
-      <div><label>類別</label>
-        <select id="mSpecies">
-          <option value="cat">🐱 貓咪（女生）</option>
-          <option value="dog">🐶 狗狗（男生）</option>
+      <div><label>物種</label><select id="mSpecies"></select></div>
+      <div><label>性別</label>
+        <select id="mGender">
+          <option value="f">女生</option>
+          <option value="m">男生</option>
+          <option value="x">不透露</option>
         </select></div>
     </div>
     <div class="row">
@@ -185,6 +188,8 @@
       <div><label>居住地</label><input id="mArea" placeholder="例：台北"></div>
       <div><label>職業</label><input id="mJob" placeholder="例：工程師"></div>
     </div>
+    <label>生日（對方送出第一階段申請後才會顯示）</label>
+    <input id="mBirth" placeholder="例：12/25 或 1994/12/25">
 
     <label>大頭照（必填．需通過審核才會公開）</label>
     <div class="row" style="align-items:flex-start">
@@ -221,8 +226,24 @@
       </div>
     </div>
 
-    <label>自我介紹（會公開）</label>
+    <label>自我介紹（會公開．會顯示在病歷卡的「行為觀察」欄）</label>
     <textarea id="mBio" rows="4" placeholder="興趣、生活型態、想找什麼樣的人⋯⋯"></textarea>
+
+    <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 病歷卡（會公開）—</div>
+    <label>健康與性格評估</label>
+    <div class="row" id="mStars"></div>
+    <label>個性標籤（用逗號分隔）</label>
+    <input id="mTraits" placeholder="慢熱, 理性, 喜歡閱讀">
+    <label>最喜歡的事（用逗號分隔）</label>
+    <input id="mLikes" placeholder="曬太陽, 看電影, 爬山">
+    <label>禁忌事項（用逗號分隔）</label>
+    <input id="mTaboo" placeholder="冷暴力, 情緒勒索, 長期忽視">
+    <label>健康告知（選填）</label>
+    <textarea id="mHealth" rows="3" placeholder="例：需要定期回診追蹤；壓力大時睡眠會比較差，偶爾需要多一點休息。"></textarea>
+    <label>健康告知什麼時候讓對方看到</label>
+    <select id="mHealthWhen"></select>
+    <label>主治獸醫備註（一句話，會放在病歷卡最下方）</label>
+    <textarea id="mVetNote" rows="2" placeholder="需要一個願意溫柔溝通、給予安全感的生活環境。"></textarea>
 
     <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 詳細資料（必填．會公開）—</div>
     <div class="row">
@@ -319,6 +340,7 @@
     <p class="hint">
       <b>掛號費</b>　送出一份認養申請：<span id="clinicApplyCost">1</span> 點<br>
       <b>診療費</b>　請主治獸醫評估一位申請人：<span id="clinicVetCost">1</span> 點<br>
+      <b>進階診斷</b>　請主治獸醫客製第二階段問題：<span id="clinicDeepCost">3</span> 點<br>
       收費是為了讓雙方都慎重：申請前先想清楚，收到申請的人也不會被大量亂投的訊息淹沒。<br>
       若對方超過 <span id="clinicRefundDays">14</span> 天未處理你的申請，可以在「我送出的申請」退回掛號費。
     </p>
@@ -433,7 +455,37 @@
 <script>
 const $ = id => document.getElementById(id);
 const esc = t => (t==null?'':String(t)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const SPECIES = {cat:'🐱 貓咪', dog:'🐶 狗狗'};
+/* 物種與性別脫鉤：物種只是這個企劃的比喻，性別另外選 */
+const SPECIES_LIST = [
+  {k:'cat',       e:'🐱', n:'貓咪'},
+  {k:'dog',       e:'🐶', n:'狗狗'},
+  {k:'rabbit',    e:'🐰', n:'兔子'},
+  {k:'hedgehog',  e:'🦔', n:'刺蝟'},
+  {k:'hamster',   e:'🐹', n:'倉鼠'},
+  {k:'guinea',    e:'🐹', n:'天竺鼠'},
+  {k:'parrot',    e:'🦜', n:'鸚鵡'},
+  {k:'sugar',     e:'🐿️', n:'蜜袋鼯'},
+  {k:'turtle',    e:'🐢', n:'烏龜'},
+  {k:'chameleon', e:'🦎', n:'變色龍'},
+  {k:'betta',     e:'🐟', n:'鬥魚'},
+  {k:'goldfish',  e:'🐠', n:'金魚'},
+  {k:'guppy',     e:'🐡', n:'孔雀魚'}
+];
+const SPECIES = {}, SPECIES_EMOJI = {};
+SPECIES_LIST.forEach(x => { SPECIES[x.k] = x.e + ' ' + x.n; SPECIES_EMOJI[x.k] = x.e; });
+const GENDER = {f:'女生', m:'男生', x:'不透露'};
+const STAR_FIELDS = [
+  {k:'warm',    label:'親人程度'},
+  {k:'active',  label:'活動量'},
+  {k:'slow',    label:'慢熱程度'},
+  {k:'routine', label:'作息規律'},
+  {k:'indep',   label:'獨立程度'}
+];
+const HEALTH_WHEN = [
+  {k:'public', label:'直接公開'},
+  {k:'stage1', label:'對方送出第一階段申請後'},
+  {k:'stage2', label:'進入第二階段後'}
+];
 const KIND = {pet:'待認養', keeper:'飼主'};
 
 const DEFAULT_Q1 = [
@@ -452,6 +504,7 @@ const DEFAULT_Q2 = [
 
 const APPLY_COST = 1;      /* 送出申請的掛號費 */
 const VET_COST = 1;        /* 主治獸醫評估的診療費 */
+const DEEP_COST = 3;       /* 進階診斷：AI 客製第二階段問題（實際收費以資料庫 spend_credits_for 為準） */
 const REFUND_DAYS = 14;    /* 對方超過幾天未處理可退點 */
 const PHOTO_BONUS = 5;     /* 照片審核通過＋資料填妥的獎勵點數 */
 const PACKS = [
@@ -472,6 +525,23 @@ const INTEREST_OPTS = ['閱讀','電影／影集','旅行','健身／運動','�
 const PERSONALITY_OPTS = ['內向','外向','慢熱','理性','感性','幽默','務實','浪漫','獨立','顧家','樂觀','細心'];
 const HABITS_OPTS = ['抽菸','喝酒（社交場合）','喝酒（習慣性）','檳榔','賭博','經常夜生活'];
 const REQ_HABITS_OPTS = ['不能抽菸','不能習慣性飲酒','不能檳榔','不能賭博'];
+/* 星等評分：五個 1-5 的下拉，存成 profiles.stars（jsonb） */
+function renderStars(){
+  $('mStars').innerHTML = STAR_FIELDS.map(f => `
+    <div><label>${esc(f.label)}</label>
+      <select class="starPick" data-k="${f.k}">
+        ${[1,2,3,4,5].map(n => `<option value="${n}"${n===3?' selected':''}>${'★'.repeat(n)}${'☆'.repeat(5-n)}</option>`).join('')}
+      </select></div>`).join('');
+}
+function getStars(){
+  const out = {};
+  $('mStars').querySelectorAll('.starPick').forEach(s => { out[s.dataset.k] = parseInt(s.value, 10) || 3; });
+  return out;
+}
+function setStars(vals){
+  const v = (vals && typeof vals === 'object') ? vals : {};
+  $('mStars').querySelectorAll('.starPick').forEach(s => { s.value = String(v[s.dataset.k] || 3); });
+}
 function renderCheckGroup(containerId, opts){
   $(containerId).innerHTML = opts.map(o => `
     <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink);margin:0">
@@ -624,6 +694,11 @@ function showVerifyTask(p){
 async function fillMe(){
   if(!myProfile) return;
   mName.value = myProfile.name||''; mKind.value = myProfile.kind||'pet'; mSpecies.value = myProfile.species||'cat';
+  mGender.value = myProfile.gender||'f'; mBirth.value = myProfile.birth||'';
+  mTraits.value = myProfile.traits||''; mLikes.value = myProfile.likes||''; mTaboo.value = myProfile.taboo||'';
+  mHealth.value = myProfile.health||''; mHealthWhen.value = myProfile.health_when||'stage2';
+  mVetNote.value = myProfile.vet_note||'';
+  setStars(myProfile.stars);
   mAge.value = myProfile.age||''; mArea.value = myProfile.area||''; mJob.value = myProfile.job||'';
   mBio.value = myProfile.bio||''; mWants.value = myProfile.wants||''; mLocked.value = myProfile.locked||'';
   mIncome.value = myProfile.income||''; mMarital.value = myProfile.marital||''; mHasKids.value = myProfile.has_kids||'';
@@ -682,7 +757,10 @@ $('mSave').onclick = async () => {
   const newVerify = $('mVerify').dataset.new === '1' ? $('mVerify').src : null;
   try{
     const patch = {
-      name, kind: mKind.value, species: mSpecies.value,
+      name, kind: mKind.value, species: mSpecies.value, gender: mGender.value,
+      birth: mBirth.value.trim(), traits: mTraits.value.trim(), likes: mLikes.value.trim(),
+      taboo: mTaboo.value.trim(), health: mHealth.value.trim(), health_when: mHealthWhen.value,
+      vet_note: mVetNote.value.trim(), stars: getStars(),
       age: mAge.value.trim(), area: mArea.value.trim(), job: mJob.value.trim(),
       bio: mBio.value.trim(), wants: mWants.value.trim(), locked: mLocked.value.trim(),
       income: mIncome.value, marital: mMarital.value, has_kids: mHasKids.value,
@@ -801,13 +879,40 @@ function detailBlock(p){
 }
 
 /* ── 佈告欄 ── */
+/* 病歷卡：把一份登記排版成收容所的動物病例表 */
+function caseNo(p){
+  let n = 0; const id = String(p.id || '');
+  for(let i=0;i<id.length;i++) n = (n*31 + id.charCodeAt(i)) % 9000;
+  return 'AM-' + (1000 + n) + '-' + (p.species || 'x').slice(0,1).toUpperCase();
+}
+function chartRow(k, v){
+  return `<div style="display:grid;grid-template-columns:88px 1fr;gap:4px 10px;padding:4px 0;
+    font-size:13px;border-bottom:1px dotted var(--rule)">
+    <span class="hint">${esc(k)}</span><span>${v}</span></div>`;
+}
+function chartSec(t){
+  return `<div style="font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.08em;
+    color:var(--brand-dk);margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--rule)">${esc(t)}</div>`;
+}
+function chips(str, dashed){
+  return String(str||'').split(/[,，、]/).map(x => x.trim()).filter(Boolean)
+    .map(x => `<span class="pill"${dashed?' style="border-style:dashed"':''}>${esc(x)}</span>`).join('');
+}
+function starRow(p){
+  const s = (p && typeof p.stars === 'object' && p.stars) ? p.stars : {};
+  return STAR_FIELDS.map(f => {
+    const n = Math.max(1, Math.min(5, parseInt(s[f.k], 10) || 3));
+    return chartRow(f.label, `<span style="letter-spacing:1px;color:var(--brand)">${'★'.repeat(n)}${'☆'.repeat(5-n)}</span>`);
+  }).join('');
+}
 async function renderBoard(){
-  const sp = fSpecies.value, kd = fKind.value, q = fText.value.trim().toLowerCase();
+  const sp = fSpecies.value, gd = fGender.value, kd = fKind.value, q = fText.value.trim().toLowerCase();
   const list = profiles
     .filter(p => isApproved(p))
     .filter(p => !sp || p.species === sp)
+    .filter(p => !gd || (p.gender || 'f') === gd)
     .filter(p => !kd || p.kind === kd)
-    .filter(p => !q || [p.name,p.area,p.job,p.bio,p.wants].join(' ').toLowerCase().includes(q));
+    .filter(p => !q || [p.name,p.area,p.job,p.bio,p.wants,p.traits,p.likes].join(' ').toLowerCase().includes(q));
   if(!list.length){
     $('board').innerHTML = '<div class="empty">目前沒有符合的登記。<br>先到「我的登記」建立自己的檔案吧。</div>';
     return;
@@ -815,15 +920,41 @@ async function renderBoard(){
   $('board').innerHTML = list.map(p => {
     const app = apps.find(a => a.from_user === me.id && a.to_user === p.id);
     const unlocked = app && app.stage === 3 && app.unlock_from && app.unlock_to;
+    /* 生日：對方送出第一階段申請後才看得到 */
+    const birthOpen = !!(app && app.a1);
+    /* 健康告知：由本人決定第幾階段揭露 */
+    const when = p.health_when || 'stage2';
+    const healthOpen = p.health && (when === 'public'
+      || (when === 'stage1' && app && app.a1)
+      || (when === 'stage2' && app && app.stage >= 2));
     return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;
+           padding-bottom:8px;border-bottom:1px solid var(--rule)">
+        <div>
+          <div class="hint" style="font-size:11px;letter-spacing:.1em">病例號碼　${esc(caseNo(p))}</div>
+          <h3>${SPECIES_EMOJI[p.species] || '🐾'} ${esc(p.name)}</h3>
+        </div>
+        <span class="pill">${KIND[p.kind] || ''}</span>
+      </div>
       <img src="${DB.avatarUrl(p.id, p.updated_at)}" alt="" style="width:100%;height:170px;object-fit:cover;
-           border-radius:4px;margin-bottom:10px;background:var(--paper-2)">
-      <h3>${SPECIES[p.species].split(' ')[0]} ${esc(p.name)}</h3>
-      <div class="kind">${KIND[p.kind]}　${SPECIES[p.species]}</div>
-      <div>${[p.age && p.age+' 歲', p.area, p.job].filter(Boolean)
-              .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
-      ${p.bio ? `<div class="bio">${esc(p.bio)}</div>` : ''}
-      ${p.wants ? `<div class="hint">希望對方：${esc(p.wants)}</div>` : ''}
+           border-radius:4px;margin:10px 0;background:var(--paper-2)">
+      ${chartSec('基本資料')}
+      ${chartRow('物種', esc(SPECIES[p.species] || '—') + '　' + esc(GENDER[p.gender || 'f'] || ''))}
+      ${chartRow('年齡', p.age ? esc(p.age) + ' 歲' : '—')}
+      ${chartRow('活動範圍', esc(p.area || '—'))}
+      ${chartRow('日常', esc(p.job || '—'))}
+      ${chartRow('生日', birthOpen ? esc(p.birth || '（尚未填寫）') : '🔒 完成第一階段後可見')}
+      ${p.bio ? chartSec('行為觀察') + `<div class="bio">${esc(p.bio)}</div>` : ''}
+      ${chartSec('健康與性格評估')}
+      ${starRow(p)}
+      ${p.traits ? chartSec('個性標籤') + `<div>${chips(p.traits)}</div>` : ''}
+      ${p.likes  ? chartSec('最喜歡的事') + `<div>${chips(p.likes)}</div>` : ''}
+      ${p.taboo  ? chartSec('禁忌事項') + `<div>${chips(p.taboo, true)}</div>` : ''}
+      ${p.wants  ? chartSec('認養資格') + `<div class="bio">${esc(p.wants)}</div>` : ''}
+      ${healthOpen ? chartSec('健康告知') + `<div class="lock">${esc(p.health)}</div>` : ''}
+      ${(p.health && !healthOpen) ? chartSec('健康告知') + `<div class="lock">🔒 ${
+        when === 'stage1' ? '完成第一階段申請後開放' : '通過第一階段、進入第二階段後開放'}</div>` : ''}
+      ${p.vet_note ? chartSec('主治獸醫備註') + `<div class="lock">${esc(p.vet_note)}</div>` : ''}
       ${detailBlock(p)}
       <div class="lock ${unlocked?'open':''}">${unlocked
         ? '🔓 日常觀察：' + esc(p.locked || '（對方尚未填寫）')
@@ -985,7 +1116,12 @@ async function renderInbox(){
       </div>
       ${a.a1 ? `<div class="bar">
           <button class="ghost vet" data-app="${a.id}">${a.vet ? '查看主治獸醫評估' : `請主治獸醫評估（${VET_COST} 點）`}</button>
-        </div><div id="vet-${a.id}">${a.vet ? `<div class="qa">${esc(a.vet)}</div>` : ''}</div>` : ''}
+          ${a.stage === 1 && a.status === 'open' ? `<button class="ghost deep" data-app="${a.id}">${
+            Array.isArray(a.a2_questions) && a.a2_questions.length
+              ? '已擬好第二階段客製問題' : `進階診斷：客製第二階段問題（${DEEP_COST} 點）`}</button>` : ''}
+        </div><div id="vet-${a.id}">${a.vet ? `<div class="qa">${esc(a.vet)}</div>` : ''}</div>
+        <div id="deep-${a.id}">${Array.isArray(a.a2_questions) && a.a2_questions.length
+          ? '<div class="qa"><b>第二階段客製問題</b>' + a.a2_questions.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>') + '</div>' : ''}</div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(from.locked || '對方尚未填寫')}</div>` : ''}
       <p class="hint" style="margin-top:8px">想自訂第二階段題目、使用罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」。</p>
     </fieldset>`;
@@ -1002,7 +1138,9 @@ function bindInbox(){
   $('inbox').querySelectorAll('.pass').forEach(b => b.onclick = async () => {
     const a = apps.find(x => x.id === b.dataset.app);
     const patch = {stage: Math.min(3, a.stage + 1)};
-    if(a.stage === 1 && Array.isArray(myProfile && myProfile.q2_bank) && myProfile.q2_bank.length){
+    /* 已經用進階診斷擬好客製問題的話就沿用，不要被題庫蓋掉 */
+    const hasCustom = Array.isArray(a.a2_questions) && a.a2_questions.length;
+    if(a.stage === 1 && !hasCustom && Array.isArray(myProfile && myProfile.q2_bank) && myProfile.q2_bank.length){
       patch.a2_questions = myProfile.q2_bank;
     }
     try{ await upd(a.id, patch); }catch(e){ alert(e.message||'操作失敗'); }
@@ -1018,6 +1156,10 @@ function bindInbox(){
   $('inbox').querySelectorAll('.vet').forEach(b => b.onclick = () => {
     const a = apps.find(x => x.id === b.dataset.app);
     vetReview(a, inboxFromProfiles[a.from_user] || {name:'申請人'});
+  });
+  $('inbox').querySelectorAll('.deep').forEach(b => b.onclick = () => {
+    const a = apps.find(x => x.id === b.dataset.app);
+    deepReview(a, inboxFromProfiles[a.from_user] || {name:'申請人'});
   });
 }
 
@@ -1133,6 +1275,57 @@ ${app.a2 ? '【第二階段回答】\n' + qa(q2, app.a2) : ''}
   }
 }
 
+/* ── 進階診斷：讀完對方第一階段的回答，替你客製第二階段問題 ── */
+async function deepReview(app, from){
+  const box = $('deep-' + app.id);
+  if(Array.isArray(app.a2_questions) && app.a2_questions.length){
+    box.innerHTML = '<div class="qa"><b>第二階段客製問題</b>'
+      + app.a2_questions.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>') + '</div>';
+    return;
+  }
+  if(!DB.hasClaudeProxy()){
+    box.innerHTML = '<p class="hint">尚未設定 AI 代理網址，暫時無法使用（不影響其他功能）。</p>';
+    return;
+  }
+  if((myProfile.credits||0) < DEEP_COST){
+    box.innerHTML = '<p class="hint">診療點數不足，請到「診療室」查看加值方式。</p>';
+    return;
+  }
+  if(!confirm(`進階診斷會消耗 ${DEEP_COST} 點，主治獸醫會依對方的回答客製 4～6 題價值觀問題。要繼續嗎？`)) return;
+  box.innerHTML = '<p class="hint">主治獸醫擬題中⋯⋯</p>';
+  const q1 = (Array.isArray(myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
+  const qa = (qs, ans) => qs.map((q,i) => `${q}\n→ ${(ans||[])[i]||'（未答）'}`).join('\n\n');
+  const prompt = `你是「暖陽動物之家」的主治獸醫。請依這位申請人的回答，替委託人客製一組價值觀與感情觀問題，用來確認尚未釐清的部分。
+
+【委託人】${myProfile.name}／自介：${myProfile.bio||'（未填）'}／希望對方：${myProfile.wants||'（未填）'}
+
+【申請人的第一階段回答】
+${qa(q1, app.a1)}
+
+擬題原則：
+・針對對方說得含糊、避開、或與委託人期待可能有落差的地方出題
+・要求具體經驗或實際做法，不要能用「我會好好溝通」一句帶過的問題
+・語氣溫和、不像審問，每題一句話
+・不要問已經答清楚的事，也不要編造對方沒說過的內容
+
+只輸出 4 到 6 行，每行一題，不要編號、不要其他文字。`;
+  try{
+    const text = await DB.askClaude(prompt);
+    const qs = text.split('\n').map(x => x.replace(/^[\d.、)\s-]+/, '').trim())
+                   .filter(x => x.length > 6).slice(0, 6);
+    if(qs.length < 3) throw new Error('擬題結果不完整');
+    const spent = await DB.spendCreditFor('deep_review', from.name);
+    if(!spent.ok) throw (spent.error || new Error('扣點失敗'));
+    myProfile = spent.profile;
+    const updated = await DB.updateApplication(app.id, {a2_questions: qs});
+    Object.assign(app, updated);
+    box.innerHTML = '<div class="qa"><b>第二階段客製問題</b>'
+      + qs.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>') + '</div>';
+  }catch(e){
+    box.innerHTML = `<p class="hint" style="color:var(--bad)">診斷失敗：${esc(e.message)}（未扣點）</p>`;
+  }
+}
+
 /* ── 管理員審核台 ── */
 async function renderAudit(){
   if(!myProfile || !myProfile.is_admin){
@@ -1170,7 +1363,7 @@ async function renderAudit(){
           ${p.verify_task ? `<p class="hint" style="margin-top:6px">指定動作：${esc(p.verify_task.gesture)}　紙條代碼：暖陽 ${esc(p.verify_task.code)}</p>` : ''}
         </div>
         <div style="flex:1">
-          <div class="hint">${KIND[p.kind]||''}　${SPECIES[p.species]||''}　${esc(p.age||'')}　${esc(p.area||'')}</div>
+          <div class="hint">${KIND[p.kind]||''}　${SPECIES[p.species]||''}　${GENDER[p.gender||'f']||''}　${esc(p.age||'')}　${esc(p.area||'')}</div>
           <div class="bio">${esc(p.bio||'')}</div>
           <div class="hint">系統初檢：${p.photo_status === 'rejected' ? '未通過' : '通過'}　${esc(p.photo_reason||'')}</div>
           <div class="bar">
@@ -1307,7 +1500,7 @@ async function renderAdminHome(){
 }
 
 /* ── 啟動 ── */
-['fSpecies','fKind'].forEach(i => $(i).onchange = renderBoard);
+['fSpecies','fGender','fKind'].forEach(i => $(i).onchange = renderBoard);
 $('fText').oninput = renderBoard;
 $('reload').onclick = async () => { await boot(); flash('boardMsg','已更新'); };
 
@@ -1321,9 +1514,16 @@ async function boot(){
 
 ['clinicApplyCost','howApplyCost'].forEach(id => $(id).textContent = APPLY_COST);
 ['clinicVetCost','howVetCost'].forEach(id => $(id).textContent = VET_COST);
+$('clinicDeepCost').textContent = DEEP_COST;
 $('clinicRefundDays').textContent = REFUND_DAYS;
 $('howFreeCredits').textContent = 5;
 $('howPhotoBonus').textContent = PHOTO_BONUS;
+/* 物種下拉（登記表單與佈告欄篩選共用同一份清單）與健康告知時機 */
+$('mSpecies').innerHTML = SPECIES_LIST.map(x => `<option value="${x.k}">${x.e} ${x.n}</option>`).join('');
+$('fSpecies').innerHTML = '<option value="">全部物種</option>'
+  + SPECIES_LIST.map(x => `<option value="${x.k}">${x.e} ${x.n}</option>`).join('');
+$('mHealthWhen').innerHTML = HEALTH_WHEN.map(x => `<option value="${x.k}">${x.label}</option>`).join('');
+renderStars();
 renderCheckGroup('mInterests', INTEREST_OPTS);
 renderCheckGroup('mPersonality', PERSONALITY_OPTS);
 renderCheckGroup('mHabits', HABITS_OPTS);
