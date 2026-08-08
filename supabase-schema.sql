@@ -1438,6 +1438,55 @@ begin
 end $$;
 
 -- ============================================================
+-- 10.5) 修正舊資料庫殘留、缺少 on delete cascade／set null 的外鍵
+--    這幾張表在很早期的版本可能是先建立、後來才補上 on delete 規則；
+--    CREATE TABLE IF NOT EXISTS 不會回頭修正已經存在的資料表與外鍵約束，
+--    導致管理後台呼叫 admin.auth.admin.deleteUser() 刪帳號時，被殘留的
+--    外鍵擋下、回一句「Database error deleting user」。這裡逐一檢查、
+--    必要時重建這幾個外鍵，只動這個專案自己的表，不會動到其他產品
+--    共用同一個 Supabase 專案時可能存在的其他資料表（例如 public.profiles）。
+-- ============================================================
+do $$
+declare
+  spec record;
+  con record;
+begin
+  for spec in
+    select * from (values
+      ('match_profiles', 'id', 'cascade'),
+      ('match_profiles', 'moderated_by', 'set null'),
+      ('applications', 'from_user', 'cascade'),
+      ('applications', 'to_user', 'cascade'),
+      ('match_blocks', 'blocker_id', 'cascade'),
+      ('match_messages', 'sender_id', 'cascade'),
+      ('match_moderation_actions', 'actor_id', 'set null'),
+      ('match_ai_requests', 'user_id', 'cascade'),
+      ('owner_kv', 'owner_id', 'cascade'),
+      ('application_private_notes', 'owner_id', 'cascade')
+    ) as t(tbl, col, want)
+  loop
+    if to_regclass('public.' || spec.tbl) is null then continue; end if;
+    for con in
+      select c.conname, c.confdeltype
+      from pg_constraint c
+      where c.conrelid = ('public.' || spec.tbl)::regclass
+        and c.contype = 'f'
+        and c.confrelid = 'auth.users'::regclass
+        and array_length(c.conkey, 1) = 1
+        and (select attname from pg_attribute
+             where attrelid = c.conrelid and attnum = c.conkey[1]) = spec.col
+    loop
+      if (spec.want = 'cascade' and con.confdeltype <> 'c')
+         or (spec.want = 'set null' and con.confdeltype <> 'n') then
+        execute format('alter table public.%I drop constraint %I', spec.tbl, con.conname);
+        execute format('alter table public.%I add constraint %I foreign key (%I) references auth.users(id) on delete %s',
+          spec.tbl, con.conname, spec.col, spec.want);
+      end if;
+    end loop;
+  end loop;
+end $$;
+
+-- ============================================================
 -- 11) 把自己設成管理員（審核台權限）
 --    這行不會自動執行——執行完上面全部之後，自己先用這個帳號登入一次，
 --    再回到 SQL Editor，把 <你的帳號 email> 換成自己的 email，單獨執行這一段：
