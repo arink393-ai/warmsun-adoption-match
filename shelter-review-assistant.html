@@ -3,106 +3,117 @@
 <title>暖陽動物之家 · 認養面談紀錄室</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Lora:wght@400;500;600&family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500&display=swap" rel="stylesheet">
 
 <style>
+  /* 跟前台（index.html）與 dashboard.html 同一套視覺語言：紙灰底、金褐主色、Cormorant Garamond＋Lora。
+     後台的差異只有三處：深墨頂欄、分頁選中用深墨、登入畫面整片深墨。
+     .stamp（面談紀錄的旋轉紅色印章）刻意保留原樣沒有動——蓋章本來就該是紅的。 */
   :root{
-    --paper:#FFFFFF;        /* 主底：純白 */
-    --paper-2:#FAF9F7;      /* 內欄位：極淺灰 */
-    --ink:#2E2A26;          /* 主字 */
-    --ink-soft:#7B736A;     /* 次字 */
-    --rule:#E6E2DC;         /* 細線 */
-    --stamp:#C0392B;        /* 紅燈 */
-    --tab:#D99400;          /* 黃燈／標籤 */
-    --teal:#E0752A;         /* 主色橘（重點使用） */
-    --ok:#2E7D46;           /* 綠燈 */
-    --warn:#D99400;         /* 黃燈 */
-    --bad:#C0392B;          /* 紅燈 */
+    --paper:#F3F2F2;        /* 跟前台一致的紙灰底 */
+    --paper-2:#EAE7E7;      /* 內欄位／輸入框底色 */
+    --ink:#201F1D;          /* 主字 */
+    --ink-soft:#726D6D;     /* 次字 */
+    --rule:#DDD8D3;         /* 細線 */
+    --stamp:#C0392B;        /* 紅燈──面談印章專用色，不要動 */
+    --tab:#A9791F;          /* 黃燈／標籤 */
+    --teal:#A06F24;         /* 主色改成前台的金褐（沿用舊變數名稱，避免大動全域） */
+    --brand-tint:#F5EAD2;
+    --brand-light:#D9B872;  /* 深墨底上用的淺金字色 */
+    --ink-deep:#2D2B2B;     /* 深墨頂欄／登入畫面 */
+    --ok:#4B7A4F;           /* 綠燈 */
+    --warn:#A9791F;         /* 黃燈 */
+    --bad:#A23C2E;          /* 紅燈（一般錯誤用，跟 --stamp 分開） */
+    --font-heading:"Cormorant Garamond","Noto Serif TC",serif;
+    --font-body:"Lora","Noto Sans TC",system-ui,sans-serif;
   }
   *{box-sizing:border-box}
   html,body{margin:0}
   body{
     background:var(--paper);
     color:var(--ink);
-    font-family:"Noto Sans TC",system-ui,sans-serif;
-    font-size:15px; line-height:1.75;
+    font-family:var(--font-body);
+    font-size:16px; line-height:1.75;
     padding:0 0 64px;
   }
   .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
 
-  /* ── 檔案夾標頭 ── */
-  header{border-bottom:2px solid var(--teal);margin-bottom:26px;padding-top:26px}
+  /* ── 深墨頂欄：用 box-shadow 撐滿整個視窗寬度，內容仍然跟著 .wrap 置中 ── */
+  header{background:var(--ink-deep);box-shadow:0 0 0 100vmax var(--ink-deep);clip-path:inset(0 -100vmax);
+         border-bottom:3px solid var(--teal);margin-bottom:26px;padding:26px 0 22px;position:relative}
   .tab{
-    display:inline-block;background:var(--teal);color:#FFF7EC;
-    font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.22em;
-    padding:4px 14px 3px;border-radius:3px 3px 0 0;transform:translateY(1px)
+    display:inline-block;background:transparent;color:var(--brand-light);border:1px solid var(--brand-light);
+    font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.2em;text-transform:uppercase;
+    padding:4px 14px;border-radius:3px
   }
-  h1{font-family:"Noto Serif TC",serif;font-weight:700;color:var(--teal);font-size:clamp(24px,4vw,34px);
-     margin:10px 0 2px;letter-spacing:.04em}
-  .sub{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-soft);
-       letter-spacing:.1em;margin:0 0 14px}
+  h1{font-family:var(--font-heading);font-weight:600;color:var(--brand-light);font-size:clamp(24px,4vw,34px);
+     margin:12px 0 4px;letter-spacing:-.01em}
+  .sub{font-family:var(--font-body);font-size:14px;color:#C9C4BC;
+       margin:0 0 14px}
 
   /* ── 版面 ── */
   .cols{display:grid;grid-template-columns:340px 1fr;gap:26px;align-items:start}
   @media(max-width:900px){.cols{grid-template-columns:1fr}}
 
+  /* 卡片：白底圓角加淺陰影，輸入框底色用前台的紙灰 */
   fieldset{
-    border:1px solid var(--rule);border-radius:2px;background:var(--paper-2);
-    padding:14px 16px 18px;margin:0 0 18px
+    border:1px solid var(--rule);border-radius:10px;background:#fff;
+    box-shadow:0 1px 3px rgba(32,31,29,.07);
+    padding:16px 18px 20px;margin:0 0 18px
   }
   legend{
-    font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.18em;
+    font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.16em;
     color:var(--teal);padding:0 8px;text-transform:uppercase
   }
-  label{display:block;font-size:12px;color:var(--ink-soft);letter-spacing:.05em;margin:12px 0 5px}
+  label{display:block;font-size:13px;color:var(--ink-soft);letter-spacing:.02em;margin:12px 0 5px}
   label:first-of-type{margin-top:0}
   textarea,select,input{
-    width:100%;background:#fff;border:1px solid var(--rule);border-radius:2px;
-    color:var(--ink);font-family:inherit;font-size:14px;line-height:1.7;padding:9px 11px
+    width:100%;background:var(--paper-2);border:1px solid var(--rule);border-radius:4px;
+    color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.7;padding:10px 12px
   }
   textarea{resize:vertical}
-  textarea:focus,select:focus,input:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
+  textarea:focus,select:focus,input:focus{outline:none;border-color:var(--teal)}
   .row{display:flex;gap:10px}
   .row>div{flex:1}
 
   button{
-    font-family:"Noto Sans TC",sans-serif;font-size:14px;font-weight:500;
-    border:1px solid var(--teal);background:var(--teal);color:#fff;
-    padding:11px 20px;border-radius:2px;cursor:pointer;letter-spacing:.08em
+    font-family:var(--font-heading);font-weight:600;font-size:15px;
+    border:1px solid var(--teal);background:transparent;color:var(--teal);
+    padding:10px 18px;border-radius:4px;cursor:pointer;letter-spacing:.02em
   }
-  button:hover{background:#C9611C;border-color:#C9611C}
+  button:hover{background:var(--brand-tint)}
   button:disabled{opacity:.45;cursor:wait}
-  button.ghost{background:transparent;color:var(--ink);border-color:var(--rule);padding:6px 12px;font-size:12px}
-  button.ghost:hover{background:var(--ink);color:var(--paper-2);border-color:var(--ink)}
+  button.ghost{background:transparent;color:var(--ink);border-color:var(--rule);padding:6px 12px;font-size:13px}
+  button.ghost:hover{background:var(--paper-2);border-color:var(--ink-soft)}
   .btnbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
-  .hint{font-size:12px;color:var(--ink-soft)}
+  .hint{font-size:13px;color:var(--ink-soft)}
 
   /* ── 輸出 ── */
   .record{
-    background:#fff;border:1px solid var(--rule);box-shadow:0 1px 3px rgba(0,0,0,.04);border-radius:2px;padding:26px 28px;
+    background:#fff;border:1px solid var(--rule);box-shadow:0 1px 3px rgba(0,0,0,.05);border-radius:10px;padding:26px 28px;
     position:relative;margin-top:20px
   }
   .record .meta{
-    font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-soft);
-    letter-spacing:.1em;border-bottom:1px dashed var(--rule);padding-bottom:10px;margin-bottom:18px;
+    font-family:var(--font-body);font-size:12px;color:var(--ink-soft);
+    letter-spacing:.05em;border-bottom:1px dashed var(--rule);padding-bottom:10px;margin-bottom:18px;
     display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap
   }
   .dm{
     background:var(--paper-2);border-left:3px solid var(--teal);padding:14px 16px;margin-bottom:22px;
-    white-space:pre-wrap
+    white-space:pre-wrap;border-radius:0 6px 6px 0
   }
-  .dm h3{margin:0 0 8px;font-family:"IBM Plex Mono",monospace;font-size:11px;
-        letter-spacing:.18em;color:var(--teal);font-weight:500}
-  .md h2{font-family:"Noto Serif TC",serif;font-size:18px;margin:22px 0 8px;
+  .dm h3{margin:0 0 8px;font-family:var(--font-heading);font-weight:600;font-size:13px;
+        letter-spacing:.1em;color:var(--teal)}
+  .md h2{font-family:var(--font-heading);font-weight:600;font-size:19px;margin:22px 0 8px;
         border-bottom:1px solid var(--rule);padding-bottom:5px}
-  .md h3{font-size:15px;margin:16px 0 6px;color:var(--teal)}
+  .md h3{font-size:16px;margin:16px 0 6px;color:var(--teal);font-family:var(--font-heading);font-weight:600}
   .md ul{margin:6px 0;padding-left:20px}
   .md hr{border:0;border-top:1px dashed var(--rule);margin:18px 0}
   .md table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
   .md th,.md td{border:1px solid var(--rule);padding:6px 9px;text-align:left}
-  .md th{background:var(--paper);font-weight:500;font-size:12px;letter-spacing:.06em}
+  .md th{background:var(--paper-2);font-weight:600;font-size:12px;letter-spacing:.04em}
 
-  /* 簽名元素：審查結果印章 */
+  /* 簽名元素：審查結果印章──這個沒有動，維持原本的樣子與紅色 */
   .stamp{
     display:inline-block;margin-top:24px;color:var(--stamp);border:3px double var(--stamp);
     border-radius:4px;padding:10px 18px;transform:rotate(-4deg);
@@ -114,61 +125,67 @@
   @keyframes thud{from{transform:rotate(-4deg) scale(2.4);opacity:0}to{transform:rotate(-4deg) scale(1);opacity:.86}}
   @media(prefers-reduced-motion:reduce){.stamp{animation:none}}
 
-  .flag{border-left:3px solid var(--rule);padding:6px 12px;margin:8px 0;background:var(--paper-2)}
-  .flag b{display:block;font-size:13px}
+  .flag{border-left:3px solid var(--rule);padding:6px 12px;margin:8px 0;background:var(--paper-2);border-radius:0 6px 6px 0}
+  .flag b{display:block;font-size:14px}
   .flag small{color:var(--ink-soft)}
   .f-red{border-color:var(--stamp)} .f-orange{border-color:#C8791F}
   .f-yellow{border-color:var(--tab)} .f-green{border-color:var(--teal)}
 
-  .empty{border:1px dashed var(--rule);padding:34px 22px;text-align:center;color:var(--ink-soft);
+  .empty{border:1px dashed var(--rule);border-radius:10px;padding:34px 22px;text-align:center;color:var(--ink-soft);
         margin-top:20px;background:rgba(255,255,255,.5)}
   .lamp{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;
         box-shadow:0 0 0 2px rgba(0,0,0,.05)}
   .lamp-green{background:var(--ok)} .lamp-yellow{background:var(--warn)} .lamp-red{background:var(--bad)}
   .icard{background:#fff;border:1px solid var(--rule);border-left:4px solid var(--rule);
-         border-radius:2px;padding:11px 14px;margin-top:10px}
+         border-radius:6px;padding:11px 14px;margin-top:10px}
   .icard.g{border-left-color:var(--ok)} .icard.y{border-left-color:var(--warn)} .icard.r{border-left-color:var(--bad)}
-  .missing{color:var(--bad);font-size:12px;margin-top:4px}
-  .bgline{font-size:12px;color:var(--ink-soft);margin-top:3px;line-height:1.7}
-  .tabbar{display:flex;gap:2px;border-bottom:1px solid var(--teal);margin-bottom:16px;flex-wrap:wrap}
-  .tabbtn{background:transparent;color:var(--ink-soft);border:1px solid var(--rule);border-bottom:0;
-          border-radius:3px 3px 0 0;padding:7px 13px;font-size:13px;letter-spacing:.06em;
-          margin-bottom:-1px;font-weight:400}
+  .missing{color:var(--bad);font-size:13px;margin-top:4px}
+  .bgline{font-size:13px;color:var(--ink-soft);margin-top:3px;line-height:1.7}
+  /* 分頁：選中時是深墨，不是金色——後台用墨色標示「你在管理這個」 */
+  .tabbar{display:flex;gap:8px;border-bottom:1px solid var(--rule);margin-bottom:16px;flex-wrap:wrap}
+  .tabbtn{background:transparent;color:var(--ink-soft);border:1px solid var(--rule);
+          border-radius:999px;padding:7px 15px;font-size:14px;letter-spacing:.02em;
+          cursor:pointer;font-weight:400}
   .tabbtn:hover{background:var(--paper-2);color:var(--ink);border-color:var(--rule)}
-  .tabbtn.on{background:var(--teal);color:#fff;border-color:var(--teal);font-weight:500}
+  .tabbtn.on{background:var(--ink-deep);color:var(--brand-light);border-color:var(--ink-deep);font-weight:600}
   .bcard{background:#fff;border:1px solid var(--rule);border-left:4px solid var(--rule);
-         border-radius:2px;padding:12px 15px;margin-top:12px}
+         border-radius:6px;padding:12px 15px;margin-top:12px}
   .bhead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
-  .bnum{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-soft);letter-spacing:.1em}
-  .btag{font-size:11px;border:1px solid;border-radius:2px;padding:1px 7px;letter-spacing:.05em}
-  .bsrc{font-size:12px;color:var(--ink-soft);margin-top:6px;border-left:2px solid var(--rule);padding-left:8px}
-  code{font-family:"IBM Plex Mono",monospace;background:var(--paper);padding:1px 5px;border-radius:2px}
-  .err{border-left:3px solid var(--stamp);background:#fff;padding:12px 14px;margin-top:16px;font-size:14px}
-  .hist{font-size:13px;border-top:1px solid var(--rule);padding:8px 0;display:flex;
+  .bnum{font-family:var(--font-body);font-size:12px;color:var(--ink-soft);letter-spacing:.05em}
+  .btag{font-size:12px;border:1px solid;border-radius:3px;padding:1px 7px;letter-spacing:.03em}
+  .bsrc{font-size:13px;color:var(--ink-soft);margin-top:6px;border-left:2px solid var(--rule);padding-left:8px}
+  code{font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;background:var(--paper-2);padding:1px 5px;border-radius:3px}
+  .err{border-left:3px solid var(--stamp);background:#fff;padding:12px 14px;margin-top:16px;font-size:14px;border-radius:0 6px 6px 0}
+  .hist{font-size:14px;border-top:1px solid var(--rule);padding:8px 0;display:flex;
         gap:8px;align-items:center}
   .hist .h-main{flex:1;cursor:pointer;min-width:0}
   .hist .h-main:hover{color:var(--teal)}
   .hist .h-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .hist .h-date{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-soft)}
-  .hist .del{border:0;background:none;color:var(--ink-soft);font-size:15px;padding:2px 5px;
-             cursor:pointer;line-height:1;border-radius:2px}
+  .hist .h-date{font-family:var(--font-body);font-size:12px;color:var(--ink-soft)}
+  .hist .del{border:0;background:none;color:var(--ink-soft);font-size:16px;padding:2px 5px;
+             cursor:pointer;line-height:1;border-radius:3px}
   .hist .del:hover{background:var(--stamp);color:#fff}
-  #histSearch{font-size:13px;padding:7px 10px;margin-bottom:6px}
-  .saved{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--teal)}
+  #histSearch{font-size:14px;padding:7px 10px;margin-bottom:6px}
+  .saved{font-family:var(--font-body);font-size:12px;color:var(--teal)}
+
+  /* 登入畫面：整片深墨，輸入框跟按鈕另外調成在深色背景上看得清楚 */
+  #gate input{background:#fff}
+  #gate button{color:var(--brand-light);border-color:var(--brand-light)}
+  #gate button:hover{background:rgba(217,184,114,.15)}
 </style>
 
-<div id="gate" style="position:fixed;inset:0;background:var(--paper);z-index:9999;
+<div id="gate" style="position:fixed;inset:0;background:var(--ink-deep);z-index:9999;
      display:flex;align-items:center;justify-content:center;padding:24px">
   <div style="max-width:380px;width:100%;text-align:center">
-    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;
-         color:#fff;background:var(--teal);display:inline-block;padding:4px 14px;border-radius:3px 3px 0 0">STAFF ONLY</div>
-    <h1 style="font-family:'Noto Serif TC',serif;color:var(--teal);font-size:26px;margin:12px 0 6px">暖陽動物之家</h1>
-    <p class="hint" id="gateHint" style="margin:0 0 18px">這是站長本人專用工具，請用你的會員帳號登入</p>
+    <div style="font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.2em;
+         color:var(--brand-light);border:1px solid var(--brand-light);display:inline-block;padding:4px 14px;border-radius:3px;text-transform:uppercase">STAFF ONLY</div>
+    <h1 style="font-family:var(--font-heading);font-weight:600;color:var(--brand-light);font-size:26px;margin:12px 0 6px">暖陽動物之家</h1>
+    <p class="hint" id="gateHint" style="margin:0 0 18px;color:#C9C4BC">管理端　請輸入通行碼</p>
     <input id="gateEmail" type="email" placeholder="Email" autocomplete="username" style="margin-bottom:8px">
     <input id="gateInput" type="password" placeholder="密碼" autocomplete="current-password">
     <div style="margin-top:12px"><button id="gateGo" style="width:100%">登入</button></div>
-    <p class="hint" id="gateMsg" style="min-height:20px;margin-top:10px"></p>
-    <p class="hint" style="margin-top:20px;font-size:11px;line-height:1.7">
+    <p class="hint" id="gateMsg" style="min-height:20px;margin-top:10px;color:#C9C4BC"></p>
+    <p class="hint" style="margin-top:20px;font-size:12px;line-height:1.7;color:#9C968D">
       這個工具只綁定站長本人的會員帳號，其他帳號登入也無法使用。</p>
   </div>
 </div>
@@ -781,7 +798,7 @@ function renderRoster(){
                          .filter(p => !q || personText(p).includes(q));
     if(!people.length) return;
     html += `<div style="margin-top:12px">
-      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;
+      <div style="font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.08em;
            color:${STAGE_TINT[st]};border-bottom:1px solid var(--rule);padding-bottom:4px">
         ${esc(stageName(st))}　${people.length}</div>`;
     people.forEach(p => {
@@ -833,7 +850,7 @@ function renderPerson(id){
 
     ${(p.missing&&p.missing.length) ? `<div class="missing" style="margin-bottom:10px">⚠ 資料不全，缺少：${esc(p.missing.join('、'))}</div>` : ''}
 
-    ${fields.length ? `<h3 style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;
+    ${fields.length ? `<h3 style="font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.1em;
         color:var(--teal);margin:6px 0 6px">背景資料</h3>
       <table class="md" style="width:100%;border-collapse:collapse;font-size:13px">
         ${fields.map(h => `<tr>
@@ -841,7 +858,7 @@ function renderPerson(id){
           <td style="border:1px solid var(--rule);padding:5px 8px">${esc(p.rec[h])}</td></tr>`).join('')}
       </table>` : '<p class="hint">還沒有表單資料。從「表單回覆匯入」加入時會自動帶進來。</p>'}
 
-    <h3 style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;
+    <h3 style="font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.1em;
         color:var(--teal);margin:20px 0 6px">互動紀錄　${tl.length} 筆</h3>
     <div>${tl.map(t => `<div style="border-left:2px solid var(--rule);padding:4px 0 4px 10px;margin-bottom:5px">
         <span class="h-date">${EVENT_ICON[t.type]||'・'} ${fmtDate(t.at)}</span>
@@ -2063,7 +2080,7 @@ function renderOne(o){
     ${(o.faq && faqByN(o.faq)) ? `<div class="hint" style="margin-top:4px">引用 FAQ 第 ${CIRCLED[o.faq]} 題　${esc(faqByN(o.faq).q)}</div>` : ''}
     ${(o.mods&&o.mods.length) ? `<div class="hint" style="margin-top:4px">插入模組：${
       esc(o.mods.map(id=>(modById(id)||{}).name).filter(Boolean).join('、')||'無')}</div>` : ''}
-    <h3 style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;
+    <h3 style="font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.1em;
         color:var(--teal);margin:18px 0 6px">建議使用 · ${esc(c ? c.name : '沒有合適的罐頭，請自行撰寫')}</h3>
     <textarea id="oneText" rows="18">${esc(assemble(o))}</textarea>
     <div class="btnbar">
