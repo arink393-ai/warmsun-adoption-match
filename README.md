@@ -6,8 +6,9 @@
 
 - `index.html` — 公開配對站：訪客可先看首頁、流程說明與隱私權，登入／註冊位於右上角；登入後可使用
   佈告欄（含檢舉）、**個人中心**（我的資料、我的收件匣、
-  我的申請、我的回覆範本、診療點數）、**管理後台**（只有 `is_admin` 帳號看得到：全站統計、
-  檢舉處理、範本主檔管理、照片與驗證照審核台）、隱私權政策、流程說明。
+  我的申請、第二階段雙向對話、我的回覆範本、診療點數）、**管理後台**（只有 `is_admin`
+  帳號看得到：全站統計、會員停權／刪除、檢舉處理、範本主檔管理、照片與驗證照審核台）、
+  隱私權政策、流程說明。
   「我的資料」的自介欄位除了自由文字，還有一組結構化的選填欄位（年收入區間、婚姻狀態、
   是否有孩子、兵役狀況、居住狀況、負債狀況、關係期待、生育規劃、MBTI、興趣／個性／
   生活習慣多選），以及「希望對方的條件」（婚姻要求、年齡範圍、孩子要求、生活習慣要求）；
@@ -22,7 +23,7 @@
   表單匯入評分、AI 判斷該用哪封罐頭。登入後會在「個人中心 → 我的資料」看到這個工具的連結
   （只有站長本人的帳號登入時才會顯示）。
 - `supabase-schema.sql` — 資料庫結構與 RLS（Row Level Security）政策，包含
-  `profiles`／`applications`（配對平台）、`reports`（檢舉）、`template_master`（範本主檔）、
+  `match_profiles`／`applications`／`match_messages`（配對平台）、`reports`（檢舉）、`template_master`（範本主檔）、
   `owner_kv`（私人工具專用，只有本人存取得到）。
 - `js/config.js` — 你的 Supabase 連線設定（網址＋anon 金鑰＋選用的 AI 代理網址）。
 - `js/supabase-client.js` — 共用的登入／資料存取邏輯（配對平台與私人工具共用同一份）。
@@ -35,7 +36,8 @@
 ### 1. 建立 Supabase 專案
 1. 到 https://supabase.com 免費建立一個新專案。
 2. 左側 **SQL Editor** → New query，貼上整份 `supabase-schema.sql` 並執行。
-   這會建立 `profiles`、`applications` 兩張表，並開啟 RLS——訪客只能看到靜態公開頁，
+   這會建立配對專用的 `match_profiles`、`applications`、`match_messages` 並開啟 RLS。舊版若曾
+   使用共用的 `profiles`，腳本只搬移兩表共有欄位，不會修改其他產品的 `profiles` 或其政策。訪客只能看到靜態公開頁，
    **沒有登入的人完全讀不到會員與申請資料**；已登入的人也只能看到／修改自己的登記資料，
    以及自己牽涉在內的申請。
 3. 左側 **Project Settings → API**，把「Project URL」與「anon public」金鑰
@@ -62,14 +64,14 @@ Repo 設定 → **Settings → Pages** → Source 選「Deploy from a branch」�
 （免費不扣點）都靠同一個 AI 代理，只需要設定一次：
 1. 安裝 [Supabase CLI](https://supabase.com/docs/guides/cli)，登入並連結你的專案：
    `supabase login` → `supabase link --project-ref <你的專案代號>`
-2. 部署函式：`supabase functions deploy claude`
-3. 到 https://console.anthropic.com 申請一組 API 金鑰，設定成密鑰（不會出現在前端）：
-   `supabase secrets set ANTHROPIC_API_KEY=sk-ant-xxxxx`
+2. 部署函式：`supabase functions deploy claude && supabase functions deploy admin-users && supabase functions deploy delete-account`
+3. 到 https://console.anthropic.com 申請一組 API 金鑰，並設定正式站來源（不會出現在前端）：
+   `supabase secrets set ANTHROPIC_API_KEY=sk-ant-xxxxx SITE_ORIGIN=https://你的正式網域`
 4. 把函式網址貼進 `js/config.js` 的 `CLAUDE_PROXY_URL`：
    `https://<你的專案代號>.supabase.co/functions/v1/claude`
 5. 留空這個設定，兩個 AI 功能的按鈕都會自動顯示為停用狀態，不影響其他功能。
 
-新帳號預設贈送 5 點診療點數（`profiles.credits`）。送出一份認養申請要扣 1 點「掛號費」，
+新帳號預設贈送 5 點診療點數（`match_profiles.credits`）。送出一份認養申請要扣 1 點「掛號費」，
 請主治獸醫評估一位申請人要扣 1 點「診療費」；若對方超過 14 天沒處理你的申請，可以在
 「我送出的申請」自行退回掛號費。「診療室」裡的儲值方案目前是模擬付款，不會真的扣款——
 要串接真的金流（例如綠界、TapPay）需要另外接金流商的後端，目前還沒做。
@@ -86,7 +88,7 @@ bucket 與對應權限的 SQL，跑過整份腳本就會自動建好，不用另
 1. 先用你自己的帳號在網站上登入一次（讓 Supabase 的 `auth.users` 裡有這筆帳號）。
 2. 到 Supabase **SQL Editor**，執行（記得換成你自己的 email）：
    ```sql
-   update public.profiles set is_admin = true
+   update public.match_profiles set is_admin = true
    where id = (select id from auth.users where email = '你的帳號 email');
    ```
 3. 重新整理網站，頂端分頁會出現「管理後台」，裡面會顯示全站統計、待處理檢舉、範本主檔編輯，
@@ -153,7 +155,7 @@ bucket 與對應權限的 SQL，跑過整份腳本就會自動建好，不用另
 `application_private_notes` 表並修掉了一個已知缺陷——之前收件方技術上讀得到對方的私人筆記，
 現在 RLS 保證只有寫的人自己看得到。
 
-- **我的答題紀錄**：送出申請或第二階段回答時，答案會自動存進你自己的 `profiles.answer_bank`。
+- **我的答題紀錄**：送出申請或第二階段回答時，答案會自動存進你自己的 `match_profiles.answer_bank`。
   下次填寫申請表遇到相似題目，題目下方會展開「你以前答過的」，可以一鍵帶入或附加在後面，
   再依這次的題目調整。比對用題目文字的相似度，不透過 AI（不用額外扣點，速度也快）。
 - **申請前的同意關卡**：點「提出認養申請」後，會先看到告知事項（誰看得到你的回答、要付費才
@@ -182,7 +184,7 @@ guard trigger，只能透過上面兩支安全函式改。
 呼吸道疾病、遺傳性疾病史、精神性疾病、早產兒、愛滋病、BMI超標、體脂肪過高、不孕、
 舊傷、已長期服藥或治療控制中），一項都不勾也可以直接送出，完全由本人決定要不要公開；
 文字框保留下來當作「其他補充說明」，寫想額外說明的細節。原本「什麼時候讓對方看到」的
-設定不變，仍然是本人自選。新增 `profiles.health_tags`（jsonb 陣列）欄位存勾選結果。
+設定不變，仍然是本人自選。新增 `match_profiles.health_tags`（jsonb 陣列）欄位存勾選結果。
 
 送出認養申請時，原本填完第一階段問卷就直接送出，現在中間多一頁「領養切結書」：列出
 承諾事項與領養宣言，代名詞會依對方的性別自動換成「他」或「她」，並要求在「認養人」欄位
@@ -219,12 +221,12 @@ Cormorant Garamond／Lora 完全是兩回事。這次把兩個後台頁面的顏
 （生活照），全部選填。這兩張不是公開的，存在私密的 `stage-photos` bucket，storage 的
 RLS 政策會檢查申請人跟這個登記人之間的申請進度：進到第二階段（`stage >= 2`）才看得到
 第一階段那張，進到第三階段（`stage >= 3`）才看得到第二階段那張，讓申請人有「通過審查、
-解鎖回饋」的感覺。`profiles.stage1_photo`／`stage2_photo` 兩個布林欄位只是「有沒有上傳」
+解鎖回饋」的感覺。`match_profiles.stage1_photo`／`stage2_photo` 兩個布林欄位只是「有沒有上傳」
 的旗標，不是照片本身。
 
 **一鍵通關**：登記人可以在自己的登記表單勾選「開放一鍵通關」，開放後任何送出申請的人都可以
 付 10 點（`skip_to_unlock`），直接把這筆申請跳到第三階段、雙方互相解鎖，不用照走問卷與
-逐階段審核。這 10 點會轉給登記人，但限 14 天內用完——`profiles.bonus_credits` 記錄每一筆
+逐階段審核。這 10 點會轉給登記人，但限 14 天內用完——`match_profiles.bonus_credits` 記錄每一筆
 獎勵點數的到期時間，到期還沒花完的部分會被 `settle_bonus_credits()` 收回（用「還剩多少
 可花」去扣，不會扣到負的）。因為沒有排程系統，改成「順手結算」：登入後會呼叫一次，其他
 會扣點的安全函式（`spend_credits_for`／`apply_to`／`unlock_a1`／`send_stage2`／

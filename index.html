@@ -103,6 +103,12 @@
   .google-btn:hover{background:var(--paper-2);border-color:var(--rule)}
   .or{display:flex;align-items:center;gap:10px;color:var(--ink-soft);font-size:12px;margin:14px 0}
   .or::before,.or::after{content:'';flex:1;height:1px;background:var(--rule)}
+  #chatDialog{width:min(620px,calc(100vw - 24px));border:1px solid var(--rule);border-radius:8px;padding:0;background:var(--paper);color:var(--ink)}
+  #chatDialog::backdrop{background:rgba(28,23,18,.48)}
+  .chatHead{padding:14px 16px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;gap:12px;align-items:center}
+  #chatMessages{height:min(52vh,440px);overflow:auto;padding:14px 16px;background:var(--paper-2)}
+  .bubble{max-width:82%;padding:8px 10px;margin:6px 0;border:1px solid var(--rule);border-radius:8px;background:var(--paper)}
+  .bubble.mine{margin-left:auto;background:#f4ede4;border-color:#cdbca8}.bubble .hint{font-size:10px;margin-bottom:2px}
 </style>
 
 <div id="gate" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="gateLegend">
@@ -128,6 +134,19 @@
     </fieldset>
   </div>
 </div>
+
+<dialog id="chatDialog" aria-labelledby="chatTitle">
+  <div class="chatHead"><strong id="chatTitle">第二階段對話</strong><button class="ghost" id="chatClose">關閉</button></div>
+  <div id="chatMessages" aria-live="polite"></div>
+  <div style="padding:12px 16px">
+    <p class="hint" style="margin-top:0">可直接聊天，或把訊息標記為「客製化感情問題」。不舒服時可立即結束對話並檢舉。</p>
+    <textarea id="chatBody" rows="3" maxlength="2000" placeholder="寫下想說的話或想深入了解的感情問題…"></textarea>
+    <div class="bar">
+      <button id="chatSend">傳送訊息</button><button class="ghost" id="chatAsk">以感情問題傳送</button>
+      <button class="ghost" id="chatBlock">結束／封鎖對話</button><span class="msg" id="chatMsg"></span>
+    </div>
+  </div>
+</dialog>
 
 <div class="wrap" id="app">
 <header>
@@ -253,6 +272,11 @@
       <div><label>居住地</label><input id="mArea" placeholder="例：台北"></div>
       <div><label>職業</label><input id="mJob" placeholder="例：工程師"></div>
     </div>
+    <div class="row">
+      <div><label>身高（cm，必填）</label><input id="mHeight" type="number" min="100" max="230" inputmode="numeric" placeholder="例：168"></div>
+      <div><label>體重（kg，選填）</label><input id="mWeight" type="number" min="25" max="350" step="0.1" inputmode="decimal" placeholder="例：58.5"></div>
+      <div><label>體重揭露</label><select id="mShowWeight"><option value="false">不公開</option><option value="true">公開</option></select></div>
+    </div>
     <label>生日（對方送出第一階段申請後才會顯示）</label>
     <input id="mBirth" placeholder="例：12/25 或 1994/12/25">
 
@@ -265,11 +289,14 @@
       <div style="flex:1">
         <input id="mFile" type="file" accept="image/*">
         <p class="hint" style="margin-top:6px">
-          必須是<b>本人、單人、看得清楚五官</b>的照片。<br>
-          風景、寵物、動漫、明星照、AI 生成圖、多人合照、盜用他人照片一律不通過，
-          且無法登記、提出申請或接受申請。<br>
-          上傳後會先由系統初步檢查，再經人工審核。
+          必須是<b>本人、單人、看得清楚五官</b>的照片，不得使用明星照、盜圖或多人合照。<br>
+          AI 形象照可送審，但需勾選下方聲明，並以私密真人驗證照由人工確認高度相似。
+          本人照片通常較快；AI 形象照約需 7 個工作天。
         </p>
+        <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px">
+          <input type="checkbox" id="mAiPhoto" style="width:auto;margin:4px 0 0">
+          <span style="font-size:13px">這是 AI 生成／修飾的形象照；我聲明與本人高度相似（自評至少 95%），並同意較長的人工審核。此聲明不是平台的生物辨識結果。</span>
+        </label>
         <p class="hint" id="photoState"></p>
       </div>
     </div>
@@ -645,7 +672,7 @@ const GESTURES = [
   '手掌張開放在下巴旁邊',
   '比出大拇指朝上'
 ];
-const isApproved = p => !!p && p.photo_status === 'approved' && p.verify_status === 'approved';
+const isApproved = p => !!p && p.photo_status === 'approved' && p.verify_status === 'approved' && !!p.height_cm;
 
 /* ── 詳細資料的複選項目 ── */
 const INTEREST_OPTS = ['閱讀','電影／影集','旅行','健身／運動','烹飪','遊戲','音樂','藝術／手作','寵物','戶外／登山','追劇／動漫','攝影'];
@@ -864,6 +891,11 @@ function photoStateText(p){
   if(p.photo_status === 'checking') return '系統檢查中⋯⋯';
   return '⏳ 已通過系統初步檢查，等待人工審核。' + (p.photo_reason ? '（' + p.photo_reason + '）' : '');
 }
+function addBusinessDays(count){
+  const d = new Date(); let left = count;
+  while(left > 0){ d.setDate(d.getDate() + 1); if(d.getDay() !== 0 && d.getDay() !== 6) left--; }
+  return d.toISOString();
+}
 function verifyStateText(p){
   if(!p || p.verify_status === 'none') return '尚未上傳驗證照。';
   if(p.verify_status === 'approved') return '✅ 身分已驗證，驗證照已依政策刪除。';
@@ -883,6 +915,8 @@ async function fillMe(){
   if(!myProfile) return;
   mName.value = myProfile.name||''; mKind.value = myProfile.kind||'pet'; mSpecies.value = myProfile.species||'cat';
   mGender.value = myProfile.gender||'f'; mBirth.value = myProfile.birth||'';
+  mHeight.value = myProfile.height_cm||''; mWeight.value = myProfile.weight_kg||'';
+  mShowWeight.value = myProfile.show_weight ? 'true' : 'false'; mAiPhoto.checked = myProfile.avatar_kind === 'ai';
   mTraits.value = myProfile.traits||''; mLikes.value = myProfile.likes||''; mTaboo.value = myProfile.taboo||'';
   mHealth.value = myProfile.health||''; mHealthWhen.value = myProfile.health_when||'stage2';
   setCheckGroup('mHealthTags', myProfile.health_tags);
@@ -960,6 +994,10 @@ const REQUIRED_DETAIL_SELECTS = [
 $('mSave').onclick = async () => {
   const name = mName.value.trim();
   if(!name){ flash('meMsg','請填暱稱'); return; }
+  const height = parseInt(mHeight.value, 10);
+  if(!height || height < 100 || height > 230){ flash('meMsg','請填寫 100～230 cm 的身高'); return; }
+  const weight = mWeight.value === '' ? null : Number(mWeight.value);
+  if(weight !== null && (weight < 25 || weight > 350)){ flash('meMsg','體重需介於 25～350 kg，或留空'); return; }
   for(const [id, label] of REQUIRED_DETAIL_SELECTS){
     if(!$(id).value){ flash('meMsg', `詳細資料還沒填完：請選擇「${label}」`); return; }
   }
@@ -971,6 +1009,7 @@ $('mSave').onclick = async () => {
   const newVerify = $('mVerify').dataset.new === '1' ? $('mVerify').src : null;
   const newStage1 = $('mStage1Photo').dataset.new === '1' ? $('mStage1Photo').src : null;
   const newStage2 = $('mStage2Photo').dataset.new === '1' ? $('mStage2Photo').src : null;
+  const previousAvatarKind = myProfile.avatar_kind || 'real';
   try{
     const patch = {
       name, kind: mKind.value, species: mSpecies.value, gender: mGender.value,
@@ -979,6 +1018,8 @@ $('mSave').onclick = async () => {
       health_when: mHealthWhen.value,
       vet_note: mVetNote.value.trim(), stars: getStars(),
       age: mAge.value.trim(), area: mArea.value.trim(), job: mJob.value.trim(),
+      height_cm: height, weight_kg: weight, show_weight: mShowWeight.value === 'true',
+      avatar_kind: mAiPhoto.checked ? 'ai' : 'real', ai_likeness_attested: mAiPhoto.checked,
       bio: mBio.value.trim(), wants: mWants.value.trim(), locked: mLocked.value.trim(),
       income: mIncome.value, marital: mMarital.value, has_kids: mHasKids.value,
       military: mMilitary.value, living: mLiving.value, debt: mDebt.value,
@@ -993,14 +1034,20 @@ $('mSave').onclick = async () => {
     };
     if(!myProfile.consent) patch.consent_at = new Date().toISOString();
     myProfile = await DB.saveMyProfile(patch);
+    if(!newPhoto && previousAvatarKind !== patch.avatar_kind){
+      myProfile = await DB.saveMyProfile({photo_status:'pending', photo_reason:'照片類型已變更，等待重新人工審核', photo_review_due_at:addBusinessDays(patch.avatar_kind === 'ai' ? 7 : 2)});
+    }
 
     if(newPhoto){
       await DB.uploadAvatar(newPhoto);
       $('mPhoto').dataset.new = '';
-      myProfile = await DB.saveMyProfile({photo_status: 'checking', photo_reason: ''});
+      myProfile = await DB.saveMyProfile({
+        photo_status: 'checking', photo_reason: '',
+        photo_review_due_at: addBusinessDays(mAiPhoto.checked ? 7 : 2)
+      });
       $('photoState').textContent = '系統檢查中⋯⋯';
       try{
-        const r = await autoScreenPhoto(newPhoto);
+        const r = await autoScreenPhoto(newPhoto, mAiPhoto.checked);
         myProfile = await DB.saveMyProfile({photo_status: r.ok ? 'pending' : 'rejected', photo_reason: r.reason});
       }catch(e){
         myProfile = await DB.saveMyProfile({photo_status: 'pending', photo_reason: '系統檢查未完成，改由人工審核'});
@@ -1033,10 +1080,7 @@ $('mPurge').onclick = async () => {
   if(!confirm('這會刪除你的登記、照片、所有申請紀錄與點數紀錄，且無法復原。確定嗎？')) return;
   if(!confirm('再確認一次：所有資料都會消失，包含已建立的配對進度。')) return;
   try{
-    try{ await DB.deleteVerifyPhoto(me.id); }catch(e){}
-    await DB.sb.storage.from('avatars').remove([`${me.id}/avatar.jpg`]);
-    await DB.sb.from('profiles').delete().eq('id', me.id);
-    await DB.signOut();
+    await DB.deleteMyAccount();
   }catch(e){ flash('meMsg', e.message || '刪除失敗'); }
 };
 
@@ -1062,15 +1106,15 @@ function resizeImage(file, max = 320){
 }
 
 /* 系統初步檢查：只能判斷「是不是合格的真人單人照」，無法確認是否盜用 */
-async function autoScreenPhoto(dataUrl){
+async function autoScreenPhoto(dataUrl, isAi){
   if(!DB.hasClaudeProxy()) return {ok:true, reason:'（尚未設定 AI 代理，略過系統初檢，直接交由人工審核）'};
   const b64 = dataUrl.split(',')[1];
   const text = await DB.askClaudeRaw([{role:'user', content:[
     {type:'image', source:{type:'base64', media_type:'image/jpeg', data:b64}},
     {type:'text', text:
-`這是交友平台的大頭照審核。請判斷這張圖是否符合規定。
+`這是交友平台的大頭照初步品質審核。使用者已聲明此圖${isAi ? '是 AI 生成或修飾的形象照' : '是本人照片'}。
 
-不通過的情況：不是真人照片（風景、動物、物品、動漫、插圖、明顯的 AI 生成圖）、多人合照無法辨識主角、看不清楚五官、明顯是名人或明星照、明顯是廣告或素材圖。
+不通過的情況：風景、動物、物品、動漫、多人合照無法辨識主角、看不清楚五官、明顯是名人或明星照、明顯是廣告或素材圖。不要判斷是否真的達到 95% 相似；該項由人工搭配私密真人驗證照審核。
 
 只輸出一行，用半形直線分隔兩欄，不要其他文字：
 pass 或 reject|一句話說明理由（繁體中文，20 字內）`}
@@ -1169,9 +1213,12 @@ async function renderBoard(){
       </div>
       <img src="${DB.avatarUrl(p.id, p.updated_at)}" alt="" style="width:100%;height:170px;object-fit:cover;
            border-radius:4px;margin:10px 0;background:var(--paper-2)">
+      ${p.avatar_kind === 'ai' ? '<span class="pill">AI 形象照・本人聲明高度相似</span>' : ''}
       ${chartSec('基本資料')}
       ${chartRow('物種', esc(SPECIES[p.species] || '—') + '　' + esc(GENDER[p.gender || 'f'] || ''))}
       ${chartRow('年齡', p.age ? esc(p.age) + ' 歲' : '—')}
+      ${chartRow('身高', p.height_cm ? esc(p.height_cm) + ' cm' : '—')}
+      ${p.show_weight && p.weight_kg ? chartRow('體重', esc(p.weight_kg) + ' kg') : ''}
       ${chartRow('活動範圍', esc(p.area || '—'))}
       ${chartRow('日常', esc(p.job || '—'))}
       ${chartRow('生日', birthOpen ? esc(p.birth || '（尚未填寫）') : '🔒 完成第一階段後可見')}
@@ -1431,6 +1478,7 @@ async function renderOutbox(){
           <button class="ghost refund" data-app="${a.id}">對方逾期未處理，退回掛號費</button>
         </div>` : ''}
       ${a.refunded ? '<p class="hint">掛號費已退回。</p>' : ''}
+      ${a.stage >= 2 && a.status === 'open' ? `<div class="bar"><button class="ghost openChat" data-app="${a.id}" data-name="${esc(to.name)}">開啟第二階段對話</button></div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(to.locked || '對方尚未填寫')}</div>` : ''}
     </fieldset>`;
   }).join('');
@@ -1494,6 +1542,7 @@ function bindOutbox(){
       renderOutbox(); renderBoard();
     }catch(e){ alert(e.message || '操作失敗'); }
   });
+  $('outbox').querySelectorAll('.openChat').forEach(b => b.onclick = () => openChat(b.dataset.app, b.dataset.name));
 }
 
 /* ── 我收到的申請 ── */
@@ -1527,6 +1576,7 @@ async function renderInbox(){
              </div>
            </div>`}
       ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
+      ${a.stage >= 2 && a.status === 'open' ? `<div class="bar"><button class="ghost openChat" data-app="${a.id}" data-name="${esc(from.name)}">開啟第二階段對話</button></div>` : ''}
       <div class="bar">
         ${a.status === 'open' && a.stage === 1 && a.a1 ? `
           <button class="pass" data-app="${a.id}">通過，發出第二階段問卷（${STAGE2_COST} 點）</button>
@@ -1545,7 +1595,7 @@ async function renderInbox(){
           ${a.stage === 1 && a.status === 'open' ? `<button class="ghost deep" data-app="${a.id}">${
             Array.isArray(a.a2_questions) && a.a2_questions.length
               ? '已擬好第二階段客製問題' : `進階診斷：客製第二階段問題（${DEEP_COST} 點）`}</button>` : ''}
-        </div><div id="vet-${a.id}">${a.vet ? `<div class="qa">${esc(a.vet)}</div>` : ''}</div>
+        </div><div id="vet-${a.id}">${a.vet ? vetScoreCard(a) : ''}</div>
         <div id="deep-${a.id}">${Array.isArray(a.a2_questions) && a.a2_questions.length
           ? '<div class="qa"><b>第二階段客製問題</b>' + a.a2_questions.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>') + '</div>' : ''}</div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(from.locked || '對方尚未填寫')}</div>` : ''}
@@ -1611,7 +1661,41 @@ function bindInbox(){
     const a = apps.find(x => x.id === b.dataset.app);
     deepReview(a, inboxFromProfiles[a.from_user] || {name:'申請人'});
   });
+  $('inbox').querySelectorAll('.openChat').forEach(b => b.onclick = () => openChat(b.dataset.app, b.dataset.name));
 }
+
+/* ── 第二階段即時對話 ── */
+let activeChat = null, stopChatSubscription = null;
+function renderChatMessages(rows){
+  $('chatMessages').innerHTML = rows.length ? rows.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">
+    <div class="hint">${m.kind === 'question' ? '感情問題・' : ''}${new Date(m.created_at).toLocaleString('zh-TW')}</div>
+    <div style="white-space:pre-wrap">${esc(m.body)}</div></div>`).join('') : '<div class="empty">還沒有訊息，從一個真誠的問題開始吧。</div>';
+  $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+}
+async function openChat(appId, name){
+  activeChat = appId; $('chatTitle').textContent = `與 ${name} 的第二階段對話`;
+  $('chatDialog').showModal(); $('chatMessages').innerHTML = '<p class="hint">讀取對話中⋯⋯</p>';
+  try{ renderChatMessages(await DB.listMessages(appId)); }
+  catch(e){ $('chatMessages').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; }
+  if(stopChatSubscription) stopChatSubscription();
+  stopChatSubscription = DB.subscribeMessages(appId, async () => {
+    if(activeChat === appId) renderChatMessages(await DB.listMessages(appId));
+  });
+}
+async function sendChat(kind){
+  const body = $('chatBody').value.trim(); if(!body){ flash('chatMsg','請先輸入內容'); return; }
+  try{ await DB.sendMessage(activeChat, body, kind); $('chatBody').value = ''; renderChatMessages(await DB.listMessages(activeChat)); }
+  catch(e){ flash('chatMsg', e.message || '傳送失敗'); }
+}
+$('chatSend').onclick = () => sendChat('message');
+$('chatAsk').onclick = () => sendChat('question');
+$('chatClose').onclick = () => { $('chatDialog').close(); activeChat = null; if(stopChatSubscription) stopChatSubscription(); };
+$('chatBlock').onclick = async () => {
+  if(!confirm('結束後雙方都不能再傳訊息。若涉及騷擾，也請使用檢舉功能。確定結束？')) return;
+  const reason = prompt('原因（選填，僅供安全處理）') || '';
+  try{ await DB.closeChat(activeChat, reason); $('chatDialog').close(); activeChat = null; if(stopChatSubscription) stopChatSubscription(); }
+  catch(e){ flash('chatMsg', e.message || '操作失敗'); }
+};
 
 /* ── 診療室：點數與主治獸醫（AI）評估 ── */
 function renderClinic(){
@@ -1703,9 +1787,20 @@ $('tplReset').onclick = async () => {
   catch(e){ flash('tplMsg', e.message || '還原失敗'); }
 };
 
+function vetScoreCard(app){
+  const s = app.vet_scores || {};
+  const rows = [1,2,3].map(n => {
+    const value = s['stage' + n];
+    const available = n <= app.stage && Number.isFinite(Number(value));
+    return `<div class="qa"><b>第 ${n} 階段匹配程度</b>${available ? `${Math.max(0,Math.min(100,Number(value)))}%` : '資料尚未解鎖'}</div>`;
+  }).join('');
+  return `<div class="lock"><b>AI 相容度參考（非醫療診斷）</b>${rows}
+    <p class="hint">百分比只整理目前已揭露的回答，不代表成功機率；請搭配實際對話與界線感受判斷。</p>
+    ${app.vet ? `<div style="white-space:pre-wrap">${esc(app.vet)}</div>` : ''}</div>`;
+}
 async function vetReview(app, from){
   const box = $('vet-' + app.id);
-  if(app.vet){ box.innerHTML = `<div class="qa">${esc(app.vet)}</div>`; return; }
+  if(app.vet){ box.innerHTML = vetScoreCard(app); return; }
   if(!DB.hasClaudeProxy()){
     box.innerHTML = '<p class="hint">尚未設定 AI 代理網址，暫時無法使用（不影響其他功能）。</p>';
     return;
@@ -1735,20 +1830,19 @@ ${qa(q1, app.a1)}
 
 ${app.a2 ? '【第二階段回答】\n' + qa(q2, app.a2) : ''}
 
-請用繁體中文寫出約 300 字的評估，包含：
-1. 相容之處
-2. 需要進一步確認的地方（列 2-3 個具體問題）
-3. 觀察到的紅旗（若沒有就說沒有，不要硬找）
-4. 建議：可進入下一階段／建議補件再看／建議婉拒
-
-不要編造對方沒說的事；資料不足就說資料不足。`;
+只輸出合法 JSON，不要 markdown：
+{"stage1":0到100,"stage2":數字或null,"stage3":數字或null,"confidence":"低|中|高","summary":"繁體中文約250字，包含相容處、待確認問題、紅旗與下一步建議"}
+只能替目前已有資料的階段評分，未進入的階段必須是 null。百分比是資訊整理，不是醫療診斷或成功機率。不要編造；資料不足要明說。`;
   try{
     const text = await DB.askClaude(prompt);
+    const parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim());
+    if(!Number.isFinite(Number(parsed.stage1)) || typeof parsed.summary !== 'string') throw new Error('AI 回傳格式不完整');
+    const scores = {stage1:Number(parsed.stage1), stage2:parsed.stage2===null?null:Number(parsed.stage2), stage3:parsed.stage3===null?null:Number(parsed.stage3), confidence:parsed.confidence||'低'};
     const spent = await DB.spendCreditFor('vet_review', from.name);
     if(spent.ok) myProfile = spent.profile;
-    const updated = await DB.updateApplication(app.id, {vet: text, vet_at: new Date().toISOString()});
+    const updated = await DB.updateApplication(app.id, {vet: parsed.summary, vet_scores: scores, vet_stage: app.stage, vet_at: new Date().toISOString()});
     Object.assign(app, updated);
-    box.innerHTML = `<div class="qa">${esc(text)}</div>`;
+    box.innerHTML = vetScoreCard(app);
   }catch(e){
     box.innerHTML = `<p class="hint" style="color:var(--bad)">評估失敗：${esc(e.message)}（未扣點）</p>`;
   }
@@ -1842,7 +1936,9 @@ async function renderAudit(){
           ${p.verify_task ? `<p class="hint" style="margin-top:6px">指定動作：${esc(p.verify_task.gesture)}　紙條代碼：暖陽 ${esc(p.verify_task.code)}</p>` : ''}
         </div>
         <div style="flex:1">
-          <div class="hint">${KIND[p.kind]||''}　${SPECIES[p.species]||''}　${GENDER[p.gender||'f']||''}　${esc(p.age||'')}　${esc(p.area||'')}</div>
+          <div class="hint">${KIND[p.kind]||''}　${SPECIES[p.species]||''}　${GENDER[p.gender||'f']||''}　${esc(p.age||'')}　${esc(p.area||'')}　身高 ${esc(p.height_cm||'—')} cm</div>
+          <div class="hint">照片類型：${p.avatar_kind === 'ai' ? 'AI 形象照（本人聲明高度相似，需搭配真人驗證照人工比對）' : '本人照片'}
+            ${p.photo_review_due_at ? `　預計審核期限：${new Date(p.photo_review_due_at).toLocaleDateString('zh-TW')}` : ''}</div>
           <div class="bio">${esc(p.bio||'')}</div>
           <div class="hint">系統初檢：${p.photo_status === 'rejected' ? '未通過' : '通過'}　${esc(p.photo_reason||'')}</div>
           <div class="bar">
@@ -1908,6 +2004,10 @@ async function renderAdminHome(){
         <div class="bar"><button class="ghost" id="grantGo">送出</button><span class="msg" id="grantMsg"></span></div>
       </fieldset>
       <fieldset><legend>檢舉處理</legend><div id="reportList"><p class="hint">讀取中⋯⋯</p></div></fieldset>
+      <fieldset><legend>會員管理</legend>
+        <p class="hint">限制發文只會禁止送申請、聊天與 AI 功能；停用登入會封鎖帳號；永久刪除會連同驗證帳號與相關資料移除。</p>
+        <div id="memberList"><p class="hint">讀取中⋯⋯</p></div>
+      </fieldset>
       <fieldset><legend>範本主檔管理</legend><div id="tplMasterList"></div></fieldset>
       <div id="auditMount"></div>`;
     $('auditMount').appendChild($('pane-audit'));
@@ -1936,6 +2036,16 @@ async function renderAdminHome(){
   $('adminStats').textContent =
     `登記總數：${allProfiles.length}　已通過審核：${approved}　申請總數：${allApps.length}　未處理檢舉：${reports.filter(r=>!r.done).length}`;
 
+  $('memberList').innerHTML = allProfiles
+    .slice().sort((a,b) => (a.name||'').localeCompare(b.name||''))
+    .map(p => `<div class="qa"><b>${esc(p.name || '（未命名）')}　${esc(p.id.slice(0,8))}</b>
+      狀態：${esc(p.account_status || 'active')}　發言：${p.posting_locked ? '已限制' : '正常'}
+      ${p.is_admin ? '<span class="pill">管理員</span>' : `<div class="bar">
+        <button class="ghost memberAct" data-action="${p.posting_locked ? 'posting_unlock' : 'posting_lock'}" data-id="${p.id}">${p.posting_locked ? '恢復發言' : '限制發言'}</button>
+        <button class="ghost memberAct" data-action="${p.account_status === 'suspended' ? 'restore' : 'suspend'}" data-id="${p.id}">${p.account_status === 'suspended' ? '恢復帳號' : '停用登入'}</button>
+        <button class="ghost memberAct" data-action="delete" data-id="${p.id}">永久刪除</button>
+      </div>`}</div>`).join('') || '<div class="empty">目前沒有會員。</div>';
+
   const keepWho = $('grantWho').value;
   $('grantWho').innerHTML = allProfiles
     .slice().sort((a,b) => (a.name||'').localeCompare(b.name||''))
@@ -1963,8 +2073,17 @@ async function renderAdminHome(){
     try{ await DB.adminMarkReportDone(b.dataset.id); renderAdminHome(); }catch(e){ alert(e.message || '操作失敗'); }
   });
   $('reportList').querySelectorAll('.rmProf').forEach(b => b.onclick = async () => {
-    if(!confirm('確定要移除這個登記嗎？會一併刪除相關申請，且無法復原。')) return;
-    try{ await DB.adminRemoveProfile(b.dataset.id); renderAdminHome(); renderBoard(); }catch(e){ alert(e.message || '操作失敗'); }
+    if(!confirm('確定要永久刪除這個帳號嗎？相關配對資料也會刪除，且無法復原。')) return;
+    const why = prompt('請填寫刪除原因'); if(!why) return;
+    try{ await DB.adminUserAction('delete', b.dataset.id, why); renderAdminHome(); renderBoard(); }catch(e){ alert(e.message || '操作失敗'); }
+  });
+  $('memberList').querySelectorAll('.memberAct').forEach(b => b.onclick = async () => {
+    const action = b.dataset.action;
+    if(action === 'delete' && !confirm('永久刪除後無法復原，確定繼續？')) return;
+    const why = action === 'restore' || action === 'posting_unlock' ? '' : prompt('請填寫處理原因');
+    if(action !== 'restore' && action !== 'posting_unlock' && !why) return;
+    try{ await DB.adminUserAction(action, b.dataset.id, why || ''); renderAdminHome(); renderBoard(); }
+    catch(e){ alert(e.message || '操作失敗'); }
   });
   $('tplMasterSave').onclick = async () => {
     const areas = [...document.querySelectorAll('.tplMasterText')];

@@ -38,6 +38,17 @@
     const { error } = await sb.auth.signOut();
     if (error) throw error;
   }
+  async function deleteMyAccount() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('尚未登入');
+    const res = await fetch(`${window.SUPABASE_URL}/functions/v1/delete-account`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+      body: JSON.stringify({ confirm: 'DELETE' })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '刪除帳號失敗');
+    await sb.auth.signOut();
+  }
   async function getUser() {
     const { data } = await sb.auth.getUser();
     return data ? data.user : null;
@@ -51,10 +62,10 @@
   async function ensureProfile() {
     const user = await getUser();
     if (!user) return null;
-    let { data, error } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    let { data, error } = await sb.from('match_profiles').select('*').eq('id', user.id).maybeSingle();
     if (error) throw error;
     if (!data) {
-      const ins = await sb.from('profiles').insert({ id: user.id }).select().single();
+      const ins = await sb.from('match_profiles').insert({ id: user.id }).select().single();
       if (ins.error) throw ins.error;
       data = ins.data;
     }
@@ -63,34 +74,34 @@
   async function getMyProfile() {
     const user = await getUser();
     if (!user) return null;
-    const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    const { data, error } = await sb.from('match_profiles').select('*').eq('id', user.id).maybeSingle();
     if (error) throw error;
     return data;
   }
   async function saveMyProfile(patch) {
     const user = await getUser();
     if (!user) throw new Error('尚未登入');
-    const { data, error } = await sb.from('profiles')
+    const { data, error } = await sb.from('match_profiles')
       .update(patch).eq('id', user.id).select().single();
     if (error) throw error;
     return data;
   }
   async function getProfile(id) {
-    const { data, error } = await sb.from('profiles').select('*').eq('id', id).maybeSingle();
+    const { data, error } = await sb.rpc('get_visible_match_profiles', { p_profile_id: id });
     if (error) throw error;
-    return data;
+    return data && data[0] ? data[0] : null;
   }
   // 管理員專用：更新別人的那一筆（審核通過/退回、發獎勵點數）。
   // 非管理員呼叫這個會被 RLS 擋下來，不會真的改到別人的資料。
   async function adminUpdateProfile(id, patch) {
-    const { data, error } = await sb.from('profiles')
+    const { data, error } = await sb.from('match_profiles')
       .update(patch).eq('id', id).select().single();
     if (error) throw error;
     return data;
   }
   // 管理員專用：列出所有待審核（照片或驗證照還沒通過）的登記
   async function adminListPending() {
-    const { data, error } = await sb.from('profiles').select('*')
+    const { data, error } = await sb.from('match_profiles').select('*')
       .or('photo_status.eq.checking,photo_status.eq.pending,verify_status.eq.pending')
       .order('updated_at', { ascending: true });
     if (error) throw error;
@@ -98,7 +109,7 @@
   }
   // 管理員專用：列出所有登記（全站統計用）
   async function adminListAllProfiles() {
-    const { data, error } = await sb.from('profiles').select('*');
+    const { data, error } = await sb.from('match_profiles').select('*');
     if (error) throw error;
     return data || [];
   }
@@ -108,13 +119,18 @@
     if (error) throw error;
     return data || [];
   }
-  // 管理員專用：移除違規登記，並清掉這個人牽涉的所有申請
-  async function adminRemoveProfile(id) {
-    const del1 = await sb.from('applications').delete()
-      .or(`from_user.eq.${id},to_user.eq.${id}`);
-    if (del1.error) throw del1.error;
-    const del2 = await sb.from('profiles').delete().eq('id', id);
-    if (del2.error) throw del2.error;
+  async function adminUserAction(action, id, reason) {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('尚未登入');
+    const url = `${window.SUPABASE_URL}/functions/v1/admin-users`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+      body: JSON.stringify({ action, user_id: id, reason: reason || '' })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '管理操作失敗');
+    return data;
   }
 
   // ── 診療點數：一律透過 Postgres 安全函式，前端連 SQL 都下不了（見 supabase-schema.sql 第 9 節） ──
@@ -145,10 +161,7 @@
     return data;
   }
   async function listProfiles() {
-    const user = await getUser();
-    const { data, error } = await sb.from('profiles').select('*')
-      .neq('id', user ? user.id : '00000000-0000-0000-0000-000000000000')
-      .order('updated_at', { ascending: false });
+    const { data, error } = await sb.rpc('get_visible_match_profiles', { p_profile_id: null });
     if (error) throw error;
     // 只列出已經完成登記的人（kind/species/name 都有填）
     return (data || []).filter(p => p.kind && p.species && p.name);
@@ -193,6 +206,31 @@
       .update(patch).eq('id', id).select(APP_SELECT).single();
     if (error) throw error;
     return flattenApp(data);
+  }
+
+  // ── 第二階段後的雙向對話 ────────────────────────────
+  async function listMessages(appId) {
+    const { data, error } = await sb.from('match_messages').select('*')
+      .eq('application_id', appId).order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+  async function sendMessage(appId, body, kind) {
+    const { data, error } = await sb.rpc('send_match_message', {
+      p_app_id: appId, p_body: body, p_kind: kind || 'message'
+    });
+    if (error) throw error;
+    return data;
+  }
+  async function closeChat(appId, reason) {
+    const { error } = await sb.rpc('close_match_chat', { p_app_id: appId, p_reason: reason || '' });
+    if (error) throw error;
+  }
+  function subscribeMessages(appId, cb) {
+    const channel = sb.channel(`match-chat:${appId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'match_messages', filter: `application_id=eq.${appId}` }, cb)
+      .subscribe();
+    return () => sb.removeChannel(channel);
   }
   // 收件方付費解鎖第一階段詳細回答（1 點，價格由伺服器決定）
   async function unlockA1(appId) {
@@ -395,10 +433,11 @@
 
   window.DB = {
     sb,
-    signUpEmail, signInEmail, signInGoogle, signOut, getUser, onAuthChange,
+    signUpEmail, signInEmail, signInGoogle, signOut, deleteMyAccount, getUser, onAuthChange,
     ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles,
-    adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminRemoveProfile,
+    adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminUserAction,
     listOutbox, listInbox, findApplicationTo, updateApplication,
+    listMessages, sendMessage, closeChat, subscribeMessages,
     applyTo, refundApplication, adminAddCredits,
     unlockA1, sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
     skipToUnlock, settleBonusCredits,

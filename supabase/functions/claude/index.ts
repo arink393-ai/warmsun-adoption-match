@@ -17,14 +17,20 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",           // 上線後建議改成你的網域
-  "Access-Control-Allow-Headers": "authorization, content-type, apikey",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+function cors(req: Request) {
+  const configured = Deno.env.get("SITE_ORIGIN") ?? "";
+  return {
+    "Access-Control-Allow-Origin": configured || req.headers.get("Origin") || "null",
+    "Access-Control-Allow-Headers": "authorization, content-type, apikey",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+  };
+}
 
 Deno.serve(async (req) => {
+  const CORS = cors(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (req.method !== "POST") return new Response("Method not allowed", { status: 405, headers: CORS });
 
   try {
     // ── 只有登入過的使用者可以呼叫，避免被別人白嫖額度 ──
@@ -42,7 +48,33 @@ Deno.serve(async (req) => {
       });
     }
 
+    const service = createClient(
+      Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      { auth: { persistSession: false } },
+    );
+    const { data: profile } = await service.from("match_profiles")
+      .select("account_status,posting_locked").eq("id", user.id).maybeSingle();
+    if (!profile || profile.account_status !== "active" || profile.posting_locked) {
+      return new Response(JSON.stringify({ error: { message: "你的 AI 使用權限目前受限" } }), {
+        status: 403, headers: { ...CORS, "Content-Type": "application/json" },
+      });
+    }
+    const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count } = await service.from("match_ai_requests").select("id", { count: "exact", head: true })
+      .eq("user_id", user.id).gte("created_at", since);
+    if ((count ?? 0) >= 20) {
+      return new Response(JSON.stringify({ error: { message: "AI 使用次數已達每小時上限，請稍後再試" } }), {
+        status: 429, headers: { ...CORS, "Content-Type": "application/json" },
+      });
+    }
+
     const body = await req.json();
+    if (!Array.isArray(body.messages) || JSON.stringify(body.messages).length > 30000) {
+      return new Response(JSON.stringify({ error: { message: "請求內容不合法或過長" } }), {
+        status: 400, headers: { ...CORS, "Content-Type": "application/json" },
+      });
+    }
+    await service.from("match_ai_requests").insert({ user_id: user.id });
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -52,7 +84,7 @@ Deno.serve(async (req) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: body.model ?? "claude-sonnet-5",
+        model: Deno.env.get("ANTHROPIC_MODEL") ?? "claude-sonnet-5",
         max_tokens: Math.min(body.max_tokens ?? 1000, 2000),
         messages: body.messages ?? [],
       }),
