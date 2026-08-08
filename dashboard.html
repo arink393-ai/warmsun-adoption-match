@@ -9,14 +9,15 @@
 
 <style>
   /* 跟前台（index.html）同一套視覺語言：紙灰底、金褐主色、Cormorant Garamond＋Lora。
-     後台跟前台的差異只有三處，都是「同一家店的員工出入口」的感覺，但改用比較符合
-     暖陽形象的動態金色漸層，不是冷冰冰的深色：頂欄是會慢慢流動的暖陽漸層、分頁選中
-     時是實心金褐色（不是前台的淺色outline）、登入畫面整片暖陽漸層。
+     色彩只當「線條」用，不當「色塊」用——參考附件那份 Classical 設計系統：邊框、
+     細線、文字才上色，大面積一律留白／留紙灰，跟前台幾乎一致。後台跟前台的差異
+     只剩下最輕的兩處：頂欄下緣是金褐色的線（前台是無色細線），分頁選中的底色再
+     淺一點點。STAFF AREA／CASE FILE 這種outline標籤，和「管理端」的文案，才是
+     真正拿來分辨「這裡是員工入口」的方式，不是靠色塊。
      面談紀錄（shelter-review-assistant.html）裡那個旋轉的紅色印章不屬於這份檔案，維持原樣沒有動。 */
   :root{
     --paper:#F3F2F2; --paper-2:#EAE7E7; --ink:#201F1D; --ink-soft:#726D6D;
-    --rule:#DDD8D3; --brand:#A06F24; --brand-dk:#7D5411; --brand-tint:#F5EAD2; --brand-light:#FFF6E6;
-    --sun-1:#8A5A1A; --sun-2:#D19A42; --sun-3:#F2CE93;
+    --rule:#DDD8D3; --brand:#A06F24; --brand-dk:#7D5411; --brand-tint:#F5EAD2;
     --ok:#4B7A4F; --warn:#A9791F; --bad:#A23C2E; --ok-tint:#EDF4EE;
     --font-heading:"Cormorant Garamond","Noto Serif TC",serif;
     --font-body:"Lora","Noto Sans TC",system-ui,sans-serif;
@@ -24,34 +25,26 @@
   *{box-sizing:border-box}
   html,body{margin:0}
   body{background:var(--paper);color:var(--ink);font-family:var(--font-body);
-       font-size:16px;line-height:1.75;padding-bottom:60px;overflow-x:hidden}
+       font-size:16px;line-height:1.75;padding-bottom:60px}
   .wrap{max-width:1100px;margin:0 auto;padding:0 18px}
 
-  /* 暖陽頂欄：慢慢流動的金色漸層撐滿整個視窗寬度，內容仍然跟著 .wrap 置中 */
-  @keyframes sunshift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
-  header{position:relative;z-index:0;border-bottom:3px solid var(--sun-3);padding:24px 0 20px;margin-bottom:24px}
-  header::before{content:'';position:absolute;top:0;bottom:0;left:50%;width:100vw;transform:translateX(-50%);
-       z-index:-2;background:linear-gradient(120deg,var(--sun-1),var(--sun-2) 45%,var(--sun-3) 75%,var(--sun-2));
-       background-size:300% 300%;animation:sunshift 18s ease-in-out infinite}
-  header::after{content:'';position:absolute;top:0;bottom:0;left:50%;width:100vw;transform:translateX(-50%);
-       z-index:-1;background:linear-gradient(180deg,rgba(40,26,8,.30),rgba(40,26,8,.10))}
-  @media(prefers-reduced-motion:reduce){ header::before{animation:none} }
-  .tag{display:inline-block;background:transparent;color:var(--brand-light);border:1px solid var(--brand-light);
+  header{border-bottom:2px solid var(--brand);padding:24px 0 20px;margin-bottom:24px}
+  .tag{display:inline-block;background:transparent;color:var(--brand);border:1px solid var(--brand);
        font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.2em;
        text-transform:uppercase;padding:4px 12px;border-radius:3px}
-  h1{font-family:var(--font-heading);font-weight:600;font-size:clamp(22px,4vw,30px);color:var(--brand-light);margin:12px 0 4px}
-  .sub{font-size:14px;color:#FBEFDD;margin:0 0 14px}
-  .topbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:10px 0 0;font-size:13px;color:#FBEFDD}
-  .topbar a{color:var(--brand-light);text-decoration:none;font-weight:500}
-  .topbar a:hover{color:#fff;text-decoration:underline}
+  h1{font-family:var(--font-heading);font-weight:600;font-size:clamp(22px,4vw,30px);color:var(--ink);margin:12px 0 4px}
+  .sub{font-size:14px;color:var(--ink-soft);margin:0 0 14px}
+  .topbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:10px 0 0;font-size:13px;color:var(--ink-soft)}
+  .topbar a{color:var(--brand);text-decoration:none;font-weight:500}
+  .topbar a:hover{color:var(--brand-dk);text-decoration:underline}
 
-  /* 分頁：選中時是實心金褐色，不是前台那種淺色outline——後台用「填滿」標示「你在管理這個」 */
+  /* 分頁：選中時是很淺的金褐色底＋深字，色塊比前台再淺一點，仍然是「線＋淡色」不是實心填色 */
   .tabbar{display:flex;gap:8px;border-bottom:1px solid var(--rule);margin-bottom:22px;padding-bottom:14px;flex-wrap:wrap}
   .tabbtn{background:transparent;color:var(--ink-soft);border:1px solid var(--rule);
           border-radius:999px;padding:7px 16px;font-family:var(--font-heading);font-weight:600;
           font-size:14px;cursor:pointer}
   .tabbtn:hover:not(.on){background:var(--paper-2)}
-  .tabbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .tabbtn.on{background:color-mix(in srgb, var(--brand) 14%, transparent);color:var(--brand-dk);border-color:var(--brand)}
   .pane{display:none} .pane.on{display:block}
 
   /* 卡片：白底圓角加淺陰影，輸入框底色用前台的紙灰 */
@@ -88,16 +81,12 @@
   .q1row textarea{flex:1}
   .q1row button{padding:6px 10px;font-size:13px}
 
-  /* 登入畫面：整片會流動的暖陽漸層，標題金色 */
-  #gate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;
-        background:linear-gradient(120deg,var(--sun-1),var(--sun-2) 45%,var(--sun-3) 75%,var(--sun-2));
-        background-size:300% 300%;animation:sunshift 18s ease-in-out infinite}
-  #gate::before{content:'';position:absolute;inset:0;z-index:-1;
-        background:linear-gradient(180deg,rgba(40,26,8,.30),rgba(40,26,8,.10))}
-  @media(prefers-reduced-motion:reduce){ #gate{animation:none} }
+  /* 登入畫面：跟前台一樣的紙灰底，只用 outline 標籤跟文案分辨這是「管理端」 */
+  #gate{position:fixed;inset:0;background:var(--paper);z-index:9999;display:flex;
+        align-items:center;justify-content:center;padding:24px}
   #gate .box{max-width:380px;width:100%}
-  #gate h1{text-align:center;color:var(--brand-light)}
-  #gate .sub{text-align:center;color:#FBEFDD}
+  #gate h1{text-align:center}
+  #gate .sub{text-align:center}
   #gateForm .switcher{display:flex;gap:6px;justify-content:center;margin-top:14px;font-size:13px}
   #gateForm .switcher button{background:none;border:none;color:var(--brand);cursor:pointer;padding:2px;font-size:13px}
   .google-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;color:var(--ink);
