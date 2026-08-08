@@ -112,6 +112,7 @@ alter table public.profiles add column if not exists traits text default '';
 alter table public.profiles add column if not exists likes text default '';
 alter table public.profiles add column if not exists taboo text default '';
 alter table public.profiles add column if not exists health text default '';
+alter table public.profiles add column if not exists health_tags jsonb not null default '[]'::jsonb;
 alter table public.profiles add column if not exists health_when text not null default 'stage2';
 alter table public.profiles add column if not exists vet_note text default '';
 alter table public.profiles add column if not exists stars jsonb not null default '{}'::jsonb;

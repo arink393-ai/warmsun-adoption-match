@@ -240,8 +240,9 @@
     <input id="mLikes" placeholder="曬太陽, 看電影, 爬山">
     <label>禁忌事項（用逗號分隔）</label>
     <input id="mTaboo" placeholder="冷暴力, 情緒勒索, 長期忽視">
-    <label>健康告知（選填）</label>
-    <textarea id="mHealth" rows="3" placeholder="例：需要定期回診追蹤；壓力大時睡眠會比較差，偶爾需要多一點休息。"></textarea>
+    <label>健康告知（自願勾選，不強迫，一項都不勾也可以）</label>
+    <div class="row" id="mHealthTags" style="flex-wrap:wrap;gap:6px 16px"></div>
+    <textarea id="mHealth" rows="3" placeholder="其他補充說明（選填）：例如目前恢復狀況、就醫頻率、想讓對方知道的細節⋯⋯"></textarea>
     <label>健康告知什麼時候讓對方看到</label>
     <select id="mHealthWhen"></select>
     <label>主治獸醫備註（一句話，會放在病歷卡最下方）</label>
@@ -487,6 +488,7 @@ const SPECIES_LIST = [
 const SPECIES = {}, SPECIES_EMOJI = {};
 SPECIES_LIST.forEach(x => { SPECIES[x.k] = x.e + ' ' + x.n; SPECIES_EMOJI[x.k] = x.e; });
 const GENDER = {f:'女生', m:'男生', x:'不透露'};
+const pronoun = g => g === 'm' ? '他' : '她';
 const STAR_FIELDS = [
   {k:'warm',    label:'親人程度'},
   {k:'active',  label:'活動量'},
@@ -541,6 +543,12 @@ const INTEREST_OPTS = ['閱讀','電影／影集','旅行','健身／運動','�
 const PERSONALITY_OPTS = ['內向','外向','慢熱','理性','感性','幽默','務實','浪漫','獨立','顧家','樂觀','細心'];
 const HABITS_OPTS = ['抽菸','喝酒（社交場合）','喝酒（習慣性）','檳榔','賭博','經常夜生活'];
 const REQ_HABITS_OPTS = ['不能抽菸','不能習慣性飲酒','不能檳榔','不能賭博'];
+/* 健康告知：自願勾選，一項都不勾也可以送出，勾選內容全部由本人決定要不要公開 */
+const HEALTH_OPTS = [
+  '心血管疾病','糖尿病／高血壓／痛風','肝功能異常／B肝帶原','氣喘或呼吸道疾病',
+  '遺傳性疾病史','精神性疾病','早產兒','愛滋病','BMI超標','體脂肪過高','不孕','舊傷',
+  '已長期服藥或治療控制中'
+];
 /* 星等評分：五個 1-5 的下拉，存成 profiles.stars（jsonb） */
 function renderStars(){
   $('mStars').innerHTML = STAR_FIELDS.map(f => `
@@ -713,6 +721,7 @@ async function fillMe(){
   mGender.value = myProfile.gender||'f'; mBirth.value = myProfile.birth||'';
   mTraits.value = myProfile.traits||''; mLikes.value = myProfile.likes||''; mTaboo.value = myProfile.taboo||'';
   mHealth.value = myProfile.health||''; mHealthWhen.value = myProfile.health_when||'stage2';
+  setCheckGroup('mHealthTags', myProfile.health_tags);
   mVetNote.value = myProfile.vet_note||'';
   setStars(myProfile.stars);
   mAge.value = myProfile.age||''; mArea.value = myProfile.area||''; mJob.value = myProfile.job||'';
@@ -775,7 +784,8 @@ $('mSave').onclick = async () => {
     const patch = {
       name, kind: mKind.value, species: mSpecies.value, gender: mGender.value,
       birth: mBirth.value.trim(), traits: mTraits.value.trim(), likes: mLikes.value.trim(),
-      taboo: mTaboo.value.trim(), health: mHealth.value.trim(), health_when: mHealthWhen.value,
+      taboo: mTaboo.value.trim(), health: mHealth.value.trim(), health_tags: getCheckGroup('mHealthTags'),
+      health_when: mHealthWhen.value,
       vet_note: mVetNote.value.trim(), stars: getStars(),
       age: mAge.value.trim(), area: mArea.value.trim(), job: mJob.value.trim(),
       bio: mBio.value.trim(), wants: mWants.value.trim(), locked: mLocked.value.trim(),
@@ -940,7 +950,8 @@ async function renderBoard(){
     const birthOpen = !!(app && app.a1);
     /* 健康告知：由本人決定第幾階段揭露 */
     const when = p.health_when || 'stage2';
-    const healthOpen = p.health && (when === 'public'
+    const hasHealth = (Array.isArray(p.health_tags) && p.health_tags.length) || p.health;
+    const healthOpen = hasHealth && (when === 'public'
       || (when === 'stage1' && app && app.a1)
       || (when === 'stage2' && app && app.stage >= 2));
     return `<div class="card">
@@ -967,8 +978,10 @@ async function renderBoard(){
       ${p.likes  ? chartSec('最喜歡的事') + `<div>${chips(p.likes)}</div>` : ''}
       ${p.taboo  ? chartSec('禁忌事項') + `<div>${chips(p.taboo, true)}</div>` : ''}
       ${p.wants  ? chartSec('認養資格') + `<div class="bio">${esc(p.wants)}</div>` : ''}
-      ${healthOpen ? chartSec('健康告知') + `<div class="lock">${esc(p.health)}</div>` : ''}
-      ${(p.health && !healthOpen) ? chartSec('健康告知') + `<div class="lock">🔒 ${
+      ${healthOpen ? chartSec('健康告知') + `
+        ${(Array.isArray(p.health_tags) && p.health_tags.length) ? `<div>${chips(p.health_tags.join(','), true)}</div>` : ''}
+        ${p.health ? `<div class="lock">${esc(p.health)}</div>` : ''}` : ''}
+      ${(hasHealth && !healthOpen) ? chartSec('健康告知') + `<div class="lock">🔒 ${
         when === 'stage1' ? '完成第一階段申請後開放' : '通過第一階段、進入第二階段後開放'}</div>` : ''}
       ${p.vet_note ? chartSec('主治獸醫備註') + `<div class="lock">${esc(p.vet_note)}</div>` : ''}
       ${detailBlock(p)}
@@ -1111,16 +1124,55 @@ function showApplyForm(box, toId, to, q1){
       <p class="hint">第一階段書面審查。對方會讀到你的回答，決定是否進入第二階段。</p>
       <p class="hint">送出需要 <b>${APPLY_COST} 點掛號費</b>，目前餘額 ${myProfile ? myProfile.credits : 0} 點。</p>
       ${q1.map((q,i) => questionBlock(q, i, 'a1q')).join('')}
-      <div class="bar"><button id="sendApply">送出申請（${APPLY_COST} 點）</button>
+      <div class="bar"><button id="sendApply">下一步：領養切結書</button>
         <button class="ghost" id="cancelApply2">取消</button><span class="msg" id="applyMsg"></span></div>
     </fieldset>`;
   bindAnswerBank(box);
   $('cancelApply2').onclick = () => box.remove();
-  $('sendApply').onclick = async () => {
+  $('sendApply').onclick = () => {
     const ans = [...box.querySelectorAll('.a1q')].map(t => t.value.trim());
     if(ans.some(a => !a)){ flash('applyMsg','每一題都要回答'); return; }
     if(!isApproved(myProfile)){ flash('applyMsg','你的照片尚未通過審核，無法提出申請'); return; }
     if((myProfile.credits||0) < APPLY_COST){ flash('applyMsg','掛號費不足，請到「診療室」查看加值方式'); return; }
+    showAdoptionPledge(box, toId, to, q1, ans);
+  };
+}
+
+/* 第二頁：領養切結書，代名詞依對方的性別自動換成他／她 */
+function showAdoptionPledge(box, toId, to, q1, ans){
+  const p = pronoun(to.gender);
+  box.innerHTML = `
+    <fieldset><legend>向 ${esc(to.name)} 提出認養申請 — 領養切結書</legend>
+      <div class="lock">
+        <p style="font-weight:600">📝 領養切結書</p>
+        <p>本人已詳閱本病例及健康評估內容。<br>
+        本人了解${p}曾受過傷，因此可能比其他動物更需要耐心與理解。<br>
+        本人願意：</p>
+        <p>☑ 尊重${p}的界線。<br>
+        ☑ 在發生衝突時選擇溝通，而不是逃避<br>
+        ☑ 不因生病、情緒低落、人生低潮或外貌改變而任意棄養<br>
+        ☑ 不以愛之名限制${p}成長，也不以自由之名忽略${p}的感受<br>
+        ☑ 在能力範圍內，陪伴${p}一起慢慢變老。</p>
+        <p>⸻</p>
+        <p style="font-weight:600">🐾 領養宣言</p>
+        <p>請不要因為${p}懂事，就忘了${p}也需要被照顧。請不要因為${p}堅強，就忽略${p}也會受傷。
+        真正的認養，不是把${p}帶回家，而是在往後的每一天，都選擇不放開${p}的手。</p>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div><label>認養人（請填寫你的暱稱作為簽名）</label>
+          <input id="pledgeSigner" value="${esc(myProfile ? myProfile.name || '' : '')}"></div>
+        <div><label>認養日期</label><input value="${esc(new Date().toISOString().slice(0,10))}" disabled></div>
+        <div><label>獸醫核章</label><input value="🩺 暖陽動物之家 系統核章" disabled></div>
+      </div>
+      <div class="bar">
+        <button id="sendApplyFinal">簽署並送出申請（${APPLY_COST} 點）</button>
+        <button class="ghost" id="backApply">上一步</button>
+        <span class="msg" id="applyMsg"></span>
+      </div>
+    </fieldset>`;
+  $('backApply').onclick = () => showApplyForm(box, toId, to, q1);
+  $('sendApplyFinal').onclick = async () => {
+    if(!$('pledgeSigner').value.trim()){ flash('applyMsg','請在「認養人」欄位簽下你的暱稱'); return; }
     if(!confirm(`送出這份申請會扣 ${APPLY_COST} 點掛號費，確定嗎？`)) return;
     try{
       const app = await DB.applyTo(toId, ans, q1);
@@ -1732,6 +1784,7 @@ renderStars();
 renderCheckGroup('mInterests', INTEREST_OPTS);
 renderCheckGroup('mPersonality', PERSONALITY_OPTS);
 renderCheckGroup('mHabits', HABITS_OPTS);
+renderCheckGroup('mHealthTags', HEALTH_OPTS);
 renderCheckGroup('mReqHabits', REQ_HABITS_OPTS);
 initTabs();
 initCenter();
