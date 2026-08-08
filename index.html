@@ -2072,6 +2072,7 @@ async function renderAdminHome(){
       原因：${esc(r.why)}
       ${!r.done ? `<div class="bar">
           <button class="ghost mark" data-id="${r.id}">標記已處理</button>
+          <button class="ghost banFromReport" data-id="${r.target_id}" data-why="${esc(r.why)}">永久封鎖（停用登入）</button>
           <button class="ghost rmProf" data-id="${r.target_id}">移除該登記</button>
         </div>` : ''}
     </div>`).join('') : '<div class="empty">目前沒有檢舉。</div>';
@@ -2084,18 +2085,33 @@ async function renderAdminHome(){
   $('reportList').querySelectorAll('.mark').forEach(b => b.onclick = async () => {
     try{ await DB.adminMarkReportDone(b.dataset.id); renderAdminHome(); }catch(e){ alert(e.message || '操作失敗'); }
   });
+  $('reportList').querySelectorAll('.banFromReport').forEach(b => b.onclick = async () => {
+    if(!confirm('確定要永久封鎖這個帳號嗎？對方將無法再用同一帳號登入，但登記與紀錄會保留供之後查核。')) return;
+    const why = prompt('封鎖原因（會記錄在管理紀錄裡）', b.dataset.why || '');
+    if(why === null){ alert('已取消，尚未封鎖。'); return; }
+    if(!why.trim()){ alert('沒有填寫原因，尚未封鎖。'); return; }
+    try{ await DB.adminUserAction('suspend', b.dataset.id, why.trim()); renderAdminHome(); renderBoard(); }
+    catch(e){ alert(e.message || '操作失敗'); }
+  });
   $('reportList').querySelectorAll('.rmProf').forEach(b => b.onclick = async () => {
     if(!confirm('確定要永久刪除這個帳號嗎？相關配對資料也會刪除，且無法復原。')) return;
-    const why = prompt('請填寫刪除原因'); if(!why) return;
-    try{ await DB.adminUserAction('delete', b.dataset.id, why); renderAdminHome(); renderBoard(); }catch(e){ alert(e.message || '操作失敗'); }
+    const why = prompt('請填寫刪除原因');
+    if(why === null){ alert('已取消，尚未刪除。'); return; }
+    if(!why.trim()){ alert('沒有填寫原因，尚未刪除。'); return; }
+    try{ await DB.adminUserAction('delete', b.dataset.id, why.trim()); renderAdminHome(); renderBoard(); }catch(e){ alert(e.message || '操作失敗'); }
   });
   $('memberList').querySelectorAll('.memberAct').forEach(b => b.onclick = async () => {
     const action = b.dataset.action;
     if(action === 'delete' && !confirm('永久刪除後無法復原，確定繼續？')) return;
-    const why = action === 'restore' || action === 'posting_unlock' ? '' : prompt('請填寫處理原因');
-    if(action !== 'restore' && action !== 'posting_unlock' && !why) return;
-    try{ await DB.adminUserAction(action, b.dataset.id, why || ''); renderAdminHome(); renderBoard(); }
-    catch(e){ alert(e.message || '操作失敗'); }
+    if(action === 'suspend' && !confirm('確定要永久封鎖這個帳號嗎？對方將無法再用同一帳號登入。')) return;
+    const needsReason = action !== 'restore' && action !== 'posting_unlock';
+    const why = needsReason ? prompt('請填寫處理原因') : '';
+    if(needsReason){
+      if(why === null){ alert('已取消，尚未執行。'); return; }
+      if(!why.trim()){ alert('沒有填寫原因，尚未執行。'); return; }
+    }
+    try{ await DB.adminUserAction(action, b.dataset.id, (why || '').trim()); renderAdminHome(); renderBoard(); }
+    catch(e){ alert(e.message || '操作失敗（如果剛設定好管理後台，請確認已部署 admin-users 這支 Edge Function）'); }
   });
   $('tplMasterSave').onclick = async () => {
     const areas = [...document.querySelectorAll('.tplMasterText')];
