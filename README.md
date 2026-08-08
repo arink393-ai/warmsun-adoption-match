@@ -4,7 +4,8 @@
 想認識誰就提出認養申請，通過三階段審查（書面審查 → 價值觀評估 → 日常觀察）才會互相
 解鎖聯絡方式。
 
-- `index.html` — 公開配對站：登入／註冊、佈告欄（含檢舉）、**個人中心**（我的資料、我的收件匣、
+- `index.html` — 公開配對站：訪客可先看首頁、流程說明與隱私權，登入／註冊位於右上角；登入後可使用
+  佈告欄（含檢舉）、**個人中心**（我的資料、我的收件匣、
   我的申請、我的回覆範本、診療點數）、**管理後台**（只有 `is_admin` 帳號看得到：全站統計、
   檢舉處理、範本主檔管理、照片與驗證照審核台）、隱私權政策、流程說明。
   「我的資料」的自介欄位除了自由文字，還有一組結構化的選填欄位（年收入區間、婚姻狀態、
@@ -34,8 +35,9 @@
 ### 1. 建立 Supabase 專案
 1. 到 https://supabase.com 免費建立一個新專案。
 2. 左側 **SQL Editor** → New query，貼上整份 `supabase-schema.sql` 並執行。
-   這會建立 `profiles`、`applications` 兩張表，並開啟 RLS——**沒有登入的人完全看不到任何資料**，
-   已登入的人也只能看到／修改自己的登記資料，以及自己牽涉在內的申請。
+   這會建立 `profiles`、`applications` 兩張表，並開啟 RLS——訪客只能看到靜態公開頁，
+   **沒有登入的人完全讀不到會員與申請資料**；已登入的人也只能看到／修改自己的登記資料，
+   以及自己牽涉在內的申請。
 3. 左側 **Project Settings → API**，把「Project URL」與「anon public」金鑰
    貼進 `js/config.js` 對應的兩個欄位。
 
@@ -48,6 +50,8 @@
    `https://<你的帳號>.github.io/warmsun-adoption-match/`）加進
    Site URL 與 Redirect URLs。
 4. 完成後不用改任何程式碼，按鈕會自動生效。Email／密碼登入在此之前就能正常使用。
+   使用者從受保護分頁開啟 Google 登入時，網站會把原本的目的分頁暫存在同一分頁的
+   `sessionStorage`，OAuth 回站後再導回，不會一律跳到佈告欄。
 
 ### 3. 開啟 GitHub Pages
 Repo 設定 → **Settings → Pages** → Source 選「Deploy from a branch」→ 選 `main` 分支、

@@ -43,7 +43,8 @@
     return data ? data.user : null;
   }
   function onAuthChange(cb) {
-    sb.auth.onAuthStateChange((_event, session) => cb(session ? session.user : null));
+    // 一併把事件名稱交給頁面：TOKEN_REFRESHED 不該被當成一次新的登入導頁。
+    sb.auth.onAuthStateChange((event, session) => cb(session ? session.user : null, event));
   }
 
   // ── Profiles ──────────────────────────────────────────
