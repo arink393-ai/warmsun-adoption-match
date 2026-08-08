@@ -229,7 +229,7 @@ drop policy if exists "profiles_update_own"           on public.match_profiles;
 drop policy if exists "profiles_update_admin"         on public.match_profiles;
 drop policy if exists "profiles_delete_own"           on public.match_profiles;
 
--- 已登入的人看得到：審核通過的公開登記、自己的那一筆、以及管理員看全部（審核用）
+-- 原始會員列只開放本人與管理員；公開卡片一律走遮罩欄位的 RPC。
 create policy "profiles_select_visible"
   on public.match_profiles for select
   to authenticated
@@ -637,6 +637,10 @@ create index if not exists match_ai_requests_user_created_idx on public.match_ai
 alter table public.match_ai_requests enable row level security;
 
 alter table public.reports enable row level security;
+
+-- 同一個人對同一個目標，在還沒處理完之前不能重複檢舉（防止洗版把真正的檢舉埋掉）
+create unique index if not exists reports_one_open_per_pair
+  on public.reports(by_id, target_id) where not done;
 
 drop policy if exists "reports_insert_own"    on public.reports;
 drop policy if exists "reports_select_admin"  on public.reports;
@@ -1108,6 +1112,13 @@ begin
     where id = p_to and photo_status = 'approved' and verify_status = 'approved'
   ) then
     raise exception '對方尚未通過審核，暫時無法申請';
+  end if;
+  -- 只有 UI 隱藏了「已經申請過」的按鈕，直接呼叫這支函式沒有這層防護，
+  -- 會讓人可以繞過畫面對同一個人重複灌爆申請——這裡補上伺服器端檢查。
+  if exists (
+    select 1 from public.applications where from_user = auth.uid() and to_user = p_to
+  ) then
+    raise exception '已經申請過了';
   end if;
 
   select credits into v_bal from public.match_profiles where id = auth.uid() for update;

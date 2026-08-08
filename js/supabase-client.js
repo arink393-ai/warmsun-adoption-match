@@ -389,7 +389,10 @@
     const user = await getUser();
     if (!user) throw new Error('尚未登入');
     const { error } = await sb.from('reports').insert({ target_id: targetId, by_id: user.id, why });
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23505') throw new Error('你已經檢舉過這個人了，正在等待管理員處理');
+      throw error;
+    }
   }
   async function adminListReports() {
     const { data, error } = await sb.from('reports').select('*').order('created_at', { ascending: false });
