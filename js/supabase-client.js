@@ -231,6 +231,16 @@
     if (error) throw error;
     return data;
   }
+  // 一鍵通關：對方開放的話，付 10 點直接跳到第三階段互相解鎖
+  async function skipToUnlock(appId) {
+    const { data, error } = await sb.rpc('skip_to_unlock', { p_app_id: appId });
+    if (error) throw error;
+    return data;
+  }
+  // 收回逾期未花完的一鍵通關獎勵點數（登入後呼叫一次，best-effort）
+  async function settleBonusCredits() {
+    try { await sb.rpc('settle_bonus_credits'); } catch (e) { /* 沒有的話就算了，不影響登入 */ }
+  }
 
   // ── AI 輔助評分／照片初審（選用，需部署 supabase/functions/claude） ──
   function hasClaudeProxy() {
@@ -295,6 +305,24 @@
   async function deleteVerifyPhoto(userId) {
     const { error } = await sb.storage.from('verify').remove([`${userId}/verify.jpg`]);
     if (error) throw error;
+  }
+
+  // ── 加碼照片（第一階段口罩照/側拍照、第二階段生活照）：私密 bucket，
+  //    能不能讀由 storage policy 依申請進度判斷，這裡只負責上傳與拿簽名網址 ──
+  async function uploadStagePhoto(stage, dataUrl) {
+    const user = await getUser();
+    if (!user) throw new Error('尚未登入');
+    const path = `${user.id}/stage${stage}.jpg`;
+    const { error } = await sb.storage.from('stage-photos')
+      .upload(path, dataUrlToBlob(dataUrl), { upsert: true, contentType: 'image/jpeg' });
+    if (error) throw error;
+    return path;
+  }
+  async function getStagePhotoSignedUrl(ownerId, stage) {
+    const { data, error } = await sb.storage.from('stage-photos')
+      .createSignedUrl(`${ownerId}/stage${stage}.jpg`, 120);
+    if (error) throw error;
+    return data.signedUrl;
   }
 
   // ── 申請人的私人筆記（獨立資料表，只有寫的人讀得到，對方查不到） ──
@@ -372,9 +400,11 @@
     listOutbox, listInbox, findApplicationTo, updateApplication,
     applyTo, refundApplication, adminAddCredits,
     unlockA1, sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
+    skipToUnlock, settleBonusCredits,
     getPrivateNote, savePrivateNote,
     hasClaudeProxy, askClaude, askClaudeRaw, spendCreditFor,
     avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto,
+    uploadStagePhoto, getStagePhotoSignedUrl,
     submitReport, adminListReports, adminMarkReportDone,
     getTemplateMaster, adminSaveTemplateMaster,
     ownerKvGet, ownerKvSet, ownerKvDelete

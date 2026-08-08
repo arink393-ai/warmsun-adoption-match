@@ -119,6 +119,18 @@ alter table public.profiles add column if not exists stars jsonb not null defaul
 -- 我的答題紀錄：申請人送出過的答案，下次遇到相似題目可以一鍵帶入再修改
 alter table public.profiles add column if not exists answer_bank jsonb not null default '[]'::jsonb;
 
+-- 加碼照片：第一階段（口罩照／側拍照）、第二階段（生活照），登記人各上傳一張，
+-- 讓通過該階段審查的申請人可以看到——只是「有沒有上傳」的旗標，實際檔案存在
+-- storage 的 stage-photos bucket（私有），能不能讀由 storage policy 依申請進度判斷。
+alter table public.profiles add column if not exists stage1_photo boolean not null default false;
+alter table public.profiles add column if not exists stage2_photo boolean not null default false;
+
+-- 一鍵通關：登記人自己選擇要不要開放，開放後申請人可以付點數直接跳到最終解鎖，
+-- 免除三個階段的問答與審核。bonus_credits 記錄「哪一筆獎勵點數、什麼時候到期」，
+-- 用來在 14 天內沒花完時收回，一併鎖進下面的 guard trigger，不能自己改。
+alter table public.profiles add column if not exists allow_skip boolean not null default false;
+alter table public.profiles add column if not exists bonus_credits jsonb not null default '[]'::jsonb;
+
 -- 物種從「只有貓／狗」放寬成 13 種，性別改用獨立的 gender 欄位表示。
 -- 先移除舊的 check 限制，再依現有資料把 gender 補上（貓→女生、狗→男生，符合舊版的隱含規則）。
 alter table public.profiles drop constraint if exists profiles_species_check;
@@ -246,6 +258,8 @@ alter table public.applications add column if not exists vet text;
 alter table public.applications add column if not exists vet_at timestamptz;
 alter table public.applications add column if not exists paid int not null default 0;
 alter table public.applications add column if not exists refunded boolean not null default false;
+-- 一鍵通關：跳過三階段審核直接解鎖時標記，讓畫面知道這筆沒有真的作答
+alter table public.applications add column if not exists skipped boolean not null default false;
 
 alter table public.applications enable row level security;
 
@@ -372,6 +386,44 @@ create policy "verify_admin_delete"
   on storage.objects for delete
   to authenticated
   using (bucket_id = 'verify' and public.is_admin(auth.uid()));
+
+-- 加碼照片（stage-photos）：私密 bucket，路徑統一用 {user_id}/stage1.jpg、{user_id}/stage2.jpg。
+-- 本人／管理員隨時看得到；其他人只有在「自己送給這個人的申請」進度夠了才看得到——
+-- 第一階段照片要進到第二階段（stage >= 2）才看得到，第二階段照片要進到第三階段（stage >= 3）。
+insert into storage.buckets (id, name, public)
+  values ('stage-photos', 'stage-photos', false)
+  on conflict (id) do nothing;
+
+drop policy if exists "stage_photos_owner_all"   on storage.objects;
+drop policy if exists "stage_photos_admin_read"  on storage.objects;
+drop policy if exists "stage_photos_unlock_read" on storage.objects;
+
+create policy "stage_photos_owner_all"
+  on storage.objects for all
+  to authenticated
+  using (bucket_id = 'stage-photos' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'stage-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "stage_photos_admin_read"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'stage-photos' and public.is_admin(auth.uid()));
+
+create policy "stage_photos_unlock_read"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'stage-photos'
+    and exists (
+      select 1 from public.applications a
+      where a.to_user = (storage.foldername(name))[1]::uuid
+        and a.from_user = auth.uid()
+        and (
+          (name like '%/stage1%' and a.stage >= 2)
+          or (name like '%/stage2%' and a.stage >= 3)
+        )
+    )
+  );
 
 -- ============================================================
 -- 6) reports：檢舉（任何人都能送出，只有管理員看得到／能處理）
@@ -526,6 +578,7 @@ begin
     new.credit_log  := old.credit_log;
     new.bonus_given := old.bonus_given;
     new.verify_deleted_at := old.verify_deleted_at;
+    new.bonus_credits := old.bonus_credits;
     if new.photo_status = 'approved' and old.photo_status is distinct from 'approved' then
       new.photo_status := old.photo_status; new.photo_reason := old.photo_reason;
     end if;
@@ -562,6 +615,7 @@ returns public.profiles
 language plpgsql security definer set search_path = public as $$
 declare v_cost int; v_label text; v_bal int; v_row public.profiles;
 begin
+  perform public.settle_bonus_credits(auth.uid());
   case p_action
     when 'vet_review'  then v_cost := 1; v_label := '診療　主治獸醫評估';
     when 'deep_review' then v_cost := 3; v_label := '進階診斷　客製第二階段問題';
@@ -795,6 +849,7 @@ begin
     new.consent_at  := old.consent_at;
     new.unlock_from := old.unlock_from;
     new.unlock_to   := old.unlock_to;
+    new.skipped     := old.skipped;
   end if;
   return new;
 end $$;
@@ -833,6 +888,7 @@ declare
   v_cost constant int := 1;   -- 掛號費，價格由伺服器決定
   v_bal int; v_app public.applications; v_entries jsonb;
 begin
+  perform public.settle_bonus_credits(auth.uid());
   if p_to = auth.uid() then raise exception '不能對自己提出申請'; end if;
   if not exists (
     select 1 from public.profiles
@@ -877,6 +933,7 @@ declare
   v_cost constant int := 1;
   v_app public.applications; v_bal int;
 begin
+  perform public.settle_bonus_credits(auth.uid());
   select * into v_app from public.applications where id = p_app_id for update;
   if v_app is null then raise exception '找不到這筆申請'; end if;
   if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
@@ -907,6 +964,7 @@ declare
   v_cost constant int := 2;
   v_app public.applications; v_bal int;
 begin
+  perform public.settle_bonus_credits(auth.uid());
   select * into v_app from public.applications where id = p_app_id for update;
   if v_app is null then raise exception '找不到這筆申請'; end if;
   if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
@@ -966,6 +1024,7 @@ declare
   v_cost constant int := 3;
   v_app public.applications; v_bal int;
 begin
+  perform public.settle_bonus_credits(auth.uid());
   select * into v_app from public.applications where id = p_app_id for update;
   if v_app is null then raise exception '找不到這筆申請'; end if;
   if v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
@@ -1003,6 +1062,96 @@ begin
   perform set_config('app.bypass_app_guard', 'on', true);
   update public.applications set unlock_to = true where id = p_app_id returning * into v_app;
   perform set_config('app.bypass_app_guard', '', true);
+  return v_app;
+end $$;
+
+-- 把逾期未花完的一鍵通關獎勵點數收回。因為沒有排程工作，改成「有需要就順手結算」：
+-- 在會動到點數的安全函式最前面呼叫一次，前端登入後也會呼叫一次，盡量不要讓人
+-- 忘記用掉的點數一直掛在帳上。同一筆獎勵可能還沒到期，就繼續留著。
+create or replace function public.settle_bonus_credits(p_uid uuid default auth.uid())
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_bank jsonb; v_entry jsonb; v_keep jsonb := '[]'::jsonb;
+  v_credits int; v_remaining int; v_deduct int; v_total_deduct int := 0;
+begin
+  if p_uid is null then return; end if;
+  select bonus_credits, credits into v_bank, v_credits from public.profiles where id = p_uid for update;
+  if v_bank is null or jsonb_array_length(v_bank) = 0 then return; end if;
+
+  v_remaining := coalesce(v_credits, 0);
+  for v_entry in select * from jsonb_array_elements(v_bank) loop
+    if (v_entry->>'expires_at')::timestamptz <= now() then
+      v_deduct := least(v_remaining, (v_entry->>'amount')::int);
+      v_remaining := v_remaining - v_deduct;
+      v_total_deduct := v_total_deduct + v_deduct;
+    else
+      v_keep := v_keep || jsonb_build_array(v_entry);
+    end if;
+  end loop;
+
+  if jsonb_array_length(v_keep) < jsonb_array_length(v_bank) then
+    perform set_config('app.bypass_profile_guard', 'on', true);
+    update public.profiles set
+      bonus_credits = v_keep,
+      credits = credits - v_total_deduct,
+      credit_log = case when v_total_deduct > 0
+        then public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '一鍵通關獎勵點數逾期收回', 'd', -v_total_deduct))
+        else credit_log end
+    where id = p_uid;
+    perform set_config('app.bypass_profile_guard', '', true);
+  end if;
+end $$;
+
+-- 一鍵通關：對方開放的話，申請人可以付 10 點直接跳到第三階段、雙方互相解鎖，
+-- 不用照走問卷與人工審核。這 10 點會加進登記人的帳上，但標記 14 天後到期，
+-- 到期沒花完的部分會被上面的 settle_bonus_credits 收回。
+create or replace function public.skip_to_unlock(p_app_id uuid)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare
+  v_cost constant int := 10;
+  v_app public.applications; v_owner public.profiles; v_bal int;
+begin
+  perform public.settle_bonus_credits(auth.uid());
+
+  select * into v_app from public.applications where id = p_app_id for update;
+  if v_app is null then raise exception '找不到這筆申請'; end if;
+  if v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
+  if v_app.status <> 'open' then raise exception '這筆申請已經結束了'; end if;
+  if v_app.stage >= 3 then raise exception '這筆申請已經在第三階段了'; end if;
+
+  select * into v_owner from public.profiles where id = v_app.to_user for update;
+  if v_owner is null or not coalesce(v_owner.allow_skip, false) then
+    raise exception '對方沒有開放一鍵通關';
+  end if;
+
+  select credits into v_bal from public.profiles where id = auth.uid();
+  if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
+
+  perform set_config('app.bypass_app_guard', 'on', true);
+  update public.applications set
+    stage = 3, a1_unlocked = true, stage2_paid = true,
+    unlock_from = true, unlock_to = true,
+    consent_at = coalesce(consent_at, now()),
+    skipped = true
+  where id = p_app_id returning * into v_app;
+  perform set_config('app.bypass_app_guard', '', true);
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles set
+    credits = credits - v_cost,
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '一鍵通關　跳過審查流程', 'd', -v_cost))
+  where id = auth.uid();
+
+  update public.profiles set
+    credits = credits + v_cost,
+    bonus_credits = coalesce(bonus_credits, '[]'::jsonb)
+      || jsonb_build_array(jsonb_build_object('amount', v_cost, 'granted_at', now(), 'expires_at', now() + interval '14 days')),
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '有人使用一鍵通關　獎勵點數（14 天內要花完）', 'd', v_cost))
+  where id = v_app.to_user;
+  perform set_config('app.bypass_profile_guard', '', true);
+
   return v_app;
 end $$;
 

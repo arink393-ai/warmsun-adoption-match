@@ -7,7 +7,8 @@
 
 <style>
   /* 跟前台（index.html）與 dashboard.html 同一套視覺語言：紙灰底、金褐主色、Cormorant Garamond＋Lora。
-     後台的差異只有三處：深墨頂欄、分頁選中用深墨、登入畫面整片深墨。
+     後台的差異只有三處，改用比較符合暖陽形象的動態金色漸層，不是冷冰冰的深色：
+     會慢慢流動的暖陽漸層頂欄、分頁選中用實心金褐色、登入畫面整片暖陽漸層。
      .stamp（面談紀錄的旋轉紅色印章）刻意保留原樣沒有動——蓋章本來就該是紅的。 */
   :root{
     --paper:#F3F2F2;        /* 跟前台一致的紙灰底 */
@@ -19,8 +20,8 @@
     --tab:#A9791F;          /* 黃燈／標籤 */
     --teal:#A06F24;         /* 主色改成前台的金褐（沿用舊變數名稱，避免大動全域） */
     --brand-tint:#F5EAD2;
-    --brand-light:#D9B872;  /* 深墨底上用的淺金字色 */
-    --ink-deep:#2D2B2B;     /* 深墨頂欄／登入畫面 */
+    --brand-light:#FFF6E6;  /* 暖陽漸層上用的米白字色 */
+    --sun-1:#8A5A1A; --sun-2:#D19A42; --sun-3:#F2CE93;  /* 暖陽頂欄／登入畫面的漸層色 */
     --ok:#4B7A4F;           /* 綠燈 */
     --warn:#A9791F;         /* 黃燈 */
     --bad:#A23C2E;          /* 紅燈（一般錯誤用，跟 --stamp 分開） */
@@ -35,12 +36,19 @@
     font-family:var(--font-body);
     font-size:16px; line-height:1.75;
     padding:0 0 64px;
+    overflow-x:hidden;
   }
   .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
 
-  /* ── 深墨頂欄：用 box-shadow 撐滿整個視窗寬度，內容仍然跟著 .wrap 置中 ── */
-  header{background:var(--ink-deep);box-shadow:0 0 0 100vmax var(--ink-deep);clip-path:inset(0 -100vmax);
-         border-bottom:3px solid var(--teal);margin-bottom:26px;padding:26px 0 22px;position:relative}
+  /* ── 暖陽頂欄：慢慢流動的金色漸層撐滿整個視窗寬度，內容仍然跟著 .wrap 置中 ── */
+  @keyframes sunshift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+  header{position:relative;z-index:0;border-bottom:3px solid var(--sun-3);margin-bottom:26px;padding:26px 0 22px}
+  header::before{content:'';position:absolute;top:0;bottom:0;left:50%;width:100vw;transform:translateX(-50%);
+       z-index:-2;background:linear-gradient(120deg,var(--sun-1),var(--sun-2) 45%,var(--sun-3) 75%,var(--sun-2));
+       background-size:300% 300%;animation:sunshift 18s ease-in-out infinite}
+  header::after{content:'';position:absolute;top:0;bottom:0;left:50%;width:100vw;transform:translateX(-50%);
+       z-index:-1;background:linear-gradient(180deg,rgba(40,26,8,.30),rgba(40,26,8,.10))}
+  @media(prefers-reduced-motion:reduce){ header::before{animation:none} }
   .tab{
     display:inline-block;background:transparent;color:var(--brand-light);border:1px solid var(--brand-light);
     font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.2em;text-transform:uppercase;
@@ -48,7 +56,7 @@
   }
   h1{font-family:var(--font-heading);font-weight:600;color:var(--brand-light);font-size:clamp(24px,4vw,34px);
      margin:12px 0 4px;letter-spacing:-.01em}
-  .sub{font-family:var(--font-body);font-size:14px;color:#C9C4BC;
+  .sub{font-family:var(--font-body);font-size:14px;color:#FBEFDD;
        margin:0 0 14px}
 
   /* ── 版面 ── */
@@ -147,7 +155,7 @@
           border-radius:999px;padding:7px 15px;font-size:14px;letter-spacing:.02em;
           cursor:pointer;font-weight:400}
   .tabbtn:hover{background:var(--paper-2);color:var(--ink);border-color:var(--rule)}
-  .tabbtn.on{background:var(--ink-deep);color:var(--brand-light);border-color:var(--ink-deep);font-weight:600}
+  .tabbtn.on{background:var(--teal);color:#fff;border-color:var(--teal);font-weight:600}
   .bcard{background:#fff;border:1px solid var(--rule);border-left:4px solid var(--rule);
          border-radius:6px;padding:12px 15px;margin-top:12px}
   .bhead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
@@ -168,24 +176,29 @@
   #histSearch{font-size:14px;padding:7px 10px;margin-bottom:6px}
   .saved{font-family:var(--font-body);font-size:12px;color:var(--teal)}
 
-  /* 登入畫面：整片深墨，輸入框跟按鈕另外調成在深色背景上看得清楚 */
+  /* 登入畫面：整片會流動的暖陽漸層，輸入框跟按鈕另外調成在漸層背景上看得清楚 */
+  #gate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;
+        background:linear-gradient(120deg,var(--sun-1),var(--sun-2) 45%,var(--sun-3) 75%,var(--sun-2));
+        background-size:300% 300%;animation:sunshift 18s ease-in-out infinite}
+  #gate::before{content:'';position:absolute;inset:0;z-index:-1;
+        background:linear-gradient(180deg,rgba(40,26,8,.30),rgba(40,26,8,.10))}
+  @media(prefers-reduced-motion:reduce){ #gate{animation:none} }
   #gate input{background:#fff}
   #gate button{color:var(--brand-light);border-color:var(--brand-light)}
-  #gate button:hover{background:rgba(217,184,114,.15)}
+  #gate button:hover{background:rgba(255,246,230,.15)}
 </style>
 
-<div id="gate" style="position:fixed;inset:0;background:var(--ink-deep);z-index:9999;
-     display:flex;align-items:center;justify-content:center;padding:24px">
+<div id="gate">
   <div style="max-width:380px;width:100%;text-align:center">
     <div style="font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.2em;
          color:var(--brand-light);border:1px solid var(--brand-light);display:inline-block;padding:4px 14px;border-radius:3px;text-transform:uppercase">STAFF ONLY</div>
     <h1 style="font-family:var(--font-heading);font-weight:600;color:var(--brand-light);font-size:26px;margin:12px 0 6px">暖陽動物之家</h1>
-    <p class="hint" id="gateHint" style="margin:0 0 18px;color:#C9C4BC">管理端　請輸入通行碼</p>
+    <p class="hint" id="gateHint" style="margin:0 0 18px;color:#FBEFDD">管理端　請輸入通行碼</p>
     <input id="gateEmail" type="email" placeholder="Email" autocomplete="username" style="margin-bottom:8px">
     <input id="gateInput" type="password" placeholder="密碼" autocomplete="current-password">
     <div style="margin-top:12px"><button id="gateGo" style="width:100%">登入</button></div>
-    <p class="hint" id="gateMsg" style="min-height:20px;margin-top:10px;color:#C9C4BC"></p>
-    <p class="hint" style="margin-top:20px;font-size:12px;line-height:1.7;color:#9C968D">
+    <p class="hint" id="gateMsg" style="min-height:20px;margin-top:10px;color:#FBEFDD"></p>
+    <p class="hint" style="margin-top:20px;font-size:12px;line-height:1.7;color:#F0DFC4">
       這個工具只綁定站長本人的會員帳號，其他帳號登入也無法使用。</p>
   </div>
 </div>
