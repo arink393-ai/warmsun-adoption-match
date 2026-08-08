@@ -21,9 +21,10 @@
 create extension if not exists "pgcrypto";
 
 -- ============================================================
--- 1) profiles：每個帳號一筆，公開登記資料
+-- 1) match_profiles：配對系統專用會員資料
+-- 注意：不要與同一 Supabase 專案內其他產品的 public.profiles 共用。
 -- ============================================================
-create table if not exists public.profiles (
+create table if not exists public.match_profiles (
   id          uuid primary key references auth.users(id) on delete cascade,
   name        text not null default '',
   kind        text not null default '' check (kind in ('', 'pet', 'keeper')),
@@ -32,6 +33,9 @@ create table if not exists public.profiles (
   age         text default '',
   area        text default '',
   job         text default '',
+  height_cm   smallint,
+  weight_kg   numeric(5,1),
+  show_weight boolean not null default false,
   bio         text default '',
   wants       text default '',
   locked      text default '',       -- 第三階段才會顯示給對方的日常觀察資訊
@@ -42,6 +46,9 @@ create table if not exists public.profiles (
   credit_log  jsonb not null default '[]'::jsonb, -- 點數異動紀錄
   photo_status text not null default 'none' check (photo_status in ('none','checking','pending','approved','rejected')),
   photo_reason text default '',
+  avatar_kind text not null default 'real' check (avatar_kind in ('real','ai')),
+  ai_likeness_attested boolean not null default false,
+  photo_review_due_at timestamptz,
   verify_status text not null default 'none' check (verify_status in ('none','pending','approved','rejected')),
   verify_reason text default '',
   verify_task jsonb,                   -- {gesture, code}：驗證照要比的手勢與紙條代碼
@@ -50,6 +57,11 @@ create table if not exists public.profiles (
   consent_at  timestamptz,
   bonus_given boolean not null default false,  -- 完成登記＋照片審核通過的獎勵點數是否已發過
   is_admin    boolean not null default false,  -- 審核台權限；只能自己去 Table Editor 手動打勾給信任帳號
+  account_status text not null default 'active' check (account_status in ('active','suspended','deleted')),
+  posting_locked boolean not null default false,
+  moderation_reason text default '',
+  moderated_at timestamptz,
+  moderated_by uuid references auth.users(id) on delete set null,
   -- 詳細資料（選填，會公開）
   income      text default '',
   marital     text default '',
@@ -77,157 +89,183 @@ create table if not exists public.profiles (
 
 -- 若資料表已存在（舊版本先執行過這份腳本，或當初建表沒有完整跑完），補齊所有欄位。
 -- 每一行都獨立、彼此不依賴，就算表本來殘缺不全，這裡也會全部補齊。
-alter table public.profiles add column if not exists name text not null default '';
-alter table public.profiles add column if not exists kind text not null default '';
-alter table public.profiles add column if not exists species text not null default '';
-alter table public.profiles add column if not exists age text default '';
-alter table public.profiles add column if not exists area text default '';
-alter table public.profiles add column if not exists job text default '';
-alter table public.profiles add column if not exists bio text default '';
-alter table public.profiles add column if not exists wants text default '';
-alter table public.profiles add column if not exists locked text default '';
-alter table public.profiles add column if not exists q1 jsonb;
-alter table public.profiles add column if not exists q2_bank jsonb;
-alter table public.profiles add column if not exists canned jsonb;
-alter table public.profiles add column if not exists created_at timestamptz default now();
-alter table public.profiles add column if not exists updated_at timestamptz default now();
-alter table public.profiles add column if not exists credits int not null default 5;
-alter table public.profiles add column if not exists credit_log jsonb not null default '[]'::jsonb;
-alter table public.profiles alter column credits set default 5;
-alter table public.profiles add column if not exists photo_status text not null default 'none';
-alter table public.profiles add column if not exists photo_reason text default '';
-alter table public.profiles add column if not exists verify_status text not null default 'none';
-alter table public.profiles add column if not exists verify_reason text default '';
-alter table public.profiles add column if not exists verify_task jsonb;
-alter table public.profiles add column if not exists verify_deleted_at timestamptz;
-alter table public.profiles add column if not exists consent boolean not null default false;
-alter table public.profiles add column if not exists consent_at timestamptz;
-alter table public.profiles add column if not exists bonus_given boolean not null default false;
-alter table public.profiles add column if not exists is_admin boolean not null default false;
+alter table public.match_profiles add column if not exists name text not null default '';
+alter table public.match_profiles add column if not exists kind text not null default '';
+alter table public.match_profiles add column if not exists species text not null default '';
+alter table public.match_profiles add column if not exists age text default '';
+alter table public.match_profiles add column if not exists area text default '';
+alter table public.match_profiles add column if not exists job text default '';
+alter table public.match_profiles add column if not exists height_cm smallint;
+alter table public.match_profiles add column if not exists weight_kg numeric(5,1);
+alter table public.match_profiles add column if not exists show_weight boolean not null default false;
+alter table public.match_profiles add column if not exists bio text default '';
+alter table public.match_profiles add column if not exists wants text default '';
+alter table public.match_profiles add column if not exists locked text default '';
+alter table public.match_profiles add column if not exists q1 jsonb;
+alter table public.match_profiles add column if not exists q2_bank jsonb;
+alter table public.match_profiles add column if not exists canned jsonb;
+alter table public.match_profiles add column if not exists created_at timestamptz default now();
+alter table public.match_profiles add column if not exists updated_at timestamptz default now();
+alter table public.match_profiles add column if not exists credits int not null default 5;
+alter table public.match_profiles add column if not exists credit_log jsonb not null default '[]'::jsonb;
+alter table public.match_profiles alter column credits set default 5;
+alter table public.match_profiles add column if not exists photo_status text not null default 'none';
+alter table public.match_profiles add column if not exists photo_reason text default '';
+alter table public.match_profiles add column if not exists avatar_kind text not null default 'real';
+alter table public.match_profiles add column if not exists ai_likeness_attested boolean not null default false;
+alter table public.match_profiles add column if not exists photo_review_due_at timestamptz;
+alter table public.match_profiles add column if not exists verify_status text not null default 'none';
+alter table public.match_profiles add column if not exists verify_reason text default '';
+alter table public.match_profiles add column if not exists verify_task jsonb;
+alter table public.match_profiles add column if not exists verify_deleted_at timestamptz;
+alter table public.match_profiles add column if not exists consent boolean not null default false;
+alter table public.match_profiles add column if not exists consent_at timestamptz;
+alter table public.match_profiles add column if not exists bonus_given boolean not null default false;
+alter table public.match_profiles add column if not exists is_admin boolean not null default false;
+alter table public.match_profiles add column if not exists account_status text not null default 'active';
+alter table public.match_profiles add column if not exists posting_locked boolean not null default false;
+alter table public.match_profiles add column if not exists moderation_reason text default '';
+alter table public.match_profiles add column if not exists moderated_at timestamptz;
+alter table public.match_profiles add column if not exists moderated_by uuid references auth.users(id) on delete set null;
+
+alter table public.match_profiles drop constraint if exists match_profiles_height_cm_check;
+alter table public.match_profiles add constraint match_profiles_height_cm_check
+  check (height_cm is null or height_cm between 100 and 230);
+alter table public.match_profiles drop constraint if exists match_profiles_weight_kg_check;
+alter table public.match_profiles add constraint match_profiles_weight_kg_check
+  check (weight_kg is null or weight_kg between 25 and 350);
+alter table public.match_profiles drop constraint if exists match_profiles_avatar_kind_check;
+alter table public.match_profiles add constraint match_profiles_avatar_kind_check
+  check (avatar_kind in ('real','ai'));
+alter table public.match_profiles drop constraint if exists match_profiles_account_status_check;
+alter table public.match_profiles add constraint match_profiles_account_status_check
+  check (account_status in ('active','suspended','deleted'));
 
 -- 病歷卡欄位（物種擴充、性別獨立、星等評分、禁忌、健康告知、獸醫備註）
-alter table public.profiles add column if not exists gender text not null default 'f';
-alter table public.profiles add column if not exists birth text default '';
-alter table public.profiles add column if not exists traits text default '';
-alter table public.profiles add column if not exists likes text default '';
-alter table public.profiles add column if not exists taboo text default '';
-alter table public.profiles add column if not exists health text default '';
-alter table public.profiles add column if not exists health_tags jsonb not null default '[]'::jsonb;
-alter table public.profiles add column if not exists health_when text not null default 'stage2';
-alter table public.profiles add column if not exists vet_note text default '';
-alter table public.profiles add column if not exists stars jsonb not null default '{}'::jsonb;
+alter table public.match_profiles add column if not exists gender text not null default 'f';
+alter table public.match_profiles add column if not exists birth text default '';
+alter table public.match_profiles add column if not exists traits text default '';
+alter table public.match_profiles add column if not exists likes text default '';
+alter table public.match_profiles add column if not exists taboo text default '';
+alter table public.match_profiles add column if not exists health text default '';
+alter table public.match_profiles add column if not exists health_tags jsonb not null default '[]'::jsonb;
+alter table public.match_profiles add column if not exists health_when text not null default 'stage2';
+alter table public.match_profiles add column if not exists vet_note text default '';
+alter table public.match_profiles add column if not exists stars jsonb not null default '{}'::jsonb;
 -- 我的答題紀錄：申請人送出過的答案，下次遇到相似題目可以一鍵帶入再修改
-alter table public.profiles add column if not exists answer_bank jsonb not null default '[]'::jsonb;
+alter table public.match_profiles add column if not exists answer_bank jsonb not null default '[]'::jsonb;
 
 -- 加碼照片：第一階段（口罩照／側拍照）、第二階段（生活照），登記人各上傳一張，
 -- 讓通過該階段審查的申請人可以看到——只是「有沒有上傳」的旗標，實際檔案存在
 -- storage 的 stage-photos bucket（私有），能不能讀由 storage policy 依申請進度判斷。
-alter table public.profiles add column if not exists stage1_photo boolean not null default false;
-alter table public.profiles add column if not exists stage2_photo boolean not null default false;
+alter table public.match_profiles add column if not exists stage1_photo boolean not null default false;
+alter table public.match_profiles add column if not exists stage2_photo boolean not null default false;
 
 -- 一鍵通關：登記人自己選擇要不要開放，開放後申請人可以付點數直接跳到最終解鎖，
 -- 免除三個階段的問答與審核。bonus_credits 記錄「哪一筆獎勵點數、什麼時候到期」，
 -- 用來在 14 天內沒花完時收回，一併鎖進下面的 guard trigger，不能自己改。
-alter table public.profiles add column if not exists allow_skip boolean not null default false;
-alter table public.profiles add column if not exists bonus_credits jsonb not null default '[]'::jsonb;
-
--- 身高／體重：身高幾乎不會變，列為必填；體重可能透過各種方式改變，維持選填，
--- 兩者都是本人自願公開的資料，不涉及審核或付費，直接跟其他自介欄位一起存。
-alter table public.profiles add column if not exists height text default '';
-alter table public.profiles add column if not exists weight text default '';
-
--- 停權：管理員專用，停權後這個人的登記會從佈告欄消失（也不能再被提出新申請），
--- 但登入後還看得到自己的帳號跟停權原因，不是整個帳號憑空消失。跟 is_admin／credits
--- 一樣鎖進下面的 guard trigger，本人不能自己改自己的停權狀態。
-alter table public.profiles add column if not exists banned boolean not null default false;
-alter table public.profiles add column if not exists ban_reason text default '';
-
--- 大頭照是否為 AI 生成：本人自願勾選誠實申報，AI 生成的照片審核會比較久（見
--- README），需要人工用肉眼核對「是否跟真人相似度夠高」，這裡沒有辦法用程式自動判斷，
--- 純粹是流程上的分類旗標。
-alter table public.profiles add column if not exists photo_is_ai boolean not null default false;
+alter table public.match_profiles add column if not exists allow_skip boolean not null default false;
+alter table public.match_profiles add column if not exists bonus_credits jsonb not null default '[]'::jsonb;
 
 -- 物種從「只有貓／狗」放寬成 13 種，性別改用獨立的 gender 欄位表示。
 -- 先移除舊的 check 限制，再依現有資料把 gender 補上（貓→女生、狗→男生，符合舊版的隱含規則）。
-alter table public.profiles drop constraint if exists profiles_species_check;
-update public.profiles set gender = case when species = 'dog' then 'm' else 'f' end
+alter table public.match_profiles drop constraint if exists profiles_species_check;
+update public.match_profiles set gender = case when species = 'dog' then 'm' else 'f' end
   where gender is null or gender = '';
 
 -- 詳細資料（選填，會公開）——自介的結構化欄位
-alter table public.profiles add column if not exists income text default '';
-alter table public.profiles add column if not exists marital text default '';
-alter table public.profiles add column if not exists has_kids text default '';
-alter table public.profiles add column if not exists military text default '';
-alter table public.profiles add column if not exists living text default '';
-alter table public.profiles add column if not exists debt text default '';
-alter table public.profiles add column if not exists relationship_goal text default '';
-alter table public.profiles add column if not exists kids_plan text default '';
-alter table public.profiles add column if not exists mbti text default '';
-alter table public.profiles add column if not exists work_hours text default '';
-alter table public.profiles add column if not exists interests jsonb not null default '[]'::jsonb;
-alter table public.profiles add column if not exists personality jsonb not null default '[]'::jsonb;
-alter table public.profiles add column if not exists habits jsonb not null default '[]'::jsonb;
-alter table public.profiles add column if not exists habits_other text default '';
+alter table public.match_profiles add column if not exists income text default '';
+alter table public.match_profiles add column if not exists marital text default '';
+alter table public.match_profiles add column if not exists has_kids text default '';
+alter table public.match_profiles add column if not exists military text default '';
+alter table public.match_profiles add column if not exists living text default '';
+alter table public.match_profiles add column if not exists debt text default '';
+alter table public.match_profiles add column if not exists relationship_goal text default '';
+alter table public.match_profiles add column if not exists kids_plan text default '';
+alter table public.match_profiles add column if not exists mbti text default '';
+alter table public.match_profiles add column if not exists work_hours text default '';
+alter table public.match_profiles add column if not exists interests jsonb not null default '[]'::jsonb;
+alter table public.match_profiles add column if not exists personality jsonb not null default '[]'::jsonb;
+alter table public.match_profiles add column if not exists habits jsonb not null default '[]'::jsonb;
+alter table public.match_profiles add column if not exists habits_other text default '';
 -- 希望對方的條件（選填，會公開）
-alter table public.profiles add column if not exists req_marital text default '';
-alter table public.profiles add column if not exists req_age_min text default '';
-alter table public.profiles add column if not exists req_age_max text default '';
-alter table public.profiles add column if not exists req_kids text default '';
-alter table public.profiles add column if not exists req_habits jsonb not null default '[]'::jsonb;
+alter table public.match_profiles add column if not exists req_marital text default '';
+alter table public.match_profiles add column if not exists req_age_min text default '';
+alter table public.match_profiles add column if not exists req_age_max text default '';
+alter table public.match_profiles add column if not exists req_kids text default '';
+alter table public.match_profiles add column if not exists req_habits jsonb not null default '[]'::jsonb;
 
-alter table public.profiles enable row level security;
+-- 一次性搬移舊版暖陽欄位。只複製兩張表共有的欄位，避免碰到同專案其他產品新增的欄位。
+do $$
+declare v_cols text;
+begin
+  if to_regclass('public.profiles') is not null then
+    select string_agg(format('%I', c.column_name), ', ' order by c.ordinal_position)
+      into v_cols
+      from information_schema.columns c
+      join information_schema.columns old_c
+        on old_c.table_schema = 'public' and old_c.table_name = 'profiles'
+       and old_c.column_name = c.column_name
+     where c.table_schema = 'public' and c.table_name = 'match_profiles'
+       and c.is_generated = 'NEVER';
+    if coalesce(v_cols, '') <> '' then
+      execute format('insert into public.match_profiles (%s) select %s from public.profiles on conflict (id) do nothing', v_cols, v_cols);
+    end if;
+  end if;
+end $$;
+
+alter table public.match_profiles enable row level security;
 
 -- 用 security definer 函式檢查是否為管理員，避免 profiles 的 RLS policy 直接查詢自己造成遞迴
-create or replace function public.is_admin(uid uuid)
+create or replace function public.match_is_admin(uid uuid)
 returns boolean language sql security definer stable set search_path = public as $$
-  select coalesce((select is_admin from public.profiles where id = uid), false);
+  select coalesce((select is_admin from public.match_profiles where id = uid), false);
 $$;
 
-drop policy if exists "profiles_select_authenticated" on public.profiles;
-drop policy if exists "profiles_select_visible"       on public.profiles;
-drop policy if exists "profiles_insert_own"           on public.profiles;
-drop policy if exists "profiles_update_own"           on public.profiles;
-drop policy if exists "profiles_update_admin"         on public.profiles;
-drop policy if exists "profiles_delete_own"           on public.profiles;
+drop policy if exists "profiles_select_authenticated" on public.match_profiles;
+drop policy if exists "profiles_select_visible"       on public.match_profiles;
+drop policy if exists "profiles_insert_own"           on public.match_profiles;
+drop policy if exists "profiles_update_own"           on public.match_profiles;
+drop policy if exists "profiles_update_admin"         on public.match_profiles;
+drop policy if exists "profiles_delete_own"           on public.match_profiles;
 
--- 已登入的人看得到：審核通過且沒被停權的公開登記、自己的那一筆（就算被停權也看得到，
--- 才能顯示停權原因）、以及管理員看全部（審核與會員管理用）
+-- 原始會員列只開放本人與管理員；公開卡片一律走遮罩欄位的 RPC。
 create policy "profiles_select_visible"
-  on public.profiles for select
+  on public.match_profiles for select
   to authenticated
-  using ((photo_status = 'approved' and not banned) or auth.uid() = id or public.is_admin(auth.uid()));
+  using (auth.uid() = id or public.match_is_admin(auth.uid()));
 
 -- 只能新增自己的那一筆
 create policy "profiles_insert_own"
-  on public.profiles for insert
+  on public.match_profiles for insert
   to authenticated
   with check (auth.uid() = id);
 
 -- 修改自己的那一筆
 create policy "profiles_update_own"
-  on public.profiles for update
+  on public.match_profiles for update
   to authenticated
   using (auth.uid() = id)
   with check (auth.uid() = id);
 
 -- 管理員可以修改任何一筆（審核通過/退回、發放獎勵點數）
 create policy "profiles_update_admin"
-  on public.profiles for update
+  on public.match_profiles for update
   to authenticated
-  using (public.is_admin(auth.uid()))
-  with check (public.is_admin(auth.uid()));
+  using (public.match_is_admin(auth.uid()))
+  with check (public.match_is_admin(auth.uid()));
 
 create policy "profiles_delete_own"
-  on public.profiles for delete
+  on public.match_profiles for delete
   to authenticated
   using (auth.uid() = id);
 
 -- 管理員可以移除任何一筆登記（例如檢舉查證屬實後下架）
-drop policy if exists "profiles_delete_admin" on public.profiles;
+drop policy if exists "profiles_delete_admin" on public.match_profiles;
 create policy "profiles_delete_admin"
-  on public.profiles for delete
+  on public.match_profiles for delete
   to authenticated
-  using (public.is_admin(auth.uid()));
+  using (public.match_is_admin(auth.uid()));
 
 -- ============================================================
 -- 2) applications：認養申請（一位申請人對一位登記對象只有一筆）
@@ -275,8 +313,12 @@ alter table public.applications add column if not exists vet text;
 alter table public.applications add column if not exists vet_at timestamptz;
 alter table public.applications add column if not exists paid int not null default 0;
 alter table public.applications add column if not exists refunded boolean not null default false;
+alter table public.applications add column if not exists vet_scores jsonb;
+alter table public.applications add column if not exists vet_stage int;
 -- 一鍵通關：跳過三階段審核直接解鎖時標記，讓畫面知道這筆沒有真的作答
 alter table public.applications add column if not exists skipped boolean not null default false;
+alter table public.applications add column if not exists fast_invite_from boolean not null default false;
+alter table public.applications add column if not exists fast_invite_to boolean not null default false;
 
 alter table public.applications enable row level security;
 
@@ -290,39 +332,150 @@ create policy "applications_select_participant"
   to authenticated
   using (auth.uid() = from_user or auth.uid() = to_user);
 
--- 只能以自己的身分送出申請
-create policy "applications_insert_as_from"
-  on public.applications for insert
-  to authenticated
-  with check (auth.uid() = from_user);
-
--- 雙方都能更新（回答問題、通過/婉拒、同意解鎖）
+-- 建立申請只能走 apply_to() 完成扣點交易；一般角色不得直接 insert。
+-- 更新只開放給收件方寫婉拒、AI 評估與題目；申請人的作答一律走安全函式。
 create policy "applications_update_participant"
   on public.applications for update
   to authenticated
-  using (auth.uid() = from_user or auth.uid() = to_user)
-  with check (auth.uid() = from_user or auth.uid() = to_user);
+  using (auth.uid() = to_user)
+  with check (auth.uid() = to_user);
 
 -- 管理員移除違規登記時，一併清掉相關申請
 drop policy if exists "applications_delete_admin" on public.applications;
 create policy "applications_delete_admin"
   on public.applications for delete
   to authenticated
-  using (public.is_admin(auth.uid()));
+  using (public.match_is_admin(auth.uid()));
+
+create index if not exists applications_to_user_updated_idx on public.applications(to_user, updated_at desc);
+create index if not exists applications_from_user_updated_idx on public.applications(from_user, updated_at desc);
+
+-- 對外一律走遮罩函式；生日、健康、體重與日常觀察依階段/本人設定逐欄揭露。
+create or replace function public.get_visible_match_profiles(p_profile_id uuid default null)
+returns setof jsonb
+language sql security definer stable set search_path = '' as $$
+  select
+    (to_jsonb(p) - array[
+      'credits','credit_log','is_admin','q1','q2_bank','canned','answer_bank',
+      'bonus_credits','verify_task','verify_reason','verify_deleted_at',
+      'moderation_reason','moderated_at','moderated_by','posting_locked','account_status',
+      'birth','health','health_tags','locked','weight_kg'
+    ]::text[])
+    || jsonb_build_object(
+      'birth', case when rel.stage >= 1 then p.birth else null end,
+      'health', case
+        when p.health_when = 'public'
+          or (p.health_when = 'stage1' and rel.stage >= 1)
+          or (p.health_when = 'stage2' and rel.stage >= 2) then p.health else null end,
+      'health_tags', case
+        when p.health_when = 'public'
+          or (p.health_when = 'stage1' and rel.stage >= 1)
+          or (p.health_when = 'stage2' and rel.stage >= 2) then p.health_tags else '[]'::jsonb end,
+      'locked', case when rel.stage >= 3 and rel.unlock_from and rel.unlock_to then p.locked else null end,
+      'weight_kg', case when p.show_weight then p.weight_kg else null end,
+      'show_weight', p.show_weight
+    )
+  from public.match_profiles p
+  left join lateral (
+    select a.stage, a.unlock_from, a.unlock_to
+      from public.applications a
+     where ((a.from_user = auth.uid() and a.to_user = p.id)
+         or (a.to_user = auth.uid() and a.from_user = p.id))
+     order by a.stage desc, a.updated_at desc limit 1
+  ) rel on true
+  where auth.uid() is not null
+    and p.photo_status = 'approved' and p.verify_status = 'approved'
+    and p.height_cm is not null
+    and p.account_status = 'active'
+    and (p_profile_id is null or p.id = p_profile_id)
+    and p.id <> auth.uid();
+$$;
+revoke all on function public.get_visible_match_profiles(uuid) from public, anon;
+grant execute on function public.get_visible_match_profiles(uuid) to authenticated;
+
+-- ============================================================
+-- 2b) 第二階段對話：只能由安全函式送出，內含封鎖與速率限制
+-- ============================================================
+create table if not exists public.match_blocks (
+  application_id uuid not null references public.applications(id) on delete cascade,
+  blocker_id uuid not null references auth.users(id) on delete cascade,
+  reason text default '',
+  created_at timestamptz not null default now(),
+  primary key (application_id, blocker_id)
+);
+create table if not exists public.match_messages (
+  id bigint generated always as identity primary key,
+  application_id uuid not null references public.applications(id) on delete cascade,
+  sender_id uuid not null references auth.users(id) on delete cascade,
+  kind text not null default 'message' check (kind in ('message','question')),
+  body text not null check (char_length(btrim(body)) between 1 and 2000),
+  created_at timestamptz not null default now()
+);
+create index if not exists match_messages_app_created_idx on public.match_messages(application_id, created_at);
+create index if not exists match_messages_sender_created_idx on public.match_messages(sender_id, created_at desc);
+create index if not exists match_blocks_blocker_idx on public.match_blocks(blocker_id);
+do $$ begin
+  alter publication supabase_realtime add table public.match_messages;
+exception when duplicate_object then null;
+end $$;
+alter table public.match_blocks enable row level security;
+alter table public.match_messages enable row level security;
+
+drop policy if exists "match_blocks_participant_read" on public.match_blocks;
+create policy "match_blocks_participant_read" on public.match_blocks for select to authenticated
+  using (exists (select 1 from public.applications a where a.id = application_id
+    and auth.uid() in (a.from_user, a.to_user)));
+drop policy if exists "match_messages_participant_read" on public.match_messages;
+create policy "match_messages_participant_read" on public.match_messages for select to authenticated
+  using (exists (select 1 from public.applications a where a.id = application_id
+    and a.stage >= 2 and auth.uid() in (a.from_user, a.to_user)));
+
+create or replace function public.send_match_message(p_app_id uuid, p_body text, p_kind text default 'message')
+returns public.match_messages
+language plpgsql security definer set search_path = '' as $$
+declare v_app public.applications; v_profile public.match_profiles; v_msg public.match_messages;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app is null or auth.uid() not in (v_app.from_user, v_app.to_user) then raise exception '無權使用這個對話'; end if;
+  if v_app.stage < 2 or v_app.status <> 'open' then raise exception '第二階段後且申請進行中才能對話'; end if;
+  if exists (select 1 from public.match_blocks where application_id = p_app_id) then raise exception '這段對話已被關閉'; end if;
+  select * into v_profile from public.match_profiles where id = auth.uid();
+  if v_profile.account_status <> 'active' or v_profile.posting_locked then raise exception '你的發言權限目前受限'; end if;
+  if p_kind not in ('message','question') then raise exception '不支援的訊息類型'; end if;
+  if char_length(btrim(coalesce(p_body,''))) not between 1 and 2000 then raise exception '訊息需為 1 到 2000 字'; end if;
+  if (select count(*) from public.match_messages where sender_id = auth.uid() and created_at > now() - interval '1 minute') >= 10
+    then raise exception '傳送太頻繁，請稍後再試'; end if;
+  insert into public.match_messages(application_id, sender_id, kind, body)
+    values (p_app_id, auth.uid(), p_kind, btrim(p_body)) returning * into v_msg;
+  return v_msg;
+end $$;
+revoke all on function public.send_match_message(uuid,text,text) from public, anon;
+grant execute on function public.send_match_message(uuid,text,text) to authenticated;
+
+create or replace function public.close_match_chat(p_app_id uuid, p_reason text default '')
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if not exists (select 1 from public.applications where id = p_app_id and auth.uid() in (from_user,to_user))
+    then raise exception '無權關閉這個對話'; end if;
+  insert into public.match_blocks(application_id, blocker_id, reason)
+    values (p_app_id, auth.uid(), left(coalesce(p_reason,''),500)) on conflict do nothing;
+end $$;
+revoke all on function public.close_match_chat(uuid,text) from public, anon;
+grant execute on function public.close_match_chat(uuid,text) to authenticated;
 
 -- ============================================================
 -- 3) updated_at 自動更新
 -- ============================================================
 create or replace function public.touch_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   new.updated_at = now();
   return new;
 end;
 $$;
 
-drop trigger if exists trg_profiles_touch on public.profiles;
-create trigger trg_profiles_touch before update on public.profiles
+drop trigger if exists trg_match_profiles_touch on public.match_profiles;
+create trigger trg_match_profiles_touch before update on public.match_profiles
   for each row execute function public.touch_updated_at();
 
 drop trigger if exists trg_applications_touch on public.applications;
@@ -332,20 +485,20 @@ create trigger trg_applications_touch before update on public.applications
 -- ============================================================
 -- 4) 新帳號註冊時，自動建立一筆空白 profiles
 -- ============================================================
-create or replace function public.handle_new_user()
+create or replace function public.handle_new_match_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  insert into public.profiles (id, name)
+  insert into public.match_profiles (id, name)
   values (new.id, coalesce(new.raw_user_meta_data->>'name', ''))
   on conflict (id) do nothing;
   return new;
 end;
 $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
+drop trigger if exists on_match_auth_user_created on auth.users;
+create trigger on_match_auth_user_created
   after insert on auth.users
-  for each row execute function public.handle_new_user();
+  for each row execute function public.handle_new_match_user();
 
 -- ============================================================
 -- 5) Storage：大頭照（公開）與驗證照（私密，審核完即刪）
@@ -397,12 +550,12 @@ create policy "verify_owner_all"
 create policy "verify_admin_read"
   on storage.objects for select
   to authenticated
-  using (bucket_id = 'verify' and public.is_admin(auth.uid()));
+  using (bucket_id = 'verify' and public.match_is_admin(auth.uid()));
 
 create policy "verify_admin_delete"
   on storage.objects for delete
   to authenticated
-  using (bucket_id = 'verify' and public.is_admin(auth.uid()));
+  using (bucket_id = 'verify' and public.match_is_admin(auth.uid()));
 
 -- 加碼照片（stage-photos）：私密 bucket，路徑統一用 {user_id}/stage1.jpg、{user_id}/stage2.jpg。
 -- 本人／管理員隨時看得到；其他人只有在「自己送給這個人的申請」進度夠了才看得到——
@@ -424,7 +577,7 @@ create policy "stage_photos_owner_all"
 create policy "stage_photos_admin_read"
   on storage.objects for select
   to authenticated
-  using (bucket_id = 'stage-photos' and public.is_admin(auth.uid()));
+  using (bucket_id = 'stage-photos' and public.match_is_admin(auth.uid()));
 
 create policy "stage_photos_unlock_read"
   on storage.objects for select
@@ -447,12 +600,41 @@ create policy "stage_photos_unlock_read"
 -- ============================================================
 create table if not exists public.reports (
   id         uuid primary key default gen_random_uuid(),
-  target_id  uuid references public.profiles(id) on delete cascade,
-  by_id      uuid references public.profiles(id) on delete set null,
+  target_id  uuid references public.match_profiles(id) on delete cascade,
+  by_id      uuid references public.match_profiles(id) on delete set null,
   why        text not null,
   done       boolean not null default false,
   created_at timestamptz default now()
 );
+alter table public.reports drop constraint if exists reports_target_id_fkey;
+alter table public.reports drop constraint if exists reports_by_id_fkey;
+alter table public.reports add constraint reports_target_id_fkey foreign key (target_id) references public.match_profiles(id) on delete cascade;
+alter table public.reports add constraint reports_by_id_fkey foreign key (by_id) references public.match_profiles(id) on delete set null;
+
+create table if not exists public.match_moderation_actions (
+  id bigint generated always as identity primary key,
+  actor_id uuid references auth.users(id) on delete set null,
+  target_id uuid,
+  action text not null check (action in ('posting_lock','posting_unlock','suspend','restore','delete')),
+  reason text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists match_moderation_actor_idx on public.match_moderation_actions(actor_id);
+create index if not exists match_profiles_moderated_by_idx on public.match_profiles(moderated_by);
+create index if not exists reports_target_idx on public.reports(target_id);
+create index if not exists reports_by_idx on public.reports(by_id);
+alter table public.match_moderation_actions enable row level security;
+drop policy if exists "moderation_actions_admin_read" on public.match_moderation_actions;
+create policy "moderation_actions_admin_read" on public.match_moderation_actions for select to authenticated
+  using (public.match_is_admin(auth.uid()));
+
+create table if not exists public.match_ai_requests (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists match_ai_requests_user_created_idx on public.match_ai_requests(user_id, created_at desc);
+alter table public.match_ai_requests enable row level security;
 
 alter table public.reports enable row level security;
 
@@ -472,13 +654,13 @@ create policy "reports_insert_own"
 create policy "reports_select_admin"
   on public.reports for select
   to authenticated
-  using (public.is_admin(auth.uid()));
+  using (public.match_is_admin(auth.uid()));
 
 create policy "reports_update_admin"
   on public.reports for update
   to authenticated
-  using (public.is_admin(auth.uid()))
-  with check (public.is_admin(auth.uid()));
+  using (public.match_is_admin(auth.uid()))
+  with check (public.match_is_admin(auth.uid()));
 
 -- ============================================================
 -- 7) template_master：新會員預設的罐頭回覆庫（只有管理員能改）
@@ -504,8 +686,8 @@ create policy "template_master_select_all"
 create policy "template_master_write_admin"
   on public.template_master for all
   to authenticated
-  using (public.is_admin(auth.uid()))
-  with check (public.is_admin(auth.uid()));
+  using (public.match_is_admin(auth.uid()))
+  with check (public.match_is_admin(auth.uid()));
 
 insert into public.template_master (id, name, text) values
 ('pass1', '① 通過第一階段',
@@ -538,7 +720,7 @@ on conflict (id) do nothing;
 
 -- profiles.canned 現在給「所有會員」當作自己的罐頭回覆覆蓋值使用
 -- （原本註解寫僅 kind='pet' 使用，現在放寬給所有人）
-comment on column public.profiles.canned is '自訂罐頭回覆庫覆蓋值（所有會員都可使用，對照 template_master 的主檔）';
+comment on column public.match_profiles.canned is '自訂罐頭回覆庫覆蓋值（所有會員都可使用，對照 template_master 的主檔）';
 
 -- ============================================================
 -- 8) owner_kv：私人工具（暖陽動物之家回覆助手）專用的個人儲存空間
@@ -586,22 +768,25 @@ create trigger trg_owner_kv_touch before update on public.owner_kv
 -- ============================================================
 
 create or replace function public.guard_profile_privileged()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   -- 只管「透過 API 用 authenticated 身分打進來」的請求；
   -- 你自己在 Supabase 後台 SQL Editor／Table Editor 用 postgres/service_role 身分
   -- 直接編輯資料列不受影響（那已經是需要登入你自己 Supabase 帳號才碰得到的層級）。
   if auth.role() = 'authenticated'
      and coalesce(current_setting('app.bypass_profile_guard', true), '') <> 'on'
-     and not public.is_admin(auth.uid()) then
+     and not public.match_is_admin(auth.uid()) then
     new.is_admin    := old.is_admin;
     new.credits     := old.credits;
     new.credit_log  := old.credit_log;
     new.bonus_given := old.bonus_given;
     new.verify_deleted_at := old.verify_deleted_at;
     new.bonus_credits := old.bonus_credits;
-    new.banned      := old.banned;
-    new.ban_reason  := old.ban_reason;
+    new.account_status := old.account_status;
+    new.posting_locked := old.posting_locked;
+    new.moderation_reason := old.moderation_reason;
+    new.moderated_at := old.moderated_at;
+    new.moderated_by := old.moderated_by;
     if new.photo_status = 'approved' and old.photo_status is distinct from 'approved' then
       new.photo_status := old.photo_status; new.photo_reason := old.photo_reason;
     end if;
@@ -612,13 +797,13 @@ begin
   return new;
 end $$;
 
-drop trigger if exists trg_guard_profile_privileged on public.profiles;
-create trigger trg_guard_profile_privileged before update on public.profiles
+drop trigger if exists trg_guard_profile_privileged on public.match_profiles;
+create trigger trg_guard_profile_privileged before update on public.match_profiles
   for each row execute function public.guard_profile_privileged();
 
 -- 小工具：在 credit_log 最前面加一筆紀錄，並裁到最多 50 筆
 create or replace function public.credit_log_prepend(old_log jsonb, entry_obj jsonb, cap int default 50)
-returns jsonb language sql immutable as $$
+returns jsonb language sql immutable set search_path = '' as $$
   select coalesce(
     (select jsonb_agg(elem)
      from (
@@ -633,27 +818,29 @@ $$;
 -- 扣點：申請人自己呼叫，扣什麼、扣多少一律由伺服器這張表決定，
 -- 不接受前端傳金額（跟前端顯示的 VET_COST 常數只是給 UI 看，實際收費以這裡為準，
 -- 之後要調價記得兩邊一起改）。之後要加新的扣點項目，在 case 裡加一行就好。
--- 舊版這支函式回傳型別不是 public.profiles，Postgres 不允許 create or replace
--- 改變既有函式的回傳型別，所以先明確 drop 掉舊版再重建。
 drop function if exists public.spend_credits_for(text, text);
 create or replace function public.spend_credits_for(p_action text, p_detail text default null)
-returns public.profiles
+returns public.match_profiles
 language plpgsql security definer set search_path = public as $$
-declare v_cost int; v_label text; v_bal int; v_row public.profiles;
+declare v_cost int; v_label text; v_bal int; v_row public.match_profiles;
 begin
   perform public.settle_bonus_credits(auth.uid());
+  if not exists (select 1 from public.match_profiles where id = auth.uid()
+    and account_status = 'active' and not posting_locked and height_cm is not null) then
+    raise exception '請先完成身高資料，或確認帳號發言權限';
+  end if;
   case p_action
     when 'vet_review'  then v_cost := 1; v_label := '診療　主治獸醫評估';
     when 'deep_review' then v_cost := 3; v_label := '進階診斷　客製第二階段問題';
     else raise exception '未知的扣點項目：%', p_action;
   end case;
 
-  select credits into v_bal from public.profiles where id = auth.uid() for update;
+  select credits into v_bal from public.match_profiles where id = auth.uid() for update;
   if v_bal is null then raise exception '找不到你的帳號資料'; end if;
   if v_bal < v_cost then raise exception '點數不足'; end if;
 
   perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.profiles set
+  update public.match_profiles set
     credits = credits - v_cost,
     credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', v_label || coalesce('　' || p_detail, ''), 'd', -v_cost))
   where id = auth.uid()
@@ -662,20 +849,48 @@ begin
   return v_row;
 end $$;
 
--- 舊版的兩參數 apply_to(uuid, jsonb) 已經被下面第 4 節那個三參數版本取代（那裡有
--- drop function 先清掉這個舊版再重建）。原本這裡是 create or replace，但 Postgres
--- 的函式是用「參數簽名」分辨的，跟新版參數個數不同不會被覆蓋，兩個函式會一起留著；
--- 舊版還寫死 insert into applications(...,a1,...)，但 a1 這欄早就搬到
--- application_answers 表、從 applications 刪掉了，等於是一支「一呼叫就會噴錯」的
--- 殭屍函式，執行到下面第 4 節之前都還掛著 security definer、繞過新版才有的重複申請
--- 檢查——乾脆這裡就不再建立，直接讓下面那個 drop 去清同一支殭屍函式就好。
+-- 提出認養申請：扣掛號費＋建立申請案件，包在同一個交易裡。
+-- 只要有一步失敗（例如已經申請過、對方尚未審核通過），整個都會回滾，
+-- 不會出現「錢扣了但申請沒送出」這種需要另外退款的中間狀態。
+create or replace function public.apply_to(p_to uuid, p_answers jsonb)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare
+  v_cost constant int := 1;   -- 掛號費，價格由伺服器決定，不接受前端傳金額
+  v_bal int; v_app public.applications;
+begin
+  if p_to = auth.uid() then raise exception '不能對自己提出申請'; end if;
+  if not exists (
+    select 1 from public.match_profiles
+    where id = p_to and photo_status = 'approved' and verify_status = 'approved'
+  ) then
+    raise exception '對方尚未通過審核，暫時無法申請';
+  end if;
+
+  select credits into v_bal from public.match_profiles where id = auth.uid() for update;
+  if v_bal is null or v_bal < v_cost then raise exception '掛號費不足'; end if;
+
+  insert into public.applications(from_user, to_user, stage, status, a1, paid)
+  values (auth.uid(), p_to, 1, 'open', p_answers, v_cost)
+  returning * into v_app;
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.match_profiles set
+    credits = credits - v_cost,
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '掛號　向 ' || (select name from public.match_profiles where id = p_to) || ' 提出申請', 'd', -v_cost))
+  where id = auth.uid();
+  perform set_config('app.bypass_profile_guard', '', true);
+
+  return v_app;
+end $$;
 
 -- 退回逾期未處理的掛號費：伺服器自己重新檢查一次天數／歸屬／是否已退過，
 -- 不相信前端傳來的任何數字，前端只能傳「是哪一筆申請」。
+drop function if exists public.refund_application(uuid);
 create or replace function public.refund_application(p_app_id uuid)
-returns public.profiles
+returns public.match_profiles
 language plpgsql security definer set search_path = public as $$
-declare v_app public.applications; v_row public.profiles;
+declare v_app public.applications; v_row public.match_profiles;
 begin
   select * into v_app from public.applications where id = p_app_id for update;
   if v_app is null then raise exception '找不到這筆申請'; end if;
@@ -690,7 +905,7 @@ begin
   perform set_config('app.bypass_app_guard', '', true);
 
   perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.profiles set
+  update public.match_profiles set
     credits = credits + v_app.paid,
     credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '退回掛號費（對方逾期未處理）', 'd', v_app.paid))
   where id = auth.uid()
@@ -704,51 +919,29 @@ end $$;
 -- 回調是用 service_role 金鑰打進來的，沒有使用者 JWT，所以除了「呼叫者是管理員」，
 -- 也放行「呼叫者是 service_role」這個後端專用身分。ref 給訂單編號用，同一筆 ref
 -- 重複呼叫不會重複加點（金流商常會重送回調，這裡先把防呆做好）。
+drop function if exists public.admin_add_credits(uuid, int, text, text);
 create or replace function public.admin_add_credits(target uuid, amount int, reason text, ref text default null)
-returns public.profiles
+returns public.match_profiles
 language plpgsql security definer set search_path = public as $$
-declare v_row public.profiles;
+declare v_row public.match_profiles;
 begin
-  if not (public.is_admin(auth.uid()) or auth.role() = 'service_role') then
+  if not (public.match_is_admin(auth.uid()) or auth.role() = 'service_role') then
     raise exception '只有管理員可以使用';
   end if;
   if amount = 0 then raise exception '金額不能是 0'; end if;
 
   if ref is not null and exists (
-    select 1 from public.profiles, jsonb_array_elements(coalesce(credit_log, '[]'::jsonb)) elem
+    select 1 from public.match_profiles, jsonb_array_elements(coalesce(credit_log, '[]'::jsonb)) elem
     where id = target and elem->>'ref' = ref
   ) then
-    select * into v_row from public.profiles where id = target;
+    select * into v_row from public.match_profiles where id = target;
     return v_row;   -- 同一筆訂單重複呼叫，直接回傳目前狀態，不重複加點
   end if;
 
   perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.profiles set
+  update public.match_profiles set
     credits = credits + amount,
     credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', reason, 'd', amount, 'ref', ref))
-  where id = target
-  returning * into v_row;
-  perform set_config('app.bypass_profile_guard', '', true);
-
-  if v_row is null then raise exception '找不到這個帳號'; end if;
-  return v_row;
-end $$;
-
--- 管理員停權／解除停權：停權後這個人的登記從佈告欄消失，也不能再被提出新申請
--- （見 profiles_select_visible 政策與 apply_to 的檢查），但本人登入後仍看得到
--- 自己的帳號與停權原因。這不會刪除任何資料，跟下面完全移除登記的
--- admin_remove_profile 是兩個不同力道的處置。
-create or replace function public.admin_set_banned(target uuid, is_banned boolean, reason text default null)
-returns public.profiles
-language plpgsql security definer set search_path = public as $$
-declare v_row public.profiles;
-begin
-  if not public.is_admin(auth.uid()) then raise exception '只有管理員可以使用'; end if;
-
-  perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.profiles set
-    banned = is_banned,
-    ban_reason = case when is_banned then coalesce(reason, '') else '' end
   where id = target
   returning * into v_row;
   perform set_config('app.bypass_profile_guard', '', true);
@@ -782,6 +975,7 @@ create table if not exists public.application_private_notes (
   note       text,
   updated_at timestamptz not null default now()
 );
+create index if not exists application_private_notes_owner_idx on public.application_private_notes(owner_id);
 
 -- 一次性搬遷：把舊欄位的內容複製到新表，然後把舊欄位刪掉。
 -- 舊欄位不刪的話，收件方還是讀得到，付費牆就漏了。
@@ -825,12 +1019,7 @@ create policy "answers_select_allowed"
         or (a.to_user = auth.uid() and a.a1_unlocked))
   ));
 
--- 只有申請人本人可以改自己的答案
-create policy "answers_update_owner"
-  on public.application_answers for update
-  to authenticated
-  using (exists (select 1 from public.applications a where a.id = application_id and a.from_user = auth.uid()))
-  with check (exists (select 1 from public.applications a where a.id = application_id and a.from_user = auth.uid()));
+-- 回答只能透過 apply_to()/submit_stage2() 寫入，避免事後直接改第一階段答案。
 
 -- 私人筆記：只有寫的人看得到、改得動
 create policy "notes_all_owner"
@@ -856,11 +1045,11 @@ create trigger trg_notes_touch before update on public.application_private_notes
 --    的 update 政策是整列層級，不分欄位），代表申請人或收件方其實可以直接把「對方」
 --    那一欄也設成 true，等於幫對方蓋章同意，不需要對方真的按下同意。這次順便修掉。
 create or replace function public.guard_application_privileged()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   if auth.role() = 'authenticated'
      and coalesce(current_setting('app.bypass_app_guard', true), '') <> 'on'
-     and not public.is_admin(auth.uid()) then
+     and not public.match_is_admin(auth.uid()) then
     new.from_user   := old.from_user;
     new.to_user     := old.to_user;
     new.stage       := old.stage;
@@ -872,6 +1061,8 @@ begin
     new.unlock_from := old.unlock_from;
     new.unlock_to   := old.unlock_to;
     new.skipped     := old.skipped;
+    new.fast_invite_from := old.fast_invite_from;
+    new.fast_invite_to := old.fast_invite_to;
   end if;
   return new;
 end $$;
@@ -883,7 +1074,7 @@ create trigger trg_guard_application before update on public.applications
 -- ── 我的答題紀錄：把送出的答案存進申請人自己的 profiles.answer_bank ──
 -- 以「題目文字」去重（同一題只留最新的答案），最多保留 100 筆。
 create or replace function public.answer_bank_merge(old_bank jsonb, entries jsonb, cap int default 100)
-returns jsonb language sql immutable as $$
+returns jsonb language sql immutable set search_path = '' as $$
   with all_rows as (
     -- 新答案排在前面（ord 小），舊的接在後面，這樣同一題會保留最新的那筆
     select elem, ord from jsonb_array_elements(coalesce(entries, '[]'::jsonb)) with ordinality as t(elem, ord)
@@ -911,10 +1102,14 @@ declare
   v_bal int; v_app public.applications; v_entries jsonb;
 begin
   perform public.settle_bonus_credits(auth.uid());
+  if not exists (select 1 from public.match_profiles where id = auth.uid()
+    and account_status = 'active' and not posting_locked and height_cm is not null) then
+    raise exception '請先完成身高資料，或確認帳號發言權限';
+  end if;
   if p_to = auth.uid() then raise exception '不能對自己提出申請'; end if;
   if not exists (
-    select 1 from public.profiles
-    where id = p_to and photo_status = 'approved' and verify_status = 'approved' and not banned
+    select 1 from public.match_profiles
+    where id = p_to and photo_status = 'approved' and verify_status = 'approved'
   ) then
     raise exception '對方尚未通過審核，暫時無法申請';
   end if;
@@ -926,7 +1121,7 @@ begin
     raise exception '已經申請過了';
   end if;
 
-  select credits into v_bal from public.profiles where id = auth.uid() for update;
+  select credits into v_bal from public.match_profiles where id = auth.uid() for update;
   if v_bal is null or v_bal < v_cost then raise exception '掛號費不足'; end if;
 
   insert into public.applications(from_user, to_user, stage, status, paid, consent_at)
@@ -944,10 +1139,10 @@ begin
     where coalesce(p_answers->>(i-1), '') <> '';
 
   perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.profiles set
+  update public.match_profiles set
     credits = credits - v_cost,
     answer_bank = public.answer_bank_merge(answer_bank, coalesce(v_entries,'[]'::jsonb)),
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '掛號　向 ' || (select name from public.profiles where id = p_to) || ' 提出申請', 'd', -v_cost))
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '掛號　向 ' || (select name from public.match_profiles where id = p_to) || ' 提出申請', 'd', -v_cost))
   where id = auth.uid();
   perform set_config('app.bypass_profile_guard', '', true);
 
@@ -968,7 +1163,7 @@ begin
   if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
   if v_app.a1_unlocked then return v_app; end if;   -- 已解鎖就不再收費
 
-  select credits into v_bal from public.profiles where id = auth.uid() for update;
+  select credits into v_bal from public.match_profiles where id = auth.uid() for update;
   if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
@@ -976,7 +1171,7 @@ begin
   perform set_config('app.bypass_app_guard', '', true);
 
   perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.profiles set
+  update public.match_profiles set
     credits = credits - v_cost,
     credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '調閱　第一階段詳細回答', 'd', -v_cost))
   where id = auth.uid();
@@ -1003,10 +1198,10 @@ begin
   if jsonb_array_length(coalesce(p_questions,'[]'::jsonb)) = 0 then raise exception '至少要出一題'; end if;
 
   if not v_app.stage2_paid then
-    select credits into v_bal from public.profiles where id = auth.uid() for update;
+    select credits into v_bal from public.match_profiles where id = auth.uid() for update;
     if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
     perform set_config('app.bypass_profile_guard', 'on', true);
-    update public.profiles set
+    update public.match_profiles set
       credits = credits - v_cost,
       credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '出題　發出第二階段問卷', 'd', -v_cost))
     where id = auth.uid();
@@ -1060,7 +1255,7 @@ begin
   if v_app.stage <> 3 then raise exception '這筆申請還沒進入第三階段'; end if;
   if v_app.unlock_from then return v_app; end if;   -- 已解鎖就不再收費
 
-  select credits into v_bal from public.profiles where id = auth.uid() for update;
+  select credits into v_bal from public.match_profiles where id = auth.uid() for update;
   if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
@@ -1068,7 +1263,7 @@ begin
   perform set_config('app.bypass_app_guard', '', true);
 
   perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.profiles set
+  update public.match_profiles set
     credits = credits - v_cost,
     credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '解鎖　對方的日常觀察資訊', 'd', -v_cost))
   where id = auth.uid();
@@ -1105,7 +1300,10 @@ declare
   v_credits int; v_remaining int; v_deduct int; v_total_deduct int := 0;
 begin
   if p_uid is null then return; end if;
-  select bonus_credits, credits into v_bank, v_credits from public.profiles where id = p_uid for update;
+  if p_uid <> auth.uid() and auth.role() <> 'service_role' and not public.match_is_admin(auth.uid()) then
+    raise exception '無權結算其他帳號';
+  end if;
+  select bonus_credits, credits into v_bank, v_credits from public.match_profiles where id = p_uid for update;
   if v_bank is null or jsonb_array_length(v_bank) = 0 then return; end if;
 
   v_remaining := coalesce(v_credits, 0);
@@ -1121,7 +1319,7 @@ begin
 
   if jsonb_array_length(v_keep) < jsonb_array_length(v_bank) then
     perform set_config('app.bypass_profile_guard', 'on', true);
-    update public.profiles set
+    update public.match_profiles set
       bonus_credits = v_keep,
       credits = credits - v_total_deduct,
       credit_log = case when v_total_deduct > 0
@@ -1132,30 +1330,54 @@ begin
   end if;
 end $$;
 
--- 一鍵通關：對方開放的話，申請人可以付 10 點直接跳到第三階段、雙方互相解鎖，
--- 不用照走問卷與人工審核。這 10 點會加進登記人的帳上，但標記 14 天後到期，
--- 到期沒花完的部分會被上面的 settle_bonus_credits 收回。
+-- 舊版單方「一鍵通關」停用：不能再由一方付款替另一方表示同意。
 create or replace function public.skip_to_unlock(p_app_id uuid)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+begin
+  raise exception '一鍵通關已停用，請改用雙方同意的快速邀請';
+end $$;
+
+-- 申請人先送出快速邀請，不扣點、不解鎖。
+create or replace function public.request_fast_track(p_app_id uuid)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare v_app public.applications; v_owner public.match_profiles; v_bal int;
+begin
+  select * into v_app from public.applications where id = p_app_id for update;
+  if v_app is null or v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
+  if v_app.status <> 'open' or v_app.stage >= 3 then raise exception '目前階段不能送快速邀請'; end if;
+  select * into v_owner from public.match_profiles where id = v_app.to_user;
+  if v_owner is null or not coalesce(v_owner.allow_skip, false) then raise exception '對方沒有開放快速邀請'; end if;
+  select credits into v_bal from public.match_profiles where id = auth.uid();
+  if coalesce(v_bal,0) < 10 then raise exception '點數不足；對方接受時需要 10 點'; end if;
+  perform set_config('app.bypass_app_guard', 'on', true);
+  update public.applications set fast_invite_from = true where id = p_app_id returning * into v_app;
+  perform set_config('app.bypass_app_guard', '', true);
+  return v_app;
+end $$;
+
+-- 收件方接受後才扣申請人 10 點並快速解鎖；雙方都已明確表示同意。
+create or replace function public.accept_fast_track(p_app_id uuid)
 returns public.applications
 language plpgsql security definer set search_path = public as $$
 declare
   v_cost constant int := 10;
-  v_app public.applications; v_owner public.profiles; v_bal int;
+  v_app public.applications; v_owner public.match_profiles; v_bal int;
 begin
-  perform public.settle_bonus_credits(auth.uid());
-
   select * into v_app from public.applications where id = p_app_id for update;
   if v_app is null then raise exception '找不到這筆申請'; end if;
-  if v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
+  if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
   if v_app.status <> 'open' then raise exception '這筆申請已經結束了'; end if;
   if v_app.stage >= 3 then raise exception '這筆申請已經在第三階段了'; end if;
+  if not v_app.fast_invite_from then raise exception '對方尚未送出快速邀請'; end if;
 
-  select * into v_owner from public.profiles where id = v_app.to_user for update;
+  select * into v_owner from public.match_profiles where id = v_app.to_user for update;
   if v_owner is null or not coalesce(v_owner.allow_skip, false) then
-    raise exception '對方沒有開放一鍵通關';
+    raise exception '你目前沒有開放快速邀請';
   end if;
 
-  select credits into v_bal from public.profiles where id = auth.uid() for update;
+  select credits into v_bal from public.match_profiles where id = v_app.from_user for update;
   if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
@@ -1163,21 +1385,21 @@ begin
     stage = 3, a1_unlocked = true, stage2_paid = true,
     unlock_from = true, unlock_to = true,
     consent_at = coalesce(consent_at, now()),
-    skipped = true
+    skipped = true, fast_invite_to = true
   where id = p_app_id returning * into v_app;
   perform set_config('app.bypass_app_guard', '', true);
 
   perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.profiles set
+  update public.match_profiles set
     credits = credits - v_cost,
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '一鍵通關　跳過審查流程', 'd', -v_cost))
-  where id = auth.uid();
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '快速邀請　雙方同意後快速解鎖', 'd', -v_cost))
+  where id = v_app.from_user;
 
-  update public.profiles set
+  update public.match_profiles set
     credits = credits + v_cost,
     bonus_credits = coalesce(bonus_credits, '[]'::jsonb)
       || jsonb_build_array(jsonb_build_object('amount', v_cost, 'granted_at', now(), 'expires_at', now() + interval '14 days')),
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '有人使用一鍵通關　獎勵點數（14 天內要花完）', 'd', v_cost))
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '接受快速邀請　獎勵點數（14 天內要花完）', 'd', v_cost))
   where id = v_app.to_user;
   perform set_config('app.bypass_profile_guard', '', true);
 
@@ -1207,7 +1429,7 @@ begin
     where coalesce(p_answers->>(i-1), '') <> '';
 
   perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.profiles
+  update public.match_profiles
     set answer_bank = public.answer_bank_merge(answer_bank, coalesce(v_entries,'[]'::jsonb))
     where id = auth.uid();
   perform set_config('app.bypass_profile_guard', '', true);
@@ -1216,62 +1438,49 @@ begin
 end $$;
 
 -- ============================================================
--- 10.5) 對話視窗：進入第二階段後，雙方可以直接聊天問客製化的感情問題，免費，
---       跟「日常觀察」那段自介文字（付點解鎖）是兩個獨立的東西，並存不衝突。
--- ============================================================
-create table if not exists public.messages (
-  id             uuid primary key default gen_random_uuid(),
-  application_id uuid not null references public.applications(id) on delete cascade,
-  sender_id      uuid not null references public.profiles(id) on delete cascade,
-  body           text not null check (char_length(body) between 1 and 2000),
-  created_at     timestamptz not null default now()
-);
-
-alter table public.messages enable row level security;
-
-drop policy if exists "messages_select_participant" on public.messages;
-drop policy if exists "messages_insert_participant" on public.messages;
-
--- 雙方都看得到，但要進到第二階段（含）以後才開放——跟前台判斷「要不要顯示聊天室」
--- 的門檻一致，這裡在資料庫端再擋一次，前端隱藏分頁沒用的話這裡還是會擋下來。
--- 管理員也看得到（跟 profiles／applications 一樣的處理檢舉、爭議調解用途），
--- 但管理員一樣不能發言（見下面的 insert 政策，沒有給 is_admin 例外）。
-create policy "messages_select_participant"
-  on public.messages for select
-  to authenticated
-  using (
-    public.is_admin(auth.uid())
-    or exists (
-      select 1 from public.applications a
-      where a.id = application_id
-        and (a.from_user = auth.uid() or a.to_user = auth.uid())
-        and a.stage >= 2
-    )
-  );
-
--- 只能用自己的身分發言（sender_id 一定要是自己），且申請要還「開著」才能繼續聊；
--- 停權的人不能再發新訊息（但看得到舊的，跟前面 select 政策一致）。
-create policy "messages_insert_participant"
-  on public.messages for insert
-  to authenticated
-  with check (
-    sender_id = auth.uid()
-    and not exists (select 1 from public.profiles where id = auth.uid() and banned)
-    and exists (
-      select 1 from public.applications a
-      where a.id = application_id
-        and (a.from_user = auth.uid() or a.to_user = auth.uid())
-        and a.stage >= 2 and a.status = 'open'
-    )
-  );
-
-create index if not exists messages_application_idx on public.messages(application_id, created_at);
-
--- ============================================================
 -- 11) 把自己設成管理員（審核台權限）
 --    這行不會自動執行——執行完上面全部之後，自己先用這個帳號登入一次，
 --    再回到 SQL Editor，把 <你的帳號 email> 換成自己的 email，單獨執行這一段：
 --
---    update public.profiles set is_admin = true
+--    update public.match_profiles set is_admin = true
 --    where id = (select id from auth.users where email = '<你的帳號 email>');
 -- ============================================================
+
+-- ============================================================
+-- 12) 最小權限：移除 Supabase 新表可能繼承的寬鬆預設 grants
+-- ============================================================
+revoke all on table public.match_profiles, public.applications, public.application_answers,
+  public.application_private_notes, public.match_messages, public.match_blocks,
+  public.reports, public.match_moderation_actions, public.match_ai_requests from anon;
+revoke truncate, references, trigger on table public.match_profiles, public.applications,
+  public.application_answers, public.application_private_notes, public.match_messages,
+  public.match_blocks, public.reports, public.match_moderation_actions, public.match_ai_requests from authenticated;
+grant select, insert, update, delete on table public.match_profiles to authenticated;
+grant select, update, delete on table public.applications to authenticated;
+grant select on table public.application_answers to authenticated;
+grant select, insert, update, delete on table public.application_private_notes to authenticated;
+grant select on table public.match_messages, public.match_blocks to authenticated;
+grant insert, select, update on table public.reports to authenticated;
+grant select on table public.match_moderation_actions to authenticated;
+
+drop policy if exists "match_ai_requests_no_client_access" on public.match_ai_requests;
+create policy "match_ai_requests_no_client_access" on public.match_ai_requests for all
+  to anon, authenticated using (false) with check (false);
+
+revoke all on function public.handle_new_match_user() from public, anon, authenticated;
+grant execute on function public.handle_new_match_user() to postgres, service_role;
+
+revoke all on function public.match_is_admin(uuid), public.spend_credits_for(text,text),
+  public.apply_to(uuid,jsonb,jsonb), public.refund_application(uuid),
+  public.admin_add_credits(uuid,int,text,text), public.unlock_a1(uuid),
+  public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid),
+  public.consent_unlock_to(uuid), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
+  public.request_fast_track(uuid), public.accept_fast_track(uuid),
+  public.submit_stage2(uuid,jsonb,jsonb) from public, anon;
+grant execute on function public.match_is_admin(uuid), public.spend_credits_for(text,text),
+  public.apply_to(uuid,jsonb,jsonb), public.refund_application(uuid),
+  public.admin_add_credits(uuid,int,text,text), public.unlock_a1(uuid),
+  public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid),
+  public.consent_unlock_to(uuid), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
+  public.request_fast_track(uuid), public.accept_fast_track(uuid),
+  public.submit_stage2(uuid,jsonb,jsonb) to authenticated;

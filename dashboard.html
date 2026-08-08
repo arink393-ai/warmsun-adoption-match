@@ -429,13 +429,17 @@ async function renderRoster(){
       <div class="stage s${a.status==='rejected'?0:a.stage}">${stageTxt}</div>
       <div>${[from.age && from.age+' 歲', from.area, from.job].filter(Boolean)
              .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
-      ${a.skipped ? `<div class="hint" style="margin-top:12px">⚡ 這位申請人使用了「一鍵通關」，跳過了問卷與逐階段審核，已經直接互相解鎖。</div>` : a.a1
+      ${a.skipped ? `<div class="hint" style="margin-top:12px">⚡ 你們雙方已同意快速邀請，略過剩餘問卷並完成解鎖。</div>` : a.a1
         ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1)
         : `<div class="lock" style="margin-top:12px">
              🔒 第一階段詳細回答尚未調閱，需要 ${UNLOCK_A1_COST} 點。
              <div class="bar"><button class="ghost unlockA1" data-app="${a.id}">調閱詳細回答（${UNLOCK_A1_COST} 點）</button></div>
            </div>`}
       ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
+      ${a.fast_invite_from && !a.fast_invite_to && a.status === 'open' && a.stage < 3 ? `<div class="notice" style="margin-top:12px">
+        對方送來快速邀請；只有你接受後才會扣對方 10 點並快速解鎖。你也可以繼續正常審查。
+        <div class="bar"><button class="ghost acceptFastInvite" data-app="${a.id}">接受快速邀請</button></div>
+      </div>` : ''}
       <div class="bar">
         ${a.status==='open' && a.stage===1 && a.a1 ? `
           <button class="pass" data-app="${a.id}">通過，發出第二階段問卷（${STAGE2_COST} 點）</button>
@@ -492,6 +496,11 @@ function bindRoster(){
   });
   $('roster').querySelectorAll('.unlockTo').forEach(b => b.onclick = async () => {
     try{ await DB.consentUnlockTo(b.dataset.app); await renderRoster(); }catch(e){ alert(e.message||'操作失敗'); }
+  });
+  $('roster').querySelectorAll('.acceptFastInvite').forEach(b => b.onclick = async () => {
+    if(!confirm('接受後會從對方帳號扣 10 點，並讓雙方快速解鎖。確定接受？')) return;
+    try{ await DB.acceptFastTrack(b.dataset.app); myProfile = await DB.getMyProfile(); await renderRoster(); }
+    catch(e){ alert(e.message || '操作失敗'); }
   });
   $('roster').querySelectorAll('.aiJudge').forEach(b => {
     if(!DB.hasClaudeProxy()){

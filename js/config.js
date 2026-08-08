@@ -19,4 +19,4 @@ window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXB
 // 例如：https://YOUR-PROJECT.supabase.co/functions/v1/claude
 // 留空 = 停用「AI 建議評分」功能，其他功能不受影響。
 // ============================================================
-window.CLAUDE_PROXY_URL = '';
+window.CLAUDE_PROXY_URL = 'https://qjtthtqrqzrccxlgipdd.supabase.co/functions/v1/claude';
