@@ -339,6 +339,8 @@
       <span id="balance">0</span> <span style="font-size:14px;color:var(--ink-soft)">點</span></p>
     <p class="hint">
       <b>掛號費</b>　送出一份認養申請：<span id="clinicApplyCost">1</span> 點<br>
+      <b>調閱費</b>　調閱一位申請人的第一階段詳細回答：<span id="clinicUnlockCost">1</span> 點<br>
+      <b>出題費</b>　發出第二階段問卷給一位申請人：<span id="clinicStage2Cost">2</span> 點<br>
       <b>診療費</b>　請主治獸醫評估一位申請人：<span id="clinicVetCost">1</span> 點<br>
       <b>進階診斷</b>　請主治獸醫客製第二階段問題：<span id="clinicDeepCost">3</span> 點<br>
       收費是為了讓雙方都慎重：申請前先想清楚，收到申請的人也不會被大量亂投的訊息淹沒。<br>
@@ -366,6 +368,14 @@
       <button class="ghost" id="tplReset">還原預設</button>
       <span class="msg" id="tplMsg"></span>
     </div>
+  </fieldset>
+  <fieldset>
+    <legend>我的答題紀錄</legend>
+    <p class="hint" style="margin:0 0 8px">
+      你送出過的申請答案會自動存在這裡。下次填寫申請表時，遇到相似的題目會在旁邊提示，可以一鍵帶入再修改。
+      只有你自己看得到，隨時可以刪除。
+    </p>
+    <div id="bankList"></div>
   </fieldset>
 </div>
 
@@ -505,6 +515,8 @@ const DEFAULT_Q2 = [
 const APPLY_COST = 1;      /* 送出申請的掛號費 */
 const VET_COST = 1;        /* 主治獸醫評估的診療費 */
 const DEEP_COST = 3;       /* 進階診斷：AI 客製第二階段問題（實際收費以資料庫 spend_credits_for 為準） */
+const UNLOCK_A1_COST = 1;  /* 調閱第一階段詳細回答（實際收費以資料庫 unlock_a1 為準） */
+const STAGE2_COST = 2;     /* 發出第二階段問卷（實際收費以資料庫 send_stage2 為準） */
 const REFUND_DAYS = 14;    /* 對方超過幾天未處理可退點 */
 const PHOTO_BONUS = 5;     /* 照片審核通過＋資料填妥的獎勵點數 */
 const PACKS = [
@@ -981,37 +993,133 @@ async function reportProfile(id){
 }
 function stageText(a){
   if(a.status === 'rejected') return '未通過';
-  if(a.stage === 1) return a.a1 ? '第一階段　等待審查' : '第一階段　待填表';
+  /* 送出申請時一定會連同答案一起寫入，所以第一階段就是「等待審查」。
+     收件方沒付費解鎖時 a.a1 會是 null，不能拿它來判斷對方有沒有填。 */
+  if(a.stage === 1) return '第一階段　等待審查';
   if(a.stage === 2) return a.a2 ? '第二階段　等待審查' : '第二階段　待作答';
   if(a.stage === 3) return (a.unlock_from && a.unlock_to) ? '第三階段　已解鎖' : '第三階段　等待雙方同意';
   return '—';
+}
+
+/* ── 我的答題紀錄：找出以前答過的相似題目 ── */
+function normQ(s){
+  /* 去掉空白與全形／半形標點，只留下文字本身來比對 */
+  return String(s||'').toLowerCase()
+    .replace(/[\s，,。.、；;：:？?！!（）()「」『』【】\[\]〈〉《》…—\-_/\\'"]/g, '');
+}
+function qTokens(s){
+  const n = normQ(s);
+  const out = new Set();
+  for(let i=0;i<n.length-1;i++) out.add(n.slice(i,i+2));   /* 中文用相鄰兩字當特徵 */
+  return out;
+}
+function qSimilarity(a, b){
+  const A = qTokens(a), B = qTokens(b);
+  if(!A.size || !B.size) return 0;
+  let hit = 0;
+  A.forEach(t => { if(B.has(t)) hit++; });
+  return hit / Math.min(A.size, B.size);   /* 短題目被長題目包含時也算高分 */
+}
+/* 回傳最多 3 筆：完全相同的排最前，其餘依相似度排序（門檻 0.45） */
+function similarAnswers(q){
+  const bank = Array.isArray(myProfile && myProfile.answer_bank) ? myProfile.answer_bank : [];
+  const target = normQ(q);
+  return bank
+    .map(x => ({...x, score: normQ(x.q) === target ? 2 : qSimilarity(q, x.q)}))
+    .filter(x => x.score >= 0.45 && x.a)
+    .sort((a,b) => b.score - a.score)
+    .slice(0, 3);
+}
+/* 一題的完整區塊：題目、輸入框，以及以前答過的相似題目 */
+function questionBlock(q, i, cls){
+  const hits = similarAnswers(q);
+  const bankHtml = hits.length ? `
+    <details style="margin:4px 0 10px">
+      <summary>💬 你以前答過 ${hits.length} 題相似的，點開可一鍵帶入</summary>
+      ${hits.map((h, j) => `
+        <div class="qa">
+          <b>${h.score === 2 ? '（同一題）' : '（相似題）'}${esc(h.q)}</b>
+          <div style="white-space:pre-wrap">${esc(h.a)}</div>
+          <div class="bar" style="margin-top:6px">
+            <button type="button" class="ghost useAns" data-i="${i}" data-cls="${cls}"
+              data-a="${esc(h.a)}" style="font-size:11px;padding:3px 8px">帶入這則</button>
+            <button type="button" class="ghost appendAns" data-i="${i}" data-cls="${cls}"
+              data-a="${esc(h.a)}" style="font-size:11px;padding:3px 8px">附加在後面</button>
+          </div>
+        </div>`).join('')}
+      <p class="hint" style="margin:6px 0 0">帶入後記得依照這次的題目調整，直接照抄對方看得出來。</p>
+    </details>` : '';
+  return `<label>${i+1}. ${esc(q)}</label>
+    <textarea rows="3" class="${cls}" data-i="${i}"></textarea>${bankHtml}`;
+}
+/* 綁定「帶入這則／附加在後面」按鈕 */
+function bindAnswerBank(root){
+  root.querySelectorAll('.useAns').forEach(b => b.onclick = () => {
+    const t = root.querySelector(`.${b.dataset.cls}[data-i="${b.dataset.i}"]`);
+    if(t){ t.value = b.dataset.a; t.focus(); }
+  });
+  root.querySelectorAll('.appendAns').forEach(b => b.onclick = () => {
+    const t = root.querySelector(`.${b.dataset.cls}[data-i="${b.dataset.i}"]`);
+    if(t){ t.value = (t.value ? t.value.replace(/\s*$/, '') + '\n' : '') + b.dataset.a; t.focus(); }
+  });
 }
 
 /* ── 提出申請 ── */
 function openApply(toId){
   const to = profiles.find(p => p.id === toId); if(!to) return;
   const q1 = (Array.isArray(to.q1) && to.q1.length) ? to.q1 : DEFAULT_Q1;
-  const html = `
-    <fieldset><legend>向 ${esc(to.name)} 提出認養申請</legend>
-      <p class="hint">第一階段書面審查。對方會讀到你的回答，決定是否進入第二階段。</p>
-      <p class="hint">送出需要 <b>${APPLY_COST} 點掛號費</b>，目前餘額 ${myProfile ? myProfile.credits : 0} 點。</p>
-      ${q1.map((q,i) => `<label>${i+1}. ${esc(q)}</label><textarea rows="2" class="a1q"></textarea>`).join('')}
-      <div class="bar"><button id="sendApply">送出申請（${APPLY_COST} 點）</button>
-        <button class="ghost" id="cancelApply">取消</button><span class="msg" id="applyMsg"></span></div>
-    </fieldset>`;
   const box = document.createElement('div');
-  box.id = 'applyBox'; box.innerHTML = html;
+  box.id = 'applyBox';
+  /* 先過隱私權同意關卡，勾選後才會出現題目 */
+  box.innerHTML = `
+    <fieldset><legend>向 ${esc(to.name)} 提出認養申請</legend>
+      <p class="hint">在開始填寫之前，請先閱讀並同意以下事項。</p>
+      <div class="lock" style="max-height:220px;overflow:auto">
+        <b>申請前的告知事項</b><br>
+        一、你在這份申請表填寫的內容，<b>只有 ${esc(to.name)} 本人看得到</b>，其他會員與訪客都看不到。<br>
+        二、對方需要另外付出點數才能調閱你的詳細回答；在那之前對方只會看到你的基本資料。<br>
+        三、你的回答會存進<b>你自己的「我的答題紀錄」</b>，方便下次遇到相似題目時直接沿用。這份紀錄只有你看得到，隨時可以刪除。<br>
+        四、送出後會扣除 ${APPLY_COST} 點掛號費。若對方超過 ${REFUND_DAYS} 天未處理，你可以自行退回掛號費。<br>
+        五、任何階段你都可以直接停止，不需要理由。<br>
+        六、完整規範請見「<a href="#" data-goto="privacy">隱私權政策</a>」。
+      </div>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px">
+        <input type="checkbox" id="applyConsent" style="width:auto;margin:4px 0 0">
+        <span style="font-size:13px;color:var(--ink)">我已閱讀並同意上述事項，了解我的回答會提供給對方審閱。</span>
+      </label>
+      <div class="bar">
+        <button id="applyStart" disabled>我同意，開始填寫申請表</button>
+        <button class="ghost" id="cancelApply">取消</button>
+        <span class="msg" id="applyMsg"></span>
+      </div>
+    </fieldset>`;
   $('pane-board').prepend(box);
   window.scrollTo({top:0, behavior:'smooth'});
   $('cancelApply').onclick = () => box.remove();
+  $('applyConsent').onchange = e => { $('applyStart').disabled = !e.target.checked; };
+  $('applyStart').onclick = () => showApplyForm(box, toId, to, q1);
+}
+
+/* 同意之後才顯示題目，每題旁邊列出你以前答過的相似題目可以一鍵帶入 */
+function showApplyForm(box, toId, to, q1){
+  box.innerHTML = `
+    <fieldset><legend>向 ${esc(to.name)} 提出認養申請</legend>
+      <p class="hint">第一階段書面審查。對方會讀到你的回答，決定是否進入第二階段。</p>
+      <p class="hint">送出需要 <b>${APPLY_COST} 點掛號費</b>，目前餘額 ${myProfile ? myProfile.credits : 0} 點。</p>
+      ${q1.map((q,i) => questionBlock(q, i, 'a1q')).join('')}
+      <div class="bar"><button id="sendApply">送出申請（${APPLY_COST} 點）</button>
+        <button class="ghost" id="cancelApply2">取消</button><span class="msg" id="applyMsg"></span></div>
+    </fieldset>`;
+  bindAnswerBank(box);
+  $('cancelApply2').onclick = () => box.remove();
   $('sendApply').onclick = async () => {
-    const ans = [...document.querySelectorAll('.a1q')].map(t => t.value.trim());
+    const ans = [...box.querySelectorAll('.a1q')].map(t => t.value.trim());
     if(ans.some(a => !a)){ flash('applyMsg','每一題都要回答'); return; }
     if(!isApproved(myProfile)){ flash('applyMsg','你的照片尚未通過審核，無法提出申請'); return; }
     if((myProfile.credits||0) < APPLY_COST){ flash('applyMsg','掛號費不足，請到「診療室」查看加值方式'); return; }
     if(!confirm(`送出這份申請會扣 ${APPLY_COST} 點掛號費，確定嗎？`)) return;
     try{
-      const app = await DB.applyTo(toId, ans);
+      const app = await DB.applyTo(toId, ans, q1);
       myProfile = await DB.getMyProfile();
       apps.push(app);
       box.remove(); renderBoard(); flash('boardMsg','申請已送出');
@@ -1035,8 +1143,9 @@ async function renderOutbox(){
     return `<fieldset><legend>${esc(to.name)}</legend>
       <div class="stage s${a.status==='rejected'?0:a.stage}">${stageText(a)}</div>
       ${a.note ? `<p class="hint">對方留言：${esc(a.note)}</p>` : ''}
-      ${needQ2 ? q2.map((q,i) => `<label>${i+1}. ${esc(q)}</label><textarea rows="2" class="a2q" data-app="${a.id}" data-idx="${i}"></textarea>`).join('')
-               + `<div class="bar"><button class="sendQ2" data-app="${a.id}" data-n="${q2.length}">送出回答</button></div>` : ''}
+      ${needQ2 ? `<div class="q2form" data-app="${a.id}">`
+               + q2.map((q,i) => questionBlock(q, i, 'a2q-' + a.id)).join('')
+               + `<div class="bar"><button class="sendQ2" data-app="${a.id}" data-n="${q2.length}">送出回答</button></div></div>` : ''}
       ${a.stage === 3 && !(a.unlock_from && a.unlock_to) ? `<div class="bar">
           <button class="ghost unlock" data-app="${a.id}">${a.unlock_from ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>
         </div>` : ''}
@@ -1064,15 +1173,19 @@ function bindOutbox(){
       renderOutbox();
     }catch(e){ alert(e.message || '操作失敗'); }
   });
+  $('outbox').querySelectorAll('.q2form').forEach(f => bindAnswerBank(f));
   $('outbox').querySelectorAll('.sendQ2').forEach(b => b.onclick = async () => {
     const a = apps.find(x => x.id === b.dataset.app);
     const n = +b.dataset.n;
     const ans = [];
-    for(let i=0;i<n;i++) ans.push(($('outbox').querySelector(`.a2q[data-app="${a.id}"][data-idx="${i}"]`)||{value:''}).value.trim());
+    for(let i=0;i<n;i++) ans.push(($('outbox').querySelector(`.a2q-${a.id}[data-i="${i}"]`)||{value:''}).value.trim());
     if(ans.some(x => !x)){ alert('每一題都要回答'); return; }
+    const qs = (Array.isArray(a.a2_questions) && a.a2_questions.length) ? a.a2_questions : DEFAULT_Q2;
     try{
-      const updated = await DB.updateApplication(a.id, {a2: ans});
-      Object.assign(a, updated); renderOutbox();
+      await DB.submitStage2(a.id, ans, qs);
+      a.a2 = ans;
+      myProfile = await DB.getMyProfile();   /* 答題紀錄更新了，重新載入 */
+      renderOutbox();
     }catch(e){ alert(e.message || '送出失敗'); }
   });
   $('outbox').querySelectorAll('.unlock').forEach(b => b.onclick = async () => {
@@ -1102,14 +1215,25 @@ async function renderInbox(){
       <div class="stage s${a.status==='rejected'?0:a.stage}">${stageText(a)}</div>
       <div>${[from.age && from.age+' 歲', from.area, from.job].filter(Boolean)
              .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
-      ${a.a1 ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1) : ''}
+      ${a.a1
+        ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1)
+        : `<div class="lock" style="margin-top:12px">
+             🔒 <b>第一階段詳細回答尚未調閱</b><br>
+             這位申請人已經完整填寫了 ${q1.length} 題書面審查。調閱詳細回答需要 ${UNLOCK_A1_COST} 點，
+             目前餘額 ${myProfile ? myProfile.credits : 0} 點。
+             <div class="bar">
+               <button class="ghost unlockA1" data-app="${a.id}">調閱詳細回答（${UNLOCK_A1_COST} 點）</button>
+             </div>
+           </div>`}
       ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
       <div class="bar">
         ${a.status === 'open' && a.stage === 1 && a.a1 ? `
-          <button class="pass" data-app="${a.id}">通過，進第二階段</button>
+          <button class="pass" data-app="${a.id}">通過，發出第二階段問卷（${STAGE2_COST} 點）</button>
           <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
         ${a.status === 'open' && a.stage === 2 && a.a2 ? `
           <button class="pass" data-app="${a.id}">通過，進第三階段</button>
+          <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
+        ${a.status === 'open' && a.stage === 1 && !a.a1 ? `
           <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
         ${a.stage === 3 && !(a.unlock_from && a.unlock_to) ? `
           <button class="ghost unlockTo" data-app="${a.id}">${a.unlock_to ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>` : ''}
@@ -1135,15 +1259,37 @@ function bindInbox(){
     Object.assign(a, updated);
     renderInbox(); renderBoard();
   };
+  $('inbox').querySelectorAll('.unlockA1').forEach(b => b.onclick = async () => {
+    const a = apps.find(x => x.id === b.dataset.app);
+    if((myProfile.credits||0) < UNLOCK_A1_COST){ alert('點數不足，請到「診療室」查看加值方式。'); return; }
+    if(!confirm(`調閱這份第一階段詳細回答會扣 ${UNLOCK_A1_COST} 點，確定嗎？`)) return;
+    try{
+      await DB.unlockA1(a.id);
+      myProfile = await DB.getMyProfile();
+      renderInbox();
+    }catch(e){ alert(e.message || '操作失敗'); }
+  });
   $('inbox').querySelectorAll('.pass').forEach(b => b.onclick = async () => {
     const a = apps.find(x => x.id === b.dataset.app);
-    const patch = {stage: Math.min(3, a.stage + 1)};
-    /* 已經用進階診斷擬好客製問題的話就沿用，不要被題庫蓋掉 */
-    const hasCustom = Array.isArray(a.a2_questions) && a.a2_questions.length;
-    if(a.stage === 1 && !hasCustom && Array.isArray(myProfile && myProfile.q2_bank) && myProfile.q2_bank.length){
-      patch.a2_questions = myProfile.q2_bank;
-    }
-    try{ await upd(a.id, patch); }catch(e){ alert(e.message||'操作失敗'); }
+    try{
+      if(a.stage === 1){
+        /* 進第二階段要付出題費：優先用進階診斷擬好的客製題，其次用自己的題庫，最後用預設題 */
+        const custom = (Array.isArray(a.a2_questions) && a.a2_questions.length) ? a.a2_questions : null;
+        const bank = (Array.isArray(myProfile && myProfile.q2_bank) && myProfile.q2_bank.length) ? myProfile.q2_bank : null;
+        const qs = custom || bank || DEFAULT_Q2;
+        if(!a.stage2_paid){
+          if((myProfile.credits||0) < STAGE2_COST){ alert('點數不足，請到「診療室」查看加值方式。'); return; }
+          if(!confirm(`發出第二階段問卷會扣 ${STAGE2_COST} 點，確定嗎？`)) return;
+        }
+        const updated = await DB.sendStage2(a.id, qs);
+        Object.assign(a, updated);
+        myProfile = await DB.getMyProfile();
+      }else{
+        const updated = await DB.advanceStage3(a.id);
+        Object.assign(a, updated);
+      }
+      renderInbox(); renderBoard();
+    }catch(e){ alert(e.message||'操作失敗'); }
   });
   $('inbox').querySelectorAll('.rej').forEach(b => b.onclick = async () => {
     const note = prompt('想留一句話給對方嗎？（可留空，已帶入你的「婉拒」範本，可直接修改）', tplById('no'));
@@ -1197,6 +1343,35 @@ function renderTpl(){
   $('tplPick').innerHTML = list.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
   if(list.some(t => t.id === keep)) $('tplPick').value = keep;
   loadTplText();
+  renderBank();
+}
+/* 我的答題紀錄 */
+function renderBank(){
+  const bank = Array.isArray(myProfile && myProfile.answer_bank) ? myProfile.answer_bank : [];
+  if(!bank.length){
+    $('bankList').innerHTML = '<div class="empty">還沒有紀錄。送出第一份申請之後，答案就會自動存在這裡。</div>';
+    return;
+  }
+  $('bankList').innerHTML = bank.map((x, i) => `
+    <div class="qa">
+      <b>${esc(x.q)}</b>
+      <div style="white-space:pre-wrap">${esc(x.a)}</div>
+      <div class="bar" style="margin-top:6px">
+        <span class="hint">${x.at ? new Date(x.at).toLocaleDateString('zh-TW') : ''}</span>
+        <button class="ghost bankDel" data-i="${i}" style="font-size:11px;padding:3px 8px">刪除</button>
+      </div>
+    </div>`).join('')
+    + `<div class="bar"><button class="ghost" id="bankClear">全部清空</button><span class="msg" id="bankMsg"></span></div>`;
+  $('bankList').querySelectorAll('.bankDel').forEach(b => b.onclick = async () => {
+    const next = bank.slice(); next.splice(+b.dataset.i, 1);
+    try{ myProfile = await DB.saveMyProfile({answer_bank: next}); renderBank(); }
+    catch(e){ alert(e.message || '刪除失敗'); }
+  });
+  $('bankClear').onclick = async () => {
+    if(!confirm('清空所有答題紀錄？此動作無法復原。')) return;
+    try{ myProfile = await DB.saveMyProfile({answer_bank: []}); renderBank(); }
+    catch(e){ alert(e.message || '清空失敗'); }
+  };
 }
 function loadTplText(){
   const t = mergedTemplates().find(x => x.id === $('tplPick').value);
@@ -1515,6 +1690,8 @@ async function boot(){
 ['clinicApplyCost','howApplyCost'].forEach(id => $(id).textContent = APPLY_COST);
 ['clinicVetCost','howVetCost'].forEach(id => $(id).textContent = VET_COST);
 $('clinicDeepCost').textContent = DEEP_COST;
+$('clinicUnlockCost').textContent = UNLOCK_A1_COST;
+$('clinicStage2Cost').textContent = STAGE2_COST;
 $('clinicRefundDays').textContent = REFUND_DAYS;
 $('howFreeCredits').textContent = 5;
 $('howPhotoBonus').textContent = PHOTO_BONUS;

@@ -115,6 +115,8 @@ alter table public.profiles add column if not exists health text default '';
 alter table public.profiles add column if not exists health_when text not null default 'stage2';
 alter table public.profiles add column if not exists vet_note text default '';
 alter table public.profiles add column if not exists stars jsonb not null default '{}'::jsonb;
+-- 我的答題紀錄：申請人送出過的答案，下次遇到相似題目可以一鍵帶入再修改
+alter table public.profiles add column if not exists answer_bank jsonb not null default '[]'::jsonb;
 
 -- 物種從「只有貓／狗」放寬成 13 種，性別改用獨立的 gender 欄位表示。
 -- 先移除舊的 check 限制，再依現有資料把 gender 補上（貓→女生、狗→男生，符合舊版的隱含規則）。
@@ -206,13 +208,15 @@ create table if not exists public.applications (
   to_user      uuid not null references auth.users(id) on delete cascade,
   stage        int  not null default 1,      -- 1 書面審查 / 2 價值觀評估 / 3 日常觀察
   status       text not null default 'open' check (status in ('open','rejected')),
-  a1           jsonb,                        -- 第一階段回答
-  a2           jsonb,                        -- 第二階段回答
+  -- 注意：第一／二階段的回答不放在這裡，而是放在 application_answers（見第 10 節），
+  -- 因為收件方要「付費解鎖」才看得到，權限必須由資料庫控管，不能只靠前端遮住。
   a2_questions jsonb,                        -- 這次實際出的第二階段題目（由 pet 從題庫挑選）
+  a1_unlocked  boolean not null default false, -- 收件方是否已付費解鎖第一階段詳細回答
+  stage2_paid  boolean not null default false, -- 收件方是否已付費發出第二階段問卷
+  consent_at   timestamptz,                  -- 申請人送出這份申請時同意隱私權政策的時間
   unlock_from  boolean not null default false,
   unlock_to    boolean not null default false,
   note         text,                         -- 被申請方寫給申請人看的話（例如婉拒理由）
-  keeper_note  text,                         -- 申請人自己的私人筆記，只有申請人看得到
   vet          text,                         -- 主治獸醫（AI）評估結果，快取起來避免重複收費
   vet_at       timestamptz,
   paid         int not null default 0,       -- 送出申請時付的掛號費點數
@@ -228,15 +232,15 @@ alter table public.applications add column if not exists from_user uuid;
 alter table public.applications add column if not exists to_user uuid;
 alter table public.applications add column if not exists stage int not null default 1;
 alter table public.applications add column if not exists status text not null default 'open';
-alter table public.applications add column if not exists a1 jsonb;
-alter table public.applications add column if not exists a2 jsonb;
 alter table public.applications add column if not exists a2_questions jsonb;
+alter table public.applications add column if not exists a1_unlocked boolean not null default false;
+alter table public.applications add column if not exists stage2_paid boolean not null default false;
+alter table public.applications add column if not exists consent_at timestamptz;
 alter table public.applications add column if not exists unlock_from boolean not null default false;
 alter table public.applications add column if not exists unlock_to boolean not null default false;
 alter table public.applications add column if not exists note text;
 alter table public.applications add column if not exists created_at timestamptz default now();
 alter table public.applications add column if not exists updated_at timestamptz default now();
-alter table public.applications add column if not exists keeper_note text;
 alter table public.applications add column if not exists vet text;
 alter table public.applications add column if not exists vet_at timestamptz;
 alter table public.applications add column if not exists paid int not null default 0;
@@ -627,7 +631,9 @@ begin
   if coalesce(v_app.paid, 0) <= 0 then raise exception '這筆申請沒有付款紀錄'; end if;
   if now() - v_app.created_at <= interval '14 days' then raise exception '還沒超過 14 天，暫時無法退款'; end if;
 
+  perform set_config('app.bypass_app_guard', 'on', true);
   update public.applications set refunded = true where id = p_app_id;
+  perform set_config('app.bypass_app_guard', '', true);
 
   perform set_config('app.bypass_profile_guard', 'on', true);
   update public.profiles set
@@ -675,7 +681,307 @@ begin
 end $$;
 
 -- ============================================================
--- 10) 把自己設成管理員（審核台權限）
+-- 10) 申請內容分離：付費解鎖的第一階段回答、以及申請人的私人筆記
+--
+--     收件方要付點數才能看第一階段的詳細回答。如果答案還放在 applications 這張表，
+--     收件方本來就有讀取整列的權限，前端遮住也沒用（打開 devtools 就讀得到），
+--     付費牆等於是假的。所以答案搬到獨立資料表，由 RLS 控管：
+--       ・申請人：永遠看得到自己寫的
+--       ・收件方：只有 a1_unlocked = true（已付費）之後才看得到
+--     申請人的私人筆記 keeper_note 也一併搬走，改成只有本人看得到（原本收件方
+--     其實查得到那個欄位，這是之前 README 就記載的已知缺陷，這次一併修掉）。
+-- ============================================================
+
+create table if not exists public.application_answers (
+  application_id uuid primary key references public.applications(id) on delete cascade,
+  a1         jsonb,
+  a2         jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.application_private_notes (
+  application_id uuid primary key references public.applications(id) on delete cascade,
+  owner_id   uuid not null references auth.users(id) on delete cascade,
+  note       text,
+  updated_at timestamptz not null default now()
+);
+
+-- 一次性搬遷：把舊欄位的內容複製到新表，然後把舊欄位刪掉。
+-- 舊欄位不刪的話，收件方還是讀得到，付費牆就漏了。
+-- 既有的申請一律標記成「已解鎖」，不會回頭跟人收錢。
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'applications' and column_name = 'a1') then
+    insert into public.application_answers (application_id, a1, a2)
+      select id, a1, a2 from public.applications where a1 is not null or a2 is not null
+      on conflict (application_id) do nothing;
+    update public.applications set a1_unlocked = true where a1 is not null;
+    alter table public.applications drop column a1;
+    alter table public.applications drop column a2;
+  end if;
+
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'applications' and column_name = 'keeper_note') then
+    insert into public.application_private_notes (application_id, owner_id, note)
+      select id, from_user, keeper_note from public.applications where keeper_note is not null
+      on conflict (application_id) do nothing;
+    alter table public.applications drop column keeper_note;
+  end if;
+end $$;
+
+alter table public.application_answers       enable row level security;
+alter table public.application_private_notes enable row level security;
+
+drop policy if exists "answers_select_allowed"  on public.application_answers;
+drop policy if exists "answers_update_owner"    on public.application_answers;
+drop policy if exists "notes_all_owner"         on public.application_private_notes;
+
+-- 申請人永遠看得到自己的答案；收件方要付費解鎖後才看得到
+create policy "answers_select_allowed"
+  on public.application_answers for select
+  to authenticated
+  using (exists (
+    select 1 from public.applications a
+    where a.id = application_id
+      and (a.from_user = auth.uid()
+        or (a.to_user = auth.uid() and a.a1_unlocked))
+  ));
+
+-- 只有申請人本人可以改自己的答案
+create policy "answers_update_owner"
+  on public.application_answers for update
+  to authenticated
+  using (exists (select 1 from public.applications a where a.id = application_id and a.from_user = auth.uid()))
+  with check (exists (select 1 from public.applications a where a.id = application_id and a.from_user = auth.uid()));
+
+-- 私人筆記：只有寫的人看得到、改得動
+create policy "notes_all_owner"
+  on public.application_private_notes for all
+  to authenticated
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid());
+
+drop trigger if exists trg_answers_touch on public.application_answers;
+create trigger trg_answers_touch before update on public.application_answers
+  for each row execute function public.touch_updated_at();
+drop trigger if exists trg_notes_touch on public.application_private_notes;
+create trigger trg_notes_touch before update on public.application_private_notes
+  for each row execute function public.touch_updated_at();
+
+-- ── 申請單也要擋住「自己改自己的付費狀態」 ──
+--    applications 的 RLS 只檢查「是不是這筆申請的當事人」，沒有檢查改的是哪一欄。
+--    收件方可以直接送 update applications set a1_unlocked = true 就白嫖解鎖，
+--    或者把 stage 從 1 改成 2 跳過第二階段的出題費。跟 profiles 一樣用 trigger 擋住，
+--    這幾欄只能由下面那些會扣點的安全函式來改。
+create or replace function public.guard_application_privileged()
+returns trigger language plpgsql as $$
+begin
+  if auth.role() = 'authenticated'
+     and coalesce(current_setting('app.bypass_app_guard', true), '') <> 'on'
+     and not public.is_admin(auth.uid()) then
+    new.from_user   := old.from_user;
+    new.to_user     := old.to_user;
+    new.stage       := old.stage;
+    new.a1_unlocked := old.a1_unlocked;
+    new.stage2_paid := old.stage2_paid;
+    new.paid        := old.paid;
+    new.refunded    := old.refunded;
+    new.consent_at  := old.consent_at;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_guard_application on public.applications;
+create trigger trg_guard_application before update on public.applications
+  for each row execute function public.guard_application_privileged();
+
+-- ── 我的答題紀錄：把送出的答案存進申請人自己的 profiles.answer_bank ──
+-- 以「題目文字」去重（同一題只留最新的答案），最多保留 100 筆。
+create or replace function public.answer_bank_merge(old_bank jsonb, entries jsonb, cap int default 100)
+returns jsonb language sql immutable as $$
+  with all_rows as (
+    -- 新答案排在前面（ord 小），舊的接在後面，這樣同一題會保留最新的那筆
+    select elem, ord from jsonb_array_elements(coalesce(entries, '[]'::jsonb)) with ordinality as t(elem, ord)
+    union all
+    select elem, ord + 1000000 from jsonb_array_elements(coalesce(old_bank, '[]'::jsonb)) with ordinality as t(elem, ord)
+  ), dedup as (
+    select distinct on (btrim(elem->>'q')) elem, ord
+    from all_rows
+    where btrim(coalesce(elem->>'q', '')) <> ''
+    order by btrim(elem->>'q'), ord
+  ), capped as (
+    select elem, ord from dedup order by ord limit cap
+  )
+  select coalesce((select jsonb_agg(elem order by ord) from capped), '[]'::jsonb)
+$$;
+
+-- 提出申請（取代第 9 節的舊版 apply_to）：
+-- 扣掛號費＋建立申請＋寫入受保護的答案表＋記錄隱私權同意＋存進答題紀錄，全部同一個交易。
+drop function if exists public.apply_to(uuid, jsonb);
+create or replace function public.apply_to(p_to uuid, p_answers jsonb, p_questions jsonb default '[]'::jsonb)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare
+  v_cost constant int := 1;   -- 掛號費，價格由伺服器決定
+  v_bal int; v_app public.applications; v_entries jsonb;
+begin
+  if p_to = auth.uid() then raise exception '不能對自己提出申請'; end if;
+  if not exists (
+    select 1 from public.profiles
+    where id = p_to and photo_status = 'approved' and verify_status = 'approved'
+  ) then
+    raise exception '對方尚未通過審核，暫時無法申請';
+  end if;
+
+  select credits into v_bal from public.profiles where id = auth.uid() for update;
+  if v_bal is null or v_bal < v_cost then raise exception '掛號費不足'; end if;
+
+  insert into public.applications(from_user, to_user, stage, status, paid, consent_at)
+  values (auth.uid(), p_to, 1, 'open', v_cost, now())
+  returning * into v_app;
+
+  insert into public.application_answers(application_id, a1)
+  values (v_app.id, p_answers);
+
+  -- 存進申請人自己的答題紀錄
+  select jsonb_agg(jsonb_build_object(
+           'q', p_questions->>(i-1), 'a', p_answers->>(i-1), 'at', now()))
+    into v_entries
+    from generate_series(1, jsonb_array_length(coalesce(p_questions,'[]'::jsonb))) i
+    where coalesce(p_answers->>(i-1), '') <> '';
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles set
+    credits = credits - v_cost,
+    answer_bank = public.answer_bank_merge(answer_bank, coalesce(v_entries,'[]'::jsonb)),
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '掛號　向 ' || (select name from public.profiles where id = p_to) || ' 提出申請', 'd', -v_cost))
+  where id = auth.uid();
+  perform set_config('app.bypass_profile_guard', '', true);
+
+  return v_app;
+end $$;
+
+-- 收件方付費解鎖第一階段詳細回答
+create or replace function public.unlock_a1(p_app_id uuid)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare
+  v_cost constant int := 1;
+  v_app public.applications; v_bal int;
+begin
+  select * into v_app from public.applications where id = p_app_id for update;
+  if v_app is null then raise exception '找不到這筆申請'; end if;
+  if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
+  if v_app.a1_unlocked then return v_app; end if;   -- 已解鎖就不再收費
+
+  select credits into v_bal from public.profiles where id = auth.uid() for update;
+  if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
+
+  perform set_config('app.bypass_app_guard', 'on', true);
+  update public.applications set a1_unlocked = true where id = p_app_id returning * into v_app;
+  perform set_config('app.bypass_app_guard', '', true);
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles set
+    credits = credits - v_cost,
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '調閱　第一階段詳細回答', 'd', -v_cost))
+  where id = auth.uid();
+  perform set_config('app.bypass_profile_guard', '', true);
+
+  return v_app;
+end $$;
+
+-- 收件方付費發出第二階段問卷（同時把申請推進到第二階段）
+create or replace function public.send_stage2(p_app_id uuid, p_questions jsonb)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare
+  v_cost constant int := 2;
+  v_app public.applications; v_bal int;
+begin
+  select * into v_app from public.applications where id = p_app_id for update;
+  if v_app is null then raise exception '找不到這筆申請'; end if;
+  if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
+  if v_app.status <> 'open' then raise exception '這筆申請已經結束了'; end if;
+  if v_app.stage <> 1 then raise exception '這筆申請不在第一階段'; end if;
+  if not v_app.a1_unlocked then raise exception '請先解鎖並讀過第一階段回答'; end if;
+  if jsonb_array_length(coalesce(p_questions,'[]'::jsonb)) = 0 then raise exception '至少要出一題'; end if;
+
+  if not v_app.stage2_paid then
+    select credits into v_bal from public.profiles where id = auth.uid() for update;
+    if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
+    perform set_config('app.bypass_profile_guard', 'on', true);
+    update public.profiles set
+      credits = credits - v_cost,
+      credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '出題　發出第二階段問卷', 'd', -v_cost))
+    where id = auth.uid();
+    perform set_config('app.bypass_profile_guard', '', true);
+  end if;
+
+  perform set_config('app.bypass_app_guard', 'on', true);
+  update public.applications
+    set stage = 2, a2_questions = p_questions, stage2_paid = true
+    where id = p_app_id
+    returning * into v_app;
+  perform set_config('app.bypass_app_guard', '', true);
+  return v_app;
+end $$;
+
+-- 通過第二階段、進入第三階段（不收費，但一樣要由伺服器驗證，
+-- 因為 stage 這一欄已經被 trigger 鎖住，前端改不動）
+create or replace function public.advance_stage3(p_app_id uuid)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare v_app public.applications; v_has_a2 boolean;
+begin
+  select * into v_app from public.applications where id = p_app_id for update;
+  if v_app is null then raise exception '找不到這筆申請'; end if;
+  if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
+  if v_app.status <> 'open' then raise exception '這筆申請已經結束了'; end if;
+  if v_app.stage <> 2 then raise exception '這筆申請不在第二階段'; end if;
+  select a2 is not null into v_has_a2 from public.application_answers where application_id = p_app_id;
+  if not coalesce(v_has_a2, false) then raise exception '對方還沒送出第二階段回答'; end if;
+
+  perform set_config('app.bypass_app_guard', 'on', true);
+  update public.applications set stage = 3 where id = p_app_id returning * into v_app;
+  perform set_config('app.bypass_app_guard', '', true);
+  return v_app;
+end $$;
+
+-- 申請人送出第二階段回答（一併存進答題紀錄）
+create or replace function public.submit_stage2(p_app_id uuid, p_answers jsonb, p_questions jsonb default '[]'::jsonb)
+returns public.applications
+language plpgsql security definer set search_path = public as $$
+declare v_app public.applications; v_entries jsonb;
+begin
+  select * into v_app from public.applications where id = p_app_id for update;
+  if v_app is null then raise exception '找不到這筆申請'; end if;
+  if v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
+  if v_app.stage <> 2 or v_app.status <> 'open' then raise exception '目前階段無法作答'; end if;
+
+  update public.application_answers set a2 = p_answers where application_id = p_app_id;
+  if not found then
+    insert into public.application_answers(application_id, a2) values (p_app_id, p_answers);
+  end if;
+
+  select jsonb_agg(jsonb_build_object(
+           'q', p_questions->>(i-1), 'a', p_answers->>(i-1), 'at', now()))
+    into v_entries
+    from generate_series(1, jsonb_array_length(coalesce(p_questions,'[]'::jsonb))) i
+    where coalesce(p_answers->>(i-1), '') <> '';
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles
+    set answer_bank = public.answer_bank_merge(answer_bank, coalesce(v_entries,'[]'::jsonb))
+    where id = auth.uid();
+  perform set_config('app.bypass_profile_guard', '', true);
+
+  return v_app;
+end $$;
+
+-- ============================================================
+-- 11) 把自己設成管理員（審核台權限）
 --    這行不會自動執行——執行完上面全部之後，自己先用這個帳號登入一次，
 --    再回到 SQL Editor，把 <你的帳號 email> 換成自己的 email，單獨執行這一段：
 --

@@ -217,6 +217,8 @@ const DEFAULT_Q2 = [
   '如果對方需要一整天安靜休息，你會怎麼看待？',
   '你認為自己的缺點是什麼？'
 ];
+const UNLOCK_A1_COST = 1;  /* 調閱第一階段詳細回答（實際收費以資料庫 unlock_a1 為準） */
+const STAGE2_COST = 2;     /* 發出第二階段問卷（實際收費以資料庫 send_stage2 為準） */
 
 /* 第二階段題庫：十類共 48 題 */
 const S2_CATS = [
@@ -406,14 +408,21 @@ async function renderRoster(){
       <div class="stage s${a.status==='rejected'?0:a.stage}">${stageTxt}</div>
       <div>${[from.age && from.age+' 歲', from.area, from.job].filter(Boolean)
              .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
-      ${a.a1 ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1) : ''}
+      ${a.a1
+        ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1)
+        : `<div class="lock" style="margin-top:12px">
+             🔒 第一階段詳細回答尚未調閱，需要 ${UNLOCK_A1_COST} 點。
+             <div class="bar"><button class="ghost unlockA1" data-app="${a.id}">調閱詳細回答（${UNLOCK_A1_COST} 點）</button></div>
+           </div>`}
       ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
       <div class="bar">
         ${a.status==='open' && a.stage===1 && a.a1 ? `
-          <button class="pass" data-app="${a.id}">通過，進第二階段</button>
+          <button class="pass" data-app="${a.id}">通過，發出第二階段問卷（${STAGE2_COST} 點）</button>
           <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
         ${a.status==='open' && a.stage===2 && a.a2 ? `
           <button class="pass" data-app="${a.id}">通過，進第三階段</button>
+          <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
+        ${a.status==='open' && a.stage===1 && !a.a1 ? `
           <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
         ${a.stage===3 && !(a.unlock_from && a.unlock_to) ? `
           <button class="ghost unlockTo" data-app="${a.id}">${a.unlock_to ? '已同意解鎖，等待對方' : '同意解鎖日常觀察'}</button>` : ''}
@@ -431,11 +440,29 @@ async function renderRoster(){
 }
 function bindRoster(){
   const upd = async (id, patch) => { await DB.updateApplication(id, patch); await renderRoster(); };
+  $('roster').querySelectorAll('.unlockA1').forEach(b => b.onclick = async () => {
+    const a = roster.find(x => x.id === b.dataset.app);
+    if((myProfile.credits||0) < UNLOCK_A1_COST){ alert('點數不足，請到配對站「診療室」查看加值方式。'); return; }
+    if(!confirm(`調閱這份第一階段詳細回答會扣 ${UNLOCK_A1_COST} 點，確定嗎？`)) return;
+    try{ await DB.unlockA1(a.id); myProfile = await DB.getMyProfile(); await renderRoster(); }
+    catch(e){ alert(e.message||'操作失敗'); }
+  });
   $('roster').querySelectorAll('.pass').forEach(b => b.onclick = async () => {
     const a = roster.find(x => x.id === b.dataset.app);
-    const patch = {stage: Math.min(3, a.stage + 1)};
-    if(a.stage === 1 && Array.isArray(myProfile.q2_bank) && myProfile.q2_bank.length) patch.a2_questions = myProfile.q2_bank;
-    try{ await upd(a.id, patch); }catch(e){ alert(e.message||'操作失敗'); }
+    try{
+      if(a.stage === 1){
+        const qs = (Array.isArray(myProfile.q2_bank) && myProfile.q2_bank.length) ? myProfile.q2_bank : DEFAULT_Q2;
+        if(!a.stage2_paid){
+          if((myProfile.credits||0) < STAGE2_COST){ alert('點數不足，請到配對站「診療室」查看加值方式。'); return; }
+          if(!confirm(`發出第二階段問卷會扣 ${STAGE2_COST} 點，確定嗎？`)) return;
+        }
+        await DB.sendStage2(a.id, qs);
+        myProfile = await DB.getMyProfile();
+      }else{
+        await DB.advanceStage3(a.id);
+      }
+      await renderRoster();
+    }catch(e){ alert(e.message||'操作失敗'); }
   });
   $('roster').querySelectorAll('.rej').forEach(b => b.onclick = async () => {
     const note = prompt('想留一句話給對方嗎？（可留空）');
@@ -609,6 +636,9 @@ async function renderKeeperOutbox(){
   if(!list.length){ box.innerHTML = '<div class="empty">還沒有送出任何申請，到<a href="index.html">配對站</a>看看吧。</div>'; return; }
   const toProfiles = {};
   for(const a of list){ if(!toProfiles[a.to_user]) toProfiles[a.to_user] = await DB.getProfile(a.to_user); }
+  /* 私人筆記存在獨立資料表（只有本人讀得到，對方查不到），逐筆讀出來 */
+  const notes = {};
+  for(const a of list){ try{ notes[a.id] = await DB.getPrivateNote(a.id); }catch(e){ notes[a.id] = ''; } }
   box.innerHTML = list.map(a => {
     const to = toProfiles[a.to_user] || {name:'（已取消登記）'};
     const stageTxt = a.status==='rejected' ? '未通過' : a.stage===1 ? '第一階段' : a.stage===2 ? '第二階段' : '第三階段';
@@ -616,7 +646,7 @@ async function renderKeeperOutbox(){
       <div class="stage s${a.status==='rejected'?0:a.stage}">${stageTxt}</div>
       ${a.note ? `<p class="hint">對方留言：${esc(a.note)}</p>` : ''}
       <label>我的私人筆記（只有你看得到，可以記感覺、進度、要注意的事）</label>
-      <textarea class="memo" rows="3" data-app="${a.id}">${esc(a.keeper_note||'')}</textarea>
+      <textarea class="memo" rows="3" data-app="${a.id}">${esc(notes[a.id]||'')}</textarea>
       <div class="bar"><button class="ghost memoSave" data-app="${a.id}">儲存筆記</button>
         <span class="msg memoMsg" data-app="${a.id}"></span></div>
       <p class="hint" style="margin-top:8px">回答問題與解鎖操作請到<a href="index.html">配對站「我送出的申請」</a>。</p>
@@ -626,7 +656,7 @@ async function renderKeeperOutbox(){
     const id = b.dataset.app;
     const text = box.querySelector(`.memo[data-app="${id}"]`).value;
     const msg = box.querySelector(`.memoMsg[data-app="${id}"]`);
-    try{ await DB.updateApplication(id, {keeper_note: text}); msg.textContent = '已儲存'; setTimeout(()=>msg.textContent='',2000); }
+    try{ await DB.savePrivateNote(id, text); msg.textContent = '已儲存'; setTimeout(()=>msg.textContent='',2000); }
     catch(e){ msg.textContent = e.message||'儲存失敗'; }
   });
 }

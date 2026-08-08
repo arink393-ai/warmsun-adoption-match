@@ -123,9 +123,11 @@
     if (error) return { ok: false, profile: await getMyProfile(), error };
     return { ok: true, profile: data };
   }
-  // 提出認養申請：扣掛號費＋建立申請案件，包在同一個交易裡（見 apply_to()）
-  async function applyTo(toId, answers) {
-    const { data, error } = await sb.rpc('apply_to', { p_to: toId, p_answers: answers });
+  // 提出認養申請：扣掛號費＋建立申請＋寫入受保護的答案表＋存進答題紀錄，同一個交易（見 apply_to()）
+  async function applyTo(toId, answers, questions) {
+    const { data, error } = await sb.rpc('apply_to', {
+      p_to: toId, p_answers: answers, p_questions: questions || []
+    });
     if (error) throw error;
     return data;
   }
@@ -152,30 +154,68 @@
   }
 
   // ── Applications ──────────────────────────────────────
+  // 回答存在受保護的 application_answers（收件方付費解鎖後才讀得到，見 schema 第 10 節）。
+  // 這裡一併撈出來攤平成 a.a1 / a.a2，畫面端就跟以前一樣用；沒解鎖時 RLS 會讓它是 null。
+  const APP_SELECT = '*, application_answers(a1,a2)';
+  function flattenApp(row) {
+    if (!row) return row;
+    const raw = row.application_answers;
+    const ans = Array.isArray(raw) ? raw[0] : raw;
+    row.a1 = ans ? ans.a1 : null;
+    row.a2 = ans ? ans.a2 : null;
+    delete row.application_answers;
+    return row;
+  }
   async function listOutbox() {
     const user = await getUser();
-    const { data, error } = await sb.from('applications').select('*')
+    const { data, error } = await sb.from('applications').select(APP_SELECT)
       .eq('from_user', user.id).order('updated_at', { ascending: false });
     if (error) throw error;
-    return data || [];
+    return (data || []).map(flattenApp);
   }
   async function listInbox() {
     const user = await getUser();
-    const { data, error } = await sb.from('applications').select('*')
+    const { data, error } = await sb.from('applications').select(APP_SELECT)
       .eq('to_user', user.id).order('updated_at', { ascending: false });
     if (error) throw error;
-    return data || [];
+    return (data || []).map(flattenApp);
   }
   async function findApplicationTo(toId) {
     const user = await getUser();
-    const { data, error } = await sb.from('applications').select('*')
+    const { data, error } = await sb.from('applications').select(APP_SELECT)
       .eq('from_user', user.id).eq('to_user', toId).maybeSingle();
     if (error) throw error;
-    return data;
+    return flattenApp(data);
   }
   async function updateApplication(id, patch) {
     const { data, error } = await sb.from('applications')
-      .update(patch).eq('id', id).select().single();
+      .update(patch).eq('id', id).select(APP_SELECT).single();
+    if (error) throw error;
+    return flattenApp(data);
+  }
+  // 收件方付費解鎖第一階段詳細回答（1 點，價格由伺服器決定）
+  async function unlockA1(appId) {
+    const { data, error } = await sb.rpc('unlock_a1', { p_app_id: appId });
+    if (error) throw error;
+    return data;
+  }
+  // 收件方付費發出第二階段問卷（2 點），同時把申請推進到第二階段
+  async function sendStage2(appId, questions) {
+    const { data, error } = await sb.rpc('send_stage2', { p_app_id: appId, p_questions: questions });
+    if (error) throw error;
+    return data;
+  }
+  // 申請人送出第二階段回答（一併存進自己的答題紀錄）
+  async function submitStage2(appId, answers, questions) {
+    const { data, error } = await sb.rpc('submit_stage2', {
+      p_app_id: appId, p_answers: answers, p_questions: questions || []
+    });
+    if (error) throw error;
+    return data;
+  }
+  // 通過第二階段、進入第三階段（不收費，但一樣由伺服器驗證）
+  async function advanceStage3(appId) {
+    const { data, error } = await sb.rpc('advance_stage3', { p_app_id: appId });
     if (error) throw error;
     return data;
   }
@@ -245,6 +285,21 @@
     if (error) throw error;
   }
 
+  // ── 申請人的私人筆記（獨立資料表，只有寫的人讀得到，對方查不到） ──
+  async function getPrivateNote(appId) {
+    const { data, error } = await sb.from('application_private_notes')
+      .select('note').eq('application_id', appId).maybeSingle();
+    if (error) throw error;
+    return data ? data.note : '';
+  }
+  async function savePrivateNote(appId, note) {
+    const user = await getUser();
+    if (!user) throw new Error('尚未登入');
+    const { error } = await sb.from('application_private_notes')
+      .upsert({ application_id: appId, owner_id: user.id, note }, { onConflict: 'application_id' });
+    if (error) throw error;
+  }
+
   // ── 檢舉 ──────────────────────────────────────────────
   async function submitReport(targetId, why) {
     const user = await getUser();
@@ -304,6 +359,8 @@
     adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminRemoveProfile,
     listOutbox, listInbox, findApplicationTo, updateApplication,
     applyTo, refundApplication, adminAddCredits,
+    unlockA1, sendStage2, submitStage2, advanceStage3,
+    getPrivateNote, savePrivateNote,
     hasClaudeProxy, askClaude, askClaudeRaw, spendCreditFor,
     avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto,
     submitReport, adminListReports, adminMarkReportDone,
