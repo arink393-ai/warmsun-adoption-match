@@ -131,6 +131,22 @@ alter table public.profiles add column if not exists stage2_photo boolean not nu
 alter table public.profiles add column if not exists allow_skip boolean not null default false;
 alter table public.profiles add column if not exists bonus_credits jsonb not null default '[]'::jsonb;
 
+-- 身高／體重：身高幾乎不會變，列為必填；體重可能透過各種方式改變，維持選填，
+-- 兩者都是本人自願公開的資料，不涉及審核或付費，直接跟其他自介欄位一起存。
+alter table public.profiles add column if not exists height text default '';
+alter table public.profiles add column if not exists weight text default '';
+
+-- 停權：管理員專用，停權後這個人的登記會從佈告欄消失（也不能再被提出新申請），
+-- 但登入後還看得到自己的帳號跟停權原因，不是整個帳號憑空消失。跟 is_admin／credits
+-- 一樣鎖進下面的 guard trigger，本人不能自己改自己的停權狀態。
+alter table public.profiles add column if not exists banned boolean not null default false;
+alter table public.profiles add column if not exists ban_reason text default '';
+
+-- 大頭照是否為 AI 生成：本人自願勾選誠實申報，AI 生成的照片審核會比較久（見
+-- README），需要人工用肉眼核對「是否跟真人相似度夠高」，這裡沒有辦法用程式自動判斷，
+-- 純粹是流程上的分類旗標。
+alter table public.profiles add column if not exists photo_is_ai boolean not null default false;
+
 -- 物種從「只有貓／狗」放寬成 13 種，性別改用獨立的 gender 欄位表示。
 -- 先移除舊的 check 限制，再依現有資料把 gender 補上（貓→女生、狗→男生，符合舊版的隱含規則）。
 alter table public.profiles drop constraint if exists profiles_species_check;
@@ -174,11 +190,12 @@ drop policy if exists "profiles_update_own"           on public.profiles;
 drop policy if exists "profiles_update_admin"         on public.profiles;
 drop policy if exists "profiles_delete_own"           on public.profiles;
 
--- 已登入的人看得到：審核通過的公開登記、自己的那一筆、以及管理員看全部（審核用）
+-- 已登入的人看得到：審核通過且沒被停權的公開登記、自己的那一筆（就算被停權也看得到，
+-- 才能顯示停權原因）、以及管理員看全部（審核與會員管理用）
 create policy "profiles_select_visible"
   on public.profiles for select
   to authenticated
-  using (photo_status = 'approved' or auth.uid() = id or public.is_admin(auth.uid()));
+  using ((photo_status = 'approved' and not banned) or auth.uid() = id or public.is_admin(auth.uid()));
 
 -- 只能新增自己的那一筆
 create policy "profiles_insert_own"
@@ -439,6 +456,10 @@ create table if not exists public.reports (
 
 alter table public.reports enable row level security;
 
+-- 同一個人對同一個目標，在還沒處理完之前不能重複檢舉（防止洗版把真正的檢舉埋掉）
+create unique index if not exists reports_one_open_per_pair
+  on public.reports(by_id, target_id) where not done;
+
 drop policy if exists "reports_insert_own"    on public.reports;
 drop policy if exists "reports_select_admin"  on public.reports;
 drop policy if exists "reports_update_admin"  on public.reports;
@@ -579,6 +600,8 @@ begin
     new.bonus_given := old.bonus_given;
     new.verify_deleted_at := old.verify_deleted_at;
     new.bonus_credits := old.bonus_credits;
+    new.banned      := old.banned;
+    new.ban_reason  := old.ban_reason;
     if new.photo_status = 'approved' and old.photo_status is distinct from 'approved' then
       new.photo_status := old.photo_status; new.photo_reason := old.photo_reason;
     end if;
@@ -636,40 +659,13 @@ begin
   return v_row;
 end $$;
 
--- 提出認養申請：扣掛號費＋建立申請案件，包在同一個交易裡。
--- 只要有一步失敗（例如已經申請過、對方尚未審核通過），整個都會回滾，
--- 不會出現「錢扣了但申請沒送出」這種需要另外退款的中間狀態。
-create or replace function public.apply_to(p_to uuid, p_answers jsonb)
-returns public.applications
-language plpgsql security definer set search_path = public as $$
-declare
-  v_cost constant int := 1;   -- 掛號費，價格由伺服器決定，不接受前端傳金額
-  v_bal int; v_app public.applications;
-begin
-  if p_to = auth.uid() then raise exception '不能對自己提出申請'; end if;
-  if not exists (
-    select 1 from public.profiles
-    where id = p_to and photo_status = 'approved' and verify_status = 'approved'
-  ) then
-    raise exception '對方尚未通過審核，暫時無法申請';
-  end if;
-
-  select credits into v_bal from public.profiles where id = auth.uid() for update;
-  if v_bal is null or v_bal < v_cost then raise exception '掛號費不足'; end if;
-
-  insert into public.applications(from_user, to_user, stage, status, a1, paid)
-  values (auth.uid(), p_to, 1, 'open', p_answers, v_cost)
-  returning * into v_app;
-
-  perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.profiles set
-    credits = credits - v_cost,
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '掛號　向 ' || (select name from public.profiles where id = p_to) || ' 提出申請', 'd', -v_cost))
-  where id = auth.uid();
-  perform set_config('app.bypass_profile_guard', '', true);
-
-  return v_app;
-end $$;
+-- 舊版的兩參數 apply_to(uuid, jsonb) 已經被下面第 4 節那個三參數版本取代（那裡有
+-- drop function 先清掉這個舊版再重建）。原本這裡是 create or replace，但 Postgres
+-- 的函式是用「參數簽名」分辨的，跟新版參數個數不同不會被覆蓋，兩個函式會一起留著；
+-- 舊版還寫死 insert into applications(...,a1,...)，但 a1 這欄早就搬到
+-- application_answers 表、從 applications 刪掉了，等於是一支「一呼叫就會噴錯」的
+-- 殭屍函式，執行到下面第 4 節之前都還掛著 security definer、繞過新版才有的重複申請
+-- 檢查——乾脆這裡就不再建立，直接讓下面那個 drop 去清同一支殭屍函式就好。
 
 -- 退回逾期未處理的掛號費：伺服器自己重新檢查一次天數／歸屬／是否已退過，
 -- 不相信前端傳來的任何數字，前端只能傳「是哪一筆申請」。
@@ -727,6 +723,29 @@ begin
   update public.profiles set
     credits = credits + amount,
     credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', reason, 'd', amount, 'ref', ref))
+  where id = target
+  returning * into v_row;
+  perform set_config('app.bypass_profile_guard', '', true);
+
+  if v_row is null then raise exception '找不到這個帳號'; end if;
+  return v_row;
+end $$;
+
+-- 管理員停權／解除停權：停權後這個人的登記從佈告欄消失，也不能再被提出新申請
+-- （見 profiles_select_visible 政策與 apply_to 的檢查），但本人登入後仍看得到
+-- 自己的帳號與停權原因。這不會刪除任何資料，跟下面完全移除登記的
+-- admin_remove_profile 是兩個不同力道的處置。
+create or replace function public.admin_set_banned(target uuid, is_banned boolean, reason text default null)
+returns public.profiles
+language plpgsql security definer set search_path = public as $$
+declare v_row public.profiles;
+begin
+  if not public.is_admin(auth.uid()) then raise exception '只有管理員可以使用'; end if;
+
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles set
+    banned = is_banned,
+    ban_reason = case when is_banned then coalesce(reason, '') else '' end
   where id = target
   returning * into v_row;
   perform set_config('app.bypass_profile_guard', '', true);
@@ -892,9 +911,16 @@ begin
   if p_to = auth.uid() then raise exception '不能對自己提出申請'; end if;
   if not exists (
     select 1 from public.profiles
-    where id = p_to and photo_status = 'approved' and verify_status = 'approved'
+    where id = p_to and photo_status = 'approved' and verify_status = 'approved' and not banned
   ) then
     raise exception '對方尚未通過審核，暫時無法申請';
+  end if;
+  -- 只有 UI 隱藏了「已經申請過」的按鈕，直接呼叫這支函式沒有這層防護，
+  -- 會讓人可以繞過畫面對同一個人重複灌爆申請——這裡補上伺服器端檢查。
+  if exists (
+    select 1 from public.applications where from_user = auth.uid() and to_user = p_to
+  ) then
+    raise exception '已經申請過了';
   end if;
 
   select credits into v_bal from public.profiles where id = auth.uid() for update;
@@ -1126,7 +1152,7 @@ begin
     raise exception '對方沒有開放一鍵通關';
   end if;
 
-  select credits into v_bal from public.profiles where id = auth.uid();
+  select credits into v_bal from public.profiles where id = auth.uid() for update;
   if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
@@ -1185,6 +1211,58 @@ begin
 
   return v_app;
 end $$;
+
+-- ============================================================
+-- 10.5) 對話視窗：進入第二階段後，雙方可以直接聊天問客製化的感情問題，免費，
+--       跟「日常觀察」那段自介文字（付點解鎖）是兩個獨立的東西，並存不衝突。
+-- ============================================================
+create table if not exists public.messages (
+  id             uuid primary key default gen_random_uuid(),
+  application_id uuid not null references public.applications(id) on delete cascade,
+  sender_id      uuid not null references public.profiles(id) on delete cascade,
+  body           text not null check (char_length(body) between 1 and 2000),
+  created_at     timestamptz not null default now()
+);
+
+alter table public.messages enable row level security;
+
+drop policy if exists "messages_select_participant" on public.messages;
+drop policy if exists "messages_insert_participant" on public.messages;
+
+-- 雙方都看得到，但要進到第二階段（含）以後才開放——跟前台判斷「要不要顯示聊天室」
+-- 的門檻一致，這裡在資料庫端再擋一次，前端隱藏分頁沒用的話這裡還是會擋下來。
+-- 管理員也看得到（跟 profiles／applications 一樣的處理檢舉、爭議調解用途），
+-- 但管理員一樣不能發言（見下面的 insert 政策，沒有給 is_admin 例外）。
+create policy "messages_select_participant"
+  on public.messages for select
+  to authenticated
+  using (
+    public.is_admin(auth.uid())
+    or exists (
+      select 1 from public.applications a
+      where a.id = application_id
+        and (a.from_user = auth.uid() or a.to_user = auth.uid())
+        and a.stage >= 2
+    )
+  );
+
+-- 只能用自己的身分發言（sender_id 一定要是自己），且申請要還「開著」才能繼續聊；
+-- 停權的人不能再發新訊息（但看得到舊的，跟前面 select 政策一致）。
+create policy "messages_insert_participant"
+  on public.messages for insert
+  to authenticated
+  with check (
+    sender_id = auth.uid()
+    and not exists (select 1 from public.profiles where id = auth.uid() and banned)
+    and exists (
+      select 1 from public.applications a
+      where a.id = application_id
+        and (a.from_user = auth.uid() or a.to_user = auth.uid())
+        and a.stage >= 2 and a.status = 'open'
+    )
+  );
+
+create index if not exists messages_application_idx on public.messages(application_id, created_at);
 
 -- ============================================================
 -- 11) 把自己設成管理員（審核台權限）

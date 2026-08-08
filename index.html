@@ -231,6 +231,7 @@
 
 <!-- 我的登記 -->
 <div class="pane" id="pane-me">
+  <div id="bannedNotice"></div>
   <fieldset>
     <legend>登記資料</legend>
     <div class="row">
@@ -253,6 +254,10 @@
       <div><label>居住地</label><input id="mArea" placeholder="例：台北"></div>
       <div><label>職業</label><input id="mJob" placeholder="例：工程師"></div>
     </div>
+    <div class="row">
+      <div><label>身高（必填．cm）</label><input id="mHeight" placeholder="例：170"></div>
+      <div><label>體重（選填．kg，之後可能改變，不強迫公開）</label><input id="mWeight" placeholder="例：60"></div>
+    </div>
     <label>生日（對方送出第一階段申請後才會顯示）</label>
     <input id="mBirth" placeholder="例：12/25 或 1994/12/25">
 
@@ -264,9 +269,15 @@
       </div>
       <div style="flex:1">
         <input id="mFile" type="file" accept="image/*">
+        <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px">
+          <input type="checkbox" id="mPhotoIsAi" style="width:auto;margin:4px 0 0">
+          <span style="font-size:13px;color:var(--ink)">這張照片是 AI 生成的（請誠實勾選）。
+            跟本人相似度夠高的 AI 生成圖一樣可以通過人工審核，但審核會比較久，約需 <b>7 個工作天</b>；
+            本人真實照片審核較快。</span>
+        </label>
         <p class="hint" style="margin-top:6px">
-          必須是<b>本人、單人、看得清楚五官</b>的照片。<br>
-          風景、寵物、動漫、明星照、AI 生成圖、多人合照、盜用他人照片一律不通過，
+          必須<b>看得清楚五官、可辨識是本人</b>——本人真實照片，或跟本人相似度極高的 AI 生成圖都可以。<br>
+          風景、寵物、動漫、明星照、跟本人明顯不像的 AI 生成圖、多人合照、盜用他人照片一律不通過，
           且無法登記、提出申請或接受申請。<br>
           上傳後會先由系統初步檢查，再經人工審核。
         </p>
@@ -690,6 +701,7 @@ function setCheckGroup(containerId, values){
 }
 
 let me = null, myProfile = null, profiles = [], apps = [], templateMaster = [];
+let adminAllProfiles = [];
 const OWNER_EMAIL = 'arink393@gmail.com';
 const PROTECTED_TABS = ['board', 'center', 'admin'];
 const PENDING_TAB_KEY = 'warmsun.pendingTab';
@@ -862,7 +874,8 @@ function photoStateText(p){
   if(p.photo_status === 'approved') return '✅ 審核通過，你的登記已公開。';
   if(p.photo_status === 'rejected') return '❌ 未通過：' + (p.photo_reason||'') + '　請更換照片後重新送審。';
   if(p.photo_status === 'checking') return '系統檢查中⋯⋯';
-  return '⏳ 已通過系統初步檢查，等待人工審核。' + (p.photo_reason ? '（' + p.photo_reason + '）' : '');
+  const eta = p.photo_is_ai ? '（AI 生成照片，審核約需 7 個工作天）' : '（本人真實照片，審核較快）';
+  return '⏳ 已通過系統初步檢查，等待人工審核。' + eta + (p.photo_reason ? '（' + p.photo_reason + '）' : '');
 }
 function verifyStateText(p){
   if(!p || p.verify_status === 'none') return '尚未上傳驗證照。';
@@ -881,6 +894,9 @@ function showVerifyTask(p){
 }
 async function fillMe(){
   if(!myProfile) return;
+  $('bannedNotice').innerHTML = myProfile.banned
+    ? `<div class="notice">⛔ 你的帳號已被管理員停權，登記不會出現在佈告欄，也無法再被提出新申請。${myProfile.ban_reason ? '原因：' + esc(myProfile.ban_reason) : ''}</div>`
+    : '';
   mName.value = myProfile.name||''; mKind.value = myProfile.kind||'pet'; mSpecies.value = myProfile.species||'cat';
   mGender.value = myProfile.gender||'f'; mBirth.value = myProfile.birth||'';
   mTraits.value = myProfile.traits||''; mLikes.value = myProfile.likes||''; mTaboo.value = myProfile.taboo||'';
@@ -889,6 +905,7 @@ async function fillMe(){
   mVetNote.value = myProfile.vet_note||'';
   setStars(myProfile.stars);
   mAge.value = myProfile.age||''; mArea.value = myProfile.area||''; mJob.value = myProfile.job||'';
+  mHeight.value = myProfile.height||''; mWeight.value = myProfile.weight||'';
   mBio.value = myProfile.bio||''; mWants.value = myProfile.wants||''; mLocked.value = myProfile.locked||'';
   mIncome.value = myProfile.income||''; mMarital.value = myProfile.marital||''; mHasKids.value = myProfile.has_kids||'';
   mMilitary.value = myProfile.military||''; mLiving.value = myProfile.living||''; mDebt.value = myProfile.debt||'';
@@ -903,6 +920,7 @@ async function fillMe(){
   setCheckGroup('mReqHabits', myProfile.req_habits);
   mConsent.checked = !!myProfile.consent;
   mAllowSkip.checked = !!myProfile.allow_skip;
+  mPhotoIsAi.checked = !!myProfile.photo_is_ai;
   if(myProfile.photo_status !== 'none') $('mPhoto').src = DB.avatarUrl(me.id, myProfile.updated_at);
   if(myProfile.verify_status !== 'none' && myProfile.verify_status !== 'approved'){
     try{ $('mVerify').src = await DB.getVerifySignedUrl(me.id); }catch(e){}
@@ -960,6 +978,7 @@ const REQUIRED_DETAIL_SELECTS = [
 $('mSave').onclick = async () => {
   const name = mName.value.trim();
   if(!name){ flash('meMsg','請填暱稱'); return; }
+  if(!mHeight.value.trim()){ flash('meMsg','請填寫「身高」（體重選填）'); return; }
   for(const [id, label] of REQUIRED_DETAIL_SELECTS){
     if(!$(id).value){ flash('meMsg', `詳細資料還沒填完：請選擇「${label}」`); return; }
   }
@@ -979,6 +998,7 @@ $('mSave').onclick = async () => {
       health_when: mHealthWhen.value,
       vet_note: mVetNote.value.trim(), stars: getStars(),
       age: mAge.value.trim(), area: mArea.value.trim(), job: mJob.value.trim(),
+      height: mHeight.value.trim(), weight: mWeight.value.trim(),
       bio: mBio.value.trim(), wants: mWants.value.trim(), locked: mLocked.value.trim(),
       income: mIncome.value, marital: mMarital.value, has_kids: mHasKids.value,
       military: mMilitary.value, living: mLiving.value, debt: mDebt.value,
@@ -997,7 +1017,7 @@ $('mSave').onclick = async () => {
     if(newPhoto){
       await DB.uploadAvatar(newPhoto);
       $('mPhoto').dataset.new = '';
-      myProfile = await DB.saveMyProfile({photo_status: 'checking', photo_reason: ''});
+      myProfile = await DB.saveMyProfile({photo_status: 'checking', photo_reason: '', photo_is_ai: $('mPhotoIsAi').checked});
       $('photoState').textContent = '系統檢查中⋯⋯';
       try{
         const r = await autoScreenPhoto(newPhoto);
@@ -1128,6 +1148,62 @@ function chips(str, dashed){
   return String(str||'').split(/[,，、]/).map(x => x.trim()).filter(Boolean)
     .map(x => `<span class="pill"${dashed?' style="border-style:dashed"':''}>${esc(x)}</span>`).join('');
 }
+
+/* ── 對話視窗：進入第二階段後開放，免費。跟「日常觀察」文字欄位並存，是兩個獨立的東西 ── */
+let chatPollTimer = null;
+function stopChatPoll(){ if(chatPollTimer){ clearInterval(chatPollTimer); chatPollTimer = null; } }
+function chatBlock(appId){
+  return `<div class="bar" style="margin-top:8px">
+      <button class="ghost chatToggle" data-app="${appId}">💬 對話</button>
+    </div>
+    <div class="chatPanel" data-app="${appId}" style="display:none;margin-top:8px">
+      <div class="chatMsgs" style="max-height:220px;overflow-y:auto;border:1px solid var(--rule);
+           border-radius:4px;padding:8px;margin-bottom:8px;background:var(--paper-2)"></div>
+      <textarea class="chatInput" rows="2" placeholder="輸入訊息，問問客製化的感情問題⋯⋯"></textarea>
+      <div class="bar"><button class="chatSend" data-app="${appId}">送出</button><span class="msg chatMsg" data-app="${appId}"></span></div>
+    </div>`;
+}
+function bindChat(containerId){
+  document.querySelectorAll(`#${containerId} .chatToggle`).forEach(b => b.onclick = () => toggleChat(b.dataset.app, containerId));
+  document.querySelectorAll(`#${containerId} .chatSend`).forEach(b => b.onclick = () => sendChatMsg(b.dataset.app, containerId));
+}
+async function toggleChat(appId, containerId){
+  const panel = document.querySelector(`#${containerId} .chatPanel[data-app="${appId}"]`);
+  if(!panel) return;
+  const wasOpen = panel.style.display !== 'none';
+  document.querySelectorAll('.chatPanel').forEach(p => p.style.display = 'none');
+  stopChatPoll();
+  if(wasOpen) return;
+  panel.style.display = '';
+  await loadChatMessages(appId, containerId);
+  chatPollTimer = setInterval(() => loadChatMessages(appId, containerId), 6000);
+}
+async function loadChatMessages(appId, containerId){
+  const panel = document.querySelector(`#${containerId} .chatPanel[data-app="${appId}"]`);
+  if(!panel){ stopChatPoll(); return; }
+  try{
+    const msgs = await DB.listMessages(appId);
+    panel.querySelector('.chatMsgs').innerHTML = msgs.length ? msgs.map(m => `
+      <div style="margin-bottom:6px"><b style="color:${m.sender_id===me.id?'var(--brand-dk)':'var(--ink)'}">${
+        m.sender_id===me.id?'我':'對方'}</b> <span class="hint">${new Date(m.created_at).toLocaleString('zh-TW')}</span><br>${esc(m.body)}</div>`
+      ).join('') : '<p class="hint" style="margin:0">目前還沒有訊息，說些什麼吧。</p>';
+  }catch(e){ /* 背景輪詢時忽略暫時性錯誤 */ }
+}
+async function sendChatMsg(appId, containerId){
+  const panel = document.querySelector(`#${containerId} .chatPanel[data-app="${appId}"]`);
+  const ta = panel.querySelector('.chatInput');
+  const msgEl = panel.querySelector('.chatMsg');
+  const body = ta.value.trim();
+  if(!body) return;
+  try{
+    await DB.sendMessage(appId, body);
+    ta.value = '';
+    await loadChatMessages(appId, containerId);
+  }catch(e){
+    msgEl.textContent = e.message || '送出失敗';
+    setTimeout(()=>{ msgEl.textContent = ''; }, 2500);
+  }
+}
 function starRow(p){
   const s = (p && typeof p.stars === 'object' && p.stars) ? p.stars : {};
   return STAR_FIELDS.map(f => {
@@ -1172,6 +1248,8 @@ async function renderBoard(){
       ${chartSec('基本資料')}
       ${chartRow('物種', esc(SPECIES[p.species] || '—') + '　' + esc(GENDER[p.gender || 'f'] || ''))}
       ${chartRow('年齡', p.age ? esc(p.age) + ' 歲' : '—')}
+      ${chartRow('身高', p.height ? esc(p.height) + ' cm' : '—')}
+      ${p.weight ? chartRow('體重', esc(p.weight) + ' kg') : ''}
       ${chartRow('活動範圍', esc(p.area || '—'))}
       ${chartRow('日常', esc(p.job || '—'))}
       ${chartRow('生日', birthOpen ? esc(p.birth || '（尚未填寫）') : '🔒 完成第一階段後可見')}
@@ -1391,6 +1469,7 @@ function showAdoptionPledge(box, toId, to, q1, ans){
 
 /* ── 我送出的申請 ── */
 async function renderOutbox(){
+  stopChatPoll();
   apps = apps.filter(a => a.from_user !== me.id).concat(await DB.listOutbox());
   renderStage3Notice();
   const list = apps.filter(a => a.from_user === me.id);
@@ -1405,6 +1484,7 @@ async function renderOutbox(){
       <div class="stage s${a.status==='rejected'?0:a.stage}">${stageText(a)}</div>
       ${a.note ? `<p class="hint">對方留言：${esc(a.note)}</p>` : ''}
       ${a.skipped ? `<p class="hint">⚡ 這筆申請使用了「一鍵通關」，跳過了正常的問卷與審核流程。</p>` : ''}
+      ${a.stage >= 2 ? chatBlock(a.id) : ''}
       ${needQ2 ? `<div class="q2form" data-app="${a.id}">`
                + q2.map((q,i) => questionBlock(q, i, 'a2q-' + a.id)).join('')
                + `<div class="bar"><button class="sendQ2" data-app="${a.id}" data-n="${q2.length}">送出回答</button></div></div>` : ''}
@@ -1448,6 +1528,7 @@ function canRefund(a){
   return (Date.now() - new Date(a.created_at).getTime()) > REFUND_DAYS * 86400e3;
 }
 function bindOutbox(){
+  bindChat('outbox');
   $('outbox').querySelectorAll('.refund').forEach(b => b.onclick = async () => {
     const a = apps.find(x => x.id === b.dataset.app);
     if(!canRefund(a)) return;
@@ -1499,6 +1580,7 @@ function bindOutbox(){
 /* ── 我收到的申請 ── */
 let inboxFromProfiles = {};
 async function renderInbox(){
+  stopChatPoll();
   apps = apps.filter(a => a.to_user !== me.id).concat(await DB.listInbox());
   const list = apps.filter(a => a.to_user === me.id);
   if(!list.length){ $('inbox').innerHTML = '<div class="empty">目前沒有收到申請。</div>'; return; }
@@ -1549,12 +1631,14 @@ async function renderInbox(){
         <div id="deep-${a.id}">${Array.isArray(a.a2_questions) && a.a2_questions.length
           ? '<div class="qa"><b>第二階段客製問題</b>' + a.a2_questions.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>') + '</div>' : ''}</div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(from.locked || '對方尚未填寫')}</div>` : ''}
+      ${a.stage >= 2 ? chatBlock(a.id) : ''}
       <p class="hint" style="margin-top:8px">想自訂第二階段題目、使用罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」。</p>
     </fieldset>`;
   }).join('');
   bindInbox();
 }
 function bindInbox(){
+  bindChat('inbox');
   const upd = async (id, patch) => {
     const a = apps.find(x => x.id === id);
     const updated = await DB.updateApplication(id, patch);
@@ -1703,9 +1787,18 @@ $('tplReset').onclick = async () => {
   catch(e){ flash('tplMsg', e.message || '還原失敗'); }
 };
 
+/* 從 AI 評估文字裡把開頭的「匹配度：XX%」抽出來，另外用比較顯眼的方式呈現 */
+function renderVetText(text){
+  const m = String(text||'').match(/匹配度[:：]\s*(\d{1,3})\s*%/);
+  const pct = m ? Math.max(0, Math.min(100, parseInt(m[1], 10))) : null;
+  const rest = m ? text.replace(m[0], '').trim() : text;
+  return (pct !== null
+    ? `<p style="font-family:var(--font-heading);font-weight:600;font-size:22px;color:var(--brand-dk);margin:0 0 8px">匹配度　${pct}%</p>`
+    : '') + `<div class="qa">${esc(rest)}</div>`;
+}
 async function vetReview(app, from){
   const box = $('vet-' + app.id);
-  if(app.vet){ box.innerHTML = `<div class="qa">${esc(app.vet)}</div>`; return; }
+  if(app.vet){ box.innerHTML = renderVetText(app.vet); return; }
   if(!DB.hasClaudeProxy()){
     box.innerHTML = '<p class="hint">尚未設定 AI 代理網址，暫時無法使用（不影響其他功能）。</p>';
     return;
@@ -1735,7 +1828,8 @@ ${qa(q1, app.a1)}
 
 ${app.a2 ? '【第二階段回答】\n' + qa(q2, app.a2) : ''}
 
-請用繁體中文寫出約 300 字的評估，包含：
+請用繁體中文回覆，第一行只寫「匹配度：XX%」（0-100 的整數，根據目前已經有的資料估計兩人
+到這個階段為止合不合適，這不是精確科學數字，只是輔助判斷用），空一行後再寫約 300 字的評估，包含：
 1. 相容之處
 2. 需要進一步確認的地方（列 2-3 個具體問題）
 3. 觀察到的紅旗（若沒有就說沒有，不要硬找）
@@ -1748,7 +1842,7 @@ ${app.a2 ? '【第二階段回答】\n' + qa(q2, app.a2) : ''}
     if(spent.ok) myProfile = spent.profile;
     const updated = await DB.updateApplication(app.id, {vet: text, vet_at: new Date().toISOString()});
     Object.assign(app, updated);
-    box.innerHTML = `<div class="qa">${esc(text)}</div>`;
+    box.innerHTML = renderVetText(text);
   }catch(e){
     box.innerHTML = `<p class="hint" style="color:var(--bad)">評估失敗：${esc(e.message)}（未扣點）</p>`;
   }
@@ -1845,6 +1939,7 @@ async function renderAudit(){
           <div class="hint">${KIND[p.kind]||''}　${SPECIES[p.species]||''}　${GENDER[p.gender||'f']||''}　${esc(p.age||'')}　${esc(p.area||'')}</div>
           <div class="bio">${esc(p.bio||'')}</div>
           <div class="hint">系統初檢：${p.photo_status === 'rejected' ? '未通過' : '通過'}　${esc(p.photo_reason||'')}</div>
+          ${p.photo_is_ai ? `<p class="err">⚠ 本人申報這張大頭照是 AI 生成，請仔細核對跟驗證照的相似度是否夠高（建議 95% 以上）再通過。</p>` : ''}
           <div class="bar">
             <button class="okBtn" data-id="${p.id}">審核通過</button>
             <button class="ghost noBtn" data-id="${p.id}">退回</button>
@@ -1898,6 +1993,11 @@ async function renderAdminHome(){
   if(!$('adminStats')){
     body.innerHTML = `
       <fieldset><legend>全站統計</legend><p class="hint" id="adminStats">讀取中⋯⋯</p></fieldset>
+      <fieldset><legend>會員管理</legend>
+        <p class="hint" style="margin:0 0 8px">停權會讓這個人的登記從佈告欄消失、也不能再被提出新申請，但本人登入後還是看得到自己的帳號跟停權原因；移除登記則是整筆刪掉（含這個人牽涉的所有申請），比較不能復原。</p>
+        <input id="memberSearch" placeholder="搜尋暱稱或帳號 ID 前幾碼⋯⋯" style="margin-bottom:10px">
+        <div id="memberList"></div>
+      </fieldset>
       <fieldset><legend>手動加點</legend>
         <p class="hint" style="margin:0 0 8px">線上儲值尚未開放，人工加值（例如轉帳收款後）請用這裡，會走安全函式，不是直接改資料庫。</p>
         <div class="row">
@@ -1923,6 +2023,7 @@ async function renderAdminHome(){
         flash('grantMsg','已完成');
       }catch(e){ flash('grantMsg', e.message || '操作失敗'); }
     };
+    $('memberSearch').oninput = renderMemberList;
   }
 
   let allProfiles, allApps, reports;
@@ -1935,6 +2036,9 @@ async function renderAdminHome(){
   const approved = allProfiles.filter(p => p.photo_status === 'approved' && p.verify_status === 'approved').length;
   $('adminStats').textContent =
     `登記總數：${allProfiles.length}　已通過審核：${approved}　申請總數：${allApps.length}　未處理檢舉：${reports.filter(r=>!r.done).length}`;
+
+  adminAllProfiles = allProfiles;
+  renderMemberList();
 
   const keepWho = $('grantWho').value;
   $('grantWho').innerHTML = allProfiles
@@ -1976,6 +2080,38 @@ async function renderAdminHome(){
   };
 
   renderAudit();
+}
+
+/* 會員管理：搜尋、停權／解除停權、移除登記 */
+function renderMemberList(){
+  const q = ($('memberSearch').value || '').trim().toLowerCase();
+  const list = adminAllProfiles
+    .filter(p => !q || (p.name||'').toLowerCase().includes(q) || p.id.toLowerCase().startsWith(q))
+    .slice().sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  if(!list.length){ $('memberList').innerHTML = '<div class="empty">沒有符合的會員。</div>'; return; }
+  $('memberList').innerHTML = list.map(p => `
+    <div class="qa">
+      <b>${esc(p.name || '（未命名）')}　${esc(p.id.slice(0,8))}　${p.credits ?? 0} 點　${p.is_admin ? '👑 管理員' : ''}</b>
+      ${KIND[p.kind]||''}　${SPECIES[p.species]||''}　photo:${esc(p.photo_status)}　verify:${esc(p.verify_status)}
+      ${p.banned ? `<br><span class="err">⛔ 已停權${p.ban_reason ? '：' + esc(p.ban_reason) : ''}</span>` : ''}
+      <div class="bar">
+        ${p.banned
+          ? `<button class="ghost unbanBtn" data-id="${p.id}">解除停權</button>`
+          : `<button class="ghost banBtn" data-id="${p.id}">停權</button>`}
+        <button class="ghost rmMember" data-id="${p.id}">移除登記</button>
+      </div>
+    </div>`).join('');
+  $('memberList').querySelectorAll('.banBtn').forEach(b => b.onclick = async () => {
+    const reason = prompt('停權原因（會顯示給本人看）：') || '';
+    try{ await DB.adminSetBanned(b.dataset.id, true, reason); renderAdminHome(); }catch(e){ alert(e.message || '操作失敗'); }
+  });
+  $('memberList').querySelectorAll('.unbanBtn').forEach(b => b.onclick = async () => {
+    try{ await DB.adminSetBanned(b.dataset.id, false); renderAdminHome(); }catch(e){ alert(e.message || '操作失敗'); }
+  });
+  $('memberList').querySelectorAll('.rmMember').forEach(b => b.onclick = async () => {
+    if(!confirm('確定要移除這個登記嗎？會一併刪除相關申請，且無法復原。')) return;
+    try{ await DB.adminRemoveProfile(b.dataset.id); renderAdminHome(); renderBoard(); }catch(e){ alert(e.message || '操作失敗'); }
+  });
 }
 
 /* ── 啟動 ── */

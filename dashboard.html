@@ -506,7 +506,12 @@ function bindRoster(){
       try{
         const q1 = (Array.isArray(myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
         const q2 = (Array.isArray(a.a2_questions) && a.a2_questions.length) ? a.a2_questions : DEFAULT_Q2;
-        out.textContent = await DB.askClaude(buildJudgePrompt(from, a, q1, q2));
+        const text = await DB.askClaude(buildJudgePrompt(from, a, q1, q2));
+        const m = text.match(/匹配度[:：]\s*(\d{1,3})\s*%/);
+        const pct = m ? Math.max(0, Math.min(100, parseInt(m[1], 10))) : null;
+        const rest = m ? text.replace(m[0], '').trim() : text;
+        out.innerHTML = (pct !== null
+          ? `<b style="font-size:16px;color:var(--brand-dk)">匹配度　${pct}%</b><br>` : '') + esc(rest);
       }catch(e){ out.textContent = '分析失敗：' + (e.message||''); }
       b.disabled = false;
     };
@@ -544,7 +549,10 @@ ${myProfile.wants || '（未填寫）'}
 ${a.a1 ? qa(q1, a.a1) : '（尚未進行）'}
 ${a.a2 ? '\n【申請人的第二階段回答】\n' + qa(q2, a.a2) : ''}
 
-請用大約 150～250 字，依序給出：這位申請人的優點、需要留意或進一步確認的地方、以及你觀察到「通過／再觀察／婉拒」哪個方向比較合理並說明一句話理由。語氣中性，不要編造回答中沒提到的資訊。`;
+請先在第一行寫「匹配度：XX%」（0-100 的整數，根據目前已有的資料估計兩人到這個階段為止合不合適，
+只是輔助判斷用，不是精確數字），空一行後再用大約 150～250 字，依序給出：這位申請人的優點、需要留意
+或進一步確認的地方、以及你觀察到「通過／再觀察／婉拒」哪個方向比較合理並說明一句話理由。
+語氣中性，不要編造回答中沒提到的資訊。`;
 }
 function applyPlaceholders(t, ctx){
   return (t||'').replace(/\{\{name\}\}/g, ctx.name||'').replace(/\{\{myname\}\}/g, ctx.myname||'');

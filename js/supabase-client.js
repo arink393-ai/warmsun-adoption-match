@@ -144,10 +144,17 @@
     if (error) throw error;
     return data;
   }
+  // 管理員專用：停權／解除停權（違反規定但還不到要整筆刪除的程度）
+  async function adminSetBanned(targetId, banned, reason) {
+    const { data, error } = await sb.rpc('admin_set_banned', { target: targetId, is_banned: banned, reason: reason || null });
+    if (error) throw error;
+    return data;
+  }
   async function listProfiles() {
     const user = await getUser();
     const { data, error } = await sb.from('profiles').select('*')
       .neq('id', user ? user.id : '00000000-0000-0000-0000-000000000000')
+      .eq('banned', false)
       .order('updated_at', { ascending: false });
     if (error) throw error;
     // 只列出已經完成登記的人（kind/species/name 都有填）
@@ -341,12 +348,31 @@
     if (error) throw error;
   }
 
+  // ── 對話視窗（第二階段之後開放，免費，兩人一起看同一份紀錄） ──
+  async function listMessages(appId) {
+    const { data, error } = await sb.from('messages')
+      .select('*').eq('application_id', appId).order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+  async function sendMessage(appId, body) {
+    const user = await getUser();
+    if (!user) throw new Error('尚未登入');
+    const { data, error } = await sb.from('messages')
+      .insert({ application_id: appId, sender_id: user.id, body }).select().single();
+    if (error) throw error;
+    return data;
+  }
+
   // ── 檢舉 ──────────────────────────────────────────────
   async function submitReport(targetId, why) {
     const user = await getUser();
     if (!user) throw new Error('尚未登入');
     const { error } = await sb.from('reports').insert({ target_id: targetId, by_id: user.id, why });
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23505') throw new Error('你已經檢舉過這個人了，正在等待管理員處理');
+      throw error;
+    }
   }
   async function adminListReports() {
     const { data, error } = await sb.from('reports').select('*').order('created_at', { ascending: false });
@@ -398,11 +424,12 @@
     signUpEmail, signInEmail, signInGoogle, signOut, getUser, onAuthChange,
     ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles,
     adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminRemoveProfile,
+    adminSetBanned,
     listOutbox, listInbox, findApplicationTo, updateApplication,
     applyTo, refundApplication, adminAddCredits,
     unlockA1, sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
     skipToUnlock, settleBonusCredits,
-    getPrivateNote, savePrivateNote,
+    getPrivateNote, savePrivateNote, listMessages, sendMessage,
     hasClaudeProxy, askClaude, askClaudeRaw, spendCreditFor,
     avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto,
     uploadStagePhoto, getStagePhotoSignedUrl,
