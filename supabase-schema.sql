@@ -633,6 +633,9 @@ $$;
 -- 扣點：申請人自己呼叫，扣什麼、扣多少一律由伺服器這張表決定，
 -- 不接受前端傳金額（跟前端顯示的 VET_COST 常數只是給 UI 看，實際收費以這裡為準，
 -- 之後要調價記得兩邊一起改）。之後要加新的扣點項目，在 case 裡加一行就好。
+-- 舊版這支函式回傳型別不是 public.profiles，Postgres 不允許 create or replace
+-- 改變既有函式的回傳型別，所以先明確 drop 掉舊版再重建。
+drop function if exists public.spend_credits_for(text, text);
 create or replace function public.spend_credits_for(p_action text, p_detail text default null)
 returns public.profiles
 language plpgsql security definer set search_path = public as $$
