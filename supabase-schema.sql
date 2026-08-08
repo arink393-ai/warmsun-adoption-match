@@ -413,6 +413,7 @@ create table if not exists public.match_messages (
 );
 create index if not exists match_messages_app_created_idx on public.match_messages(application_id, created_at);
 create index if not exists match_messages_sender_created_idx on public.match_messages(sender_id, created_at desc);
+create index if not exists match_blocks_blocker_idx on public.match_blocks(blocker_id);
 do $$ begin
   alter publication supabase_realtime add table public.match_messages;
 exception when duplicate_object then null;
@@ -618,6 +619,10 @@ create table if not exists public.match_moderation_actions (
   reason text not null default '',
   created_at timestamptz not null default now()
 );
+create index if not exists match_moderation_actor_idx on public.match_moderation_actions(actor_id);
+create index if not exists match_profiles_moderated_by_idx on public.match_profiles(moderated_by);
+create index if not exists reports_target_idx on public.reports(target_id);
+create index if not exists reports_by_idx on public.reports(by_id);
 alter table public.match_moderation_actions enable row level security;
 drop policy if exists "moderation_actions_admin_read" on public.match_moderation_actions;
 create policy "moderation_actions_admin_read" on public.match_moderation_actions for select to authenticated
@@ -966,6 +971,7 @@ create table if not exists public.application_private_notes (
   note       text,
   updated_at timestamptz not null default now()
 );
+create index if not exists application_private_notes_owner_idx on public.application_private_notes(owner_id);
 
 -- 一次性搬遷：把舊欄位的內容複製到新表，然後把舊欄位刪掉。
 -- 舊欄位不刪的話，收件方還是讀得到，付費牆就漏了。
