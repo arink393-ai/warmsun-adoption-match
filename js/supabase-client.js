@@ -232,6 +232,29 @@
       .subscribe();
     return () => sb.removeChannel(channel);
   }
+
+  // ── 通知鈴鐺：管理員審核結果、新訊息 ────────────────────
+  async function listNotifications() {
+    const { data, error } = await sb.from('match_notifications').select('*')
+      .order('created_at', { ascending: false }).limit(50);
+    if (error) throw error;
+    return data || [];
+  }
+  async function markNotificationsRead(ids) {
+    if (!ids || !ids.length) return;
+    const { error } = await sb.rpc('mark_notifications_read', { p_ids: ids });
+    if (error) throw error;
+  }
+  async function markAllNotificationsRead() {
+    const { error } = await sb.rpc('mark_all_notifications_read');
+    if (error) throw error;
+  }
+  function subscribeNotifications(userId, cb) {
+    const channel = sb.channel(`match-notifications:${userId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'match_notifications', filter: `user_id=eq.${userId}` }, cb)
+      .subscribe();
+    return () => sb.removeChannel(channel);
+  }
   // 收件方付費解鎖第一階段詳細回答（1 點，價格由伺服器決定）
   async function unlockA1(appId) {
     const { data, error } = await sb.rpc('unlock_a1', { p_app_id: appId });
@@ -446,6 +469,7 @@
     adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminUserAction,
     listOutbox, listInbox, findApplicationTo, updateApplication,
     listMessages, sendMessage, closeChat, subscribeMessages,
+    listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
     applyTo, refundApplication, adminAddCredits,
     unlockA1, sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
     requestFastTrack, acceptFastTrack, settleBonusCredits,

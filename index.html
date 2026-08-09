@@ -96,6 +96,22 @@
   #gateClose{position:absolute;top:8px;right:10px;background:none;border:none;color:var(--ink-soft);
              font-size:20px;line-height:1;cursor:pointer;padding:6px}
   .topbar .guestBtns{display:flex;gap:8px;align-items:center}
+  .notifWrap{position:relative;display:inline-block}
+  #notifBell{position:relative;padding:6px 10px;font-size:14px;line-height:1}
+  .notifBadge{position:absolute;top:-4px;right:-4px;min-width:15px;height:15px;padding:0 3px;
+    border-radius:999px;background:var(--bad);color:#fff;font-size:10px;line-height:15px;
+    text-align:center;font-family:var(--font-body)}
+  .notifMenu{position:absolute;top:calc(100% + 6px);right:0;width:min(340px,86vw);max-height:70vh;
+    overflow:auto;background:var(--paper);border:1px solid var(--rule);border-radius:6px;
+    box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:40;text-align:left}
+  .notifItem{padding:10px 14px;border-bottom:1px dotted var(--rule);cursor:pointer;font-size:12px;color:var(--ink)}
+  .notifItem:hover{background:var(--paper-2)}
+  .notifItem.admin{background:var(--brand-tint);border-left:3px solid var(--warn)}
+  .notifItem.unread b{color:var(--brand-dk)}
+  .notifItem .hint{font-size:11px}
+  .notifEmpty{padding:16px;text-align:center}
+  .notifFoot{padding:8px 14px;border-top:1px solid var(--rule);text-align:right}
+  .notifFoot button{font-size:11px;padding:4px 8px}
   #gateForm .switcher{display:flex;gap:6px;justify-content:center;margin-top:14px;font-size:12px}
   #gateForm .switcher button{background:none;border:none;color:var(--brand);cursor:pointer;padding:2px;font-size:12px}
   .google-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;color:var(--ink);
@@ -156,6 +172,12 @@
       <button type="button" class="ghost" id="topSignup">註冊</button>
     </span>
     <span class="guestBtns" id="topbarUser" style="display:none">
+      <span class="notifWrap" id="notifWrap">
+        <button type="button" class="ghost" id="notifBell" aria-haspopup="true" aria-expanded="false" title="通知">
+          🔔<span class="notifBadge" id="notifBadge" style="display:none">0</span>
+        </button>
+        <div class="notifMenu" id="notifMenu" style="display:none"></div>
+      </span>
       <span id="whoami"></span>
       <a href="dashboard.html">我的後台</a>
       <a href="#" id="logout">登出</a>
@@ -273,6 +295,13 @@
       <div><label>職業</label><input id="mJob" placeholder="例：工程師"></div>
     </div>
     <div class="row">
+      <div><label>學歷（選填）</label>
+        <select id="mEducation"><option value="">請選擇</option>
+          <option>高中職以下</option><option>高中職</option><option>專科</option>
+          <option>大學</option><option>碩士</option><option>博士</option><option>其他</option>
+        </select></div>
+    </div>
+    <div class="row">
       <div><label>身高（cm，必填）</label><input id="mHeight" type="number" min="100" max="230" inputmode="numeric" placeholder="例：168"></div>
       <div><label>體重（kg，選填）</label><input id="mWeight" type="number" min="25" max="350" step="0.1" inputmode="decimal" placeholder="例：58.5"></div>
       <div><label>體重揭露</label><select id="mShowWeight"><option value="false">不公開</option><option value="true">公開</option></select></div>
@@ -335,8 +364,13 @@
     <textarea id="mHealth" rows="3" placeholder="其他補充說明（選填）：例如目前恢復狀況、就醫頻率、想讓對方知道的細節⋯⋯"></textarea>
     <label>健康告知什麼時候讓對方看到</label>
     <select id="mHealthWhen"></select>
-    <label>主治獸醫備註（一句話，會放在病歷卡最下方）</label>
+    <label>主治獸醫備註（一句話，會放在病歷卡最下方，也可以自己改成一句座右銘）</label>
     <textarea id="mVetNote" rows="2" placeholder="需要一個願意溫柔溝通、給予安全感的生活環境。"></textarea>
+    <div class="bar">
+      <button type="button" class="ghost" id="mVetNoteAi">✨ AI 生成（1 點）</button>
+      <span class="hint">或直接在上面欄位自己打一句座右銘，免費且不會被覆蓋。</span>
+      <span class="msg" id="mVetNoteMsg"></span>
+    </div>
 
     <label>加碼照片：第一階段（口罩照或側拍照．選填）</label>
     <div class="row" style="align-items:flex-start">
@@ -798,6 +832,8 @@ DB.onAuthChange(async (user, authEvent) => {
     $('topbarGuest').style.display = 'flex'; $('topbarUser').style.display = 'none';
     const activeBtn = $('tabbar').querySelector('.tabbtn.on');
     if(activeBtn && PROTECTED_TABS.includes(activeBtn.dataset.k)) gotoTab('home');
+    renderTabBar();
+    stopNotificationSubscription();
     return;
   }
   me = user;
@@ -806,6 +842,7 @@ DB.onAuthChange(async (user, authEvent) => {
   $('topbarGuest').style.display = 'none'; $('topbarUser').style.display = 'flex';
   $('whoami').textContent = user.email || '';
   await boot();
+  startNotificationSubscription();
   if(pendingTab){ const k = pendingTab; rememberPendingTab(null); gotoTab(k); }
   else if(authEvent === 'SIGNED_IN' || authEvent === 'INITIAL_SESSION'){
     const activeBtn = $('tabbar').querySelector('.tabbtn.on');
@@ -828,9 +865,19 @@ function gotoTab(k){
   const b = $('tabbar').querySelector(`.tabbtn[data-k="${k}"]`); if(!b) return;
   b.click();
 }
+/* 管理後台分頁只有管理員自己看得到；一般會員不該看到這個選項，
+   即使硬點進去伺服器端也會被 RLS 擋下、看不到任何資料，但畫面上先不要讓人誤會有這個功能。 */
+function renderTabBar(){
+  const isAdmin = !!(myProfile && myProfile.is_admin);
+  const activeBtn = $('tabbar').querySelector('.tabbtn.on');
+  const activeKey = activeBtn ? activeBtn.dataset.k : PANES[0].k;
+  const visible = PANES.filter(p => p.k !== 'admin' || isAdmin);
+  const keepKey = visible.some(p => p.k === activeKey) ? activeKey : visible[0].k;
+  $('tabbar').innerHTML = visible.map((p) =>
+    `<button class="tabbtn${p.k === keepKey ? ' on' : ''}" data-k="${p.k}">${p.t}</button>`).join('');
+}
 function initTabs(){
-  $('tabbar').innerHTML = PANES.map((p,i) =>
-    `<button class="tabbtn${i?'':' on'}" data-k="${p.k}">${p.t}</button>`).join('');
+  renderTabBar();
   $('tabbar').onclick = e => {
     const b = e.target.closest('.tabbtn'); if(!b) return;
     if(PROTECTED_TABS.includes(b.dataset.k) && !me){ rememberPendingTab(b.dataset.k); openGate('login'); return; }
@@ -923,6 +970,7 @@ async function fillMe(){
   mVetNote.value = myProfile.vet_note||'';
   setStars(myProfile.stars);
   mAge.value = myProfile.age||''; mArea.value = myProfile.area||''; mJob.value = myProfile.job||'';
+  mEducation.value = myProfile.education||'';
   mBio.value = myProfile.bio||''; mWants.value = myProfile.wants||''; mLocked.value = myProfile.locked||'';
   mIncome.value = myProfile.income||''; mMarital.value = myProfile.marital||''; mHasKids.value = myProfile.has_kids||'';
   mMilitary.value = myProfile.military||''; mLiving.value = myProfile.living||''; mDebt.value = myProfile.debt||'';
@@ -1017,7 +1065,7 @@ $('mSave').onclick = async () => {
       taboo: mTaboo.value.trim(), health: mHealth.value.trim(), health_tags: getCheckGroup('mHealthTags'),
       health_when: mHealthWhen.value,
       vet_note: mVetNote.value.trim(), stars: getStars(),
-      age: mAge.value.trim(), area: mArea.value.trim(), job: mJob.value.trim(),
+      age: mAge.value.trim(), area: mArea.value.trim(), job: mJob.value.trim(), education: mEducation.value,
       height_cm: height, weight_kg: weight, show_weight: mShowWeight.value === 'true',
       avatar_kind: mAiPhoto.checked ? 'ai' : 'real', ai_likeness_attested: mAiPhoto.checked,
       bio: mBio.value.trim(), wants: mWants.value.trim(), locked: mLocked.value.trim(),
@@ -1075,6 +1123,33 @@ $('mSave').onclick = async () => {
     $('stage2PhotoState').textContent = myProfile.stage2_photo ? '已上傳。' : '尚未上傳（選填）。';
     flash('meMsg','已儲存'); renderBoard();
   }catch(e){ flash('meMsg', e.message || '儲存失敗'); }
+};
+$('mVetNoteAi').onclick = async () => {
+  if(!DB.hasClaudeProxy()){ flash('mVetNoteMsg','尚未設定 AI 代理網址，暫時無法使用'); return; }
+  if((myProfile.credits||0) < 1){ flash('mVetNoteMsg','點數不足，請洽站方加值'); return; }
+  if(!confirm('生成一句主治獸醫備註會消耗 1 點，要繼續嗎？（也可以不花點數，直接自己在上面打一句話）')) return;
+  flash('mVetNoteMsg','生成中⋯⋯');
+  const prompt = `你是「暖陽動物之家」的主治獸醫，要替一位待認養者的病歷卡寫一句「主治獸醫備註」，
+放在病歷卡最下方。語氣溫暖、帶一點收容所的觀察式幽默但不失專業，只能根據下面資料發想，不要編造沒有的事實。
+只回傳這一句話本身，不要加引號、不要加任何說明或前綴，20～40字之間。
+
+姓名：${myProfile.name || '（未填）'}
+物種／性別：${SPECIES[myProfile.species] || ''}／${GENDER[myProfile.gender || 'f'] || ''}
+個性標籤：${myProfile.traits || '（未填）'}
+最喜歡的事：${myProfile.likes || '（未填）'}
+自介：${myProfile.bio || '（未填）'}
+希望對方：${myProfile.wants || '（未填）'}`;
+  try{
+    const text = await DB.askClaude(prompt);
+    const line = text.trim().replace(/^["「『]+|["」』]+$/g, '').split('\n')[0].slice(0, 60);
+    if(!line) throw new Error('AI 沒有回傳內容');
+    const spent = await DB.spendCreditFor('vet_note');
+    if(spent.ok) myProfile = spent.profile;
+    mVetNote.value = line;
+    flash('mVetNoteMsg','已生成，記得按下面的「儲存」才會真的存檔');
+  }catch(e){
+    flash('mVetNoteMsg', e.message || '生成失敗（未扣點）');
+  }
 };
 $('mPurge').onclick = async () => {
   if(!confirm('這會刪除你的登記、照片、所有申請紀錄與點數紀錄，且無法復原。確定嗎？')) return;
@@ -1221,6 +1296,7 @@ async function renderBoard(){
       ${p.show_weight && p.weight_kg ? chartRow('體重', esc(p.weight_kg) + ' kg') : ''}
       ${chartRow('活動範圍', esc(p.area || '—'))}
       ${chartRow('日常', esc(p.job || '—'))}
+      ${p.education ? chartRow('學歷', esc(p.education)) : ''}
       ${chartRow('生日', birthOpen ? esc(p.birth || '（尚未填寫）') : '🔒 完成第一階段後可見')}
       ${p.bio ? chartSec('行為觀察') + `<div class="bio">${esc(p.bio)}</div>` : ''}
       ${chartSec('健康與性格評估')}
@@ -1709,6 +1785,70 @@ $('chatBlock').onclick = async () => {
   catch(e){ flash('chatMsg', e.message || '操作失敗'); }
 };
 
+/* ── 通知鈴鐺：管理員審核結果、新訊息（管理員訊息用暖黃色標注） ── */
+let notifications = [], stopNotifSub = null;
+function stopNotificationSubscription(){ if(stopNotifSub){ stopNotifSub(); stopNotifSub = null; } }
+async function startNotificationSubscription(){
+  stopNotificationSubscription();
+  try{ notifications = await DB.listNotifications(); }catch(e){ notifications = []; }
+  renderNotifBell();
+  stopNotifSub = DB.subscribeNotifications(me.id, async () => {
+    try{ notifications = await DB.listNotifications(); }catch(e){}
+    renderNotifBell();
+  });
+}
+function renderNotifBell(){
+  const unread = notifications.filter(n => !n.read_at).length;
+  $('notifBadge').textContent = unread > 99 ? '99+' : String(unread);
+  $('notifBadge').style.display = unread ? 'inline-block' : 'none';
+  if(!notifications.length){
+    $('notifMenu').innerHTML = '<div class="notifEmpty hint">目前沒有通知。</div>';
+    return;
+  }
+  $('notifMenu').innerHTML = notifications.map(n => `
+    <div class="notifItem ${n.kind === 'admin' ? 'admin' : ''} ${!n.read_at ? 'unread' : ''}" data-id="${n.id}">
+      <b>${n.kind === 'admin' ? '📮 站方通知' : '💬 訊息'}・${esc(n.title)}</b>
+      <div class="hint" style="margin-top:2px">${esc(n.body || '')}</div>
+      <div class="hint" style="margin-top:2px">${new Date(n.created_at).toLocaleString('zh-TW')}</div>
+    </div>`).join('')
+    + (unread ? '<div class="notifFoot"><button type="button" class="ghost" id="notifMarkAll">全部標記已讀</button></div>' : '');
+  $('notifMenu').querySelectorAll('.notifItem').forEach(el => el.onclick = () => openNotification(Number(el.dataset.id)));
+  const markAllBtn = $('notifMenu').querySelector('#notifMarkAll');
+  if(markAllBtn) markAllBtn.onclick = async (e) => {
+    e.stopPropagation();
+    try{
+      await DB.markAllNotificationsRead();
+      notifications.forEach(n => { n.read_at = n.read_at || new Date().toISOString(); });
+      renderNotifBell();
+    }catch(err){}
+  };
+}
+async function openNotification(id){
+  const n = notifications.find(x => x.id === id); if(!n) return;
+  if(!n.read_at){
+    n.read_at = new Date().toISOString();
+    renderNotifBell();
+    try{ await DB.markNotificationsRead([id]); }catch(e){}
+  }
+  toggleNotifMenu(false);
+  if(n.kind === 'message' && n.link_app_id){
+    const a = apps.find(x => x.id === n.link_app_id);
+    const otherId = a ? (a.from_user === me.id ? a.to_user : a.from_user) : null;
+    const otherName = otherId ? ((profiles.find(p => p.id === otherId) || {}).name) : null;
+    gotoTab('center'); showSub(a && a.from_user === me.id ? 'out' : 'in');
+    openChat(n.link_app_id, otherName || '對方');
+  }else{
+    gotoTab('center'); showSub('me');
+  }
+}
+function toggleNotifMenu(force){
+  const show = typeof force === 'boolean' ? force : $('notifMenu').style.display === 'none';
+  $('notifMenu').style.display = show ? 'block' : 'none';
+  $('notifBell').setAttribute('aria-expanded', String(show));
+}
+$('notifBell').onclick = (e) => { e.stopPropagation(); toggleNotifMenu(); };
+document.addEventListener('click', (e) => { if(!e.target.closest('#notifWrap')) toggleNotifMenu(false); });
+
 /* ── 診療室：點數與主治獸醫（AI）評估 ── */
 function renderClinic(){
   if(!myProfile) return;
@@ -2133,6 +2273,7 @@ $('reload').onclick = async () => { await boot(); flash('boardMsg','已更新');
 async function boot(){
   await DB.settleBonusCredits();
   myProfile = await DB.ensureProfile();
+  renderTabBar();
   profiles = await DB.listProfiles();
   apps = (await DB.listOutbox()).concat(await DB.listInbox());
   if(!templateMaster.length){ try{ templateMaster = await DB.getTemplateMaster(); }catch(e){} }

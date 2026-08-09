@@ -33,6 +33,7 @@ create table if not exists public.match_profiles (
   age         text default '',
   area        text default '',
   job         text default '',
+  education   text default '',
   height_cm   smallint,
   weight_kg   numeric(5,1),
   show_weight boolean not null default false,
@@ -95,6 +96,7 @@ alter table public.match_profiles add column if not exists species text not null
 alter table public.match_profiles add column if not exists age text default '';
 alter table public.match_profiles add column if not exists area text default '';
 alter table public.match_profiles add column if not exists job text default '';
+alter table public.match_profiles add column if not exists education text default '';
 alter table public.match_profiles add column if not exists height_cm smallint;
 alter table public.match_profiles add column if not exists weight_kg numeric(5,1);
 alter table public.match_profiles add column if not exists show_weight boolean not null default false;
@@ -832,6 +834,7 @@ begin
   case p_action
     when 'vet_review'  then v_cost := 1; v_label := '診療　主治獸醫評估';
     when 'deep_review' then v_cost := 3; v_label := '進階診斷　客製第二階段問題';
+    when 'vet_note'    then v_cost := 1; v_label := '診療　主治獸醫備註生成';
     else raise exception '未知的扣點項目：%', p_action;
   end case;
 
@@ -1487,6 +1490,116 @@ begin
 end $$;
 
 -- ============================================================
+-- 10.6) 通知鈴鐺：管理員審核結果、新訊息
+--    以前退回審核只會把原因寫進 photo_reason／verify_reason，畫面上
+--    只有使用者自己點進「我的資料」才看得到；而且一旦重新上傳照片，
+--    這兩個欄位會立刻被清成空字串準備進入下一輪審核，原本的退回原因
+--    就這樣不見了，等於「被退審了都不知道，原因也看不到」。這裡改成
+--    用 trigger 在審核結果／發言限制「變動的當下」就存一筆通知，
+--    跟 photo_reason 之後會不會被覆蓋無關，右上角小鈴鐺會提醒使用者。
+-- ============================================================
+create table if not exists public.match_notifications (
+  id         bigint generated always as identity primary key,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  kind       text not null default 'admin' check (kind in ('admin','message')),
+  title      text not null,
+  body       text not null default '',
+  link_app_id uuid references public.applications(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  read_at    timestamptz
+);
+create index if not exists match_notifications_user_created_idx
+  on public.match_notifications(user_id, created_at desc);
+create index if not exists match_notifications_unread_idx
+  on public.match_notifications(user_id) where read_at is null;
+alter table public.match_notifications enable row level security;
+
+drop policy if exists "match_notifications_select_own" on public.match_notifications;
+create policy "match_notifications_select_own" on public.match_notifications
+  for select to authenticated using (user_id = auth.uid());
+-- 故意不開放 authenticated 直接 insert/update：只能透過下面的 security definer
+-- trigger／函式寫入，前端沒辦法幫自己捏造一則「管理員訊息」或偷看已讀狀態以外的東西。
+
+create or replace function public.notify_profile_review_change()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.photo_status is distinct from old.photo_status and new.photo_status in ('approved','rejected') then
+    insert into public.match_notifications(user_id, kind, title, body) values (
+      new.id, 'admin',
+      case when new.photo_status = 'approved' then '大頭照審核通過' else '大頭照審核未通過' end,
+      case when new.photo_status = 'approved' then '你的大頭照已經通過審核。'
+           else coalesce(nullif(new.photo_reason, ''), '請重新上傳照片。') end
+    );
+  end if;
+  if new.verify_status is distinct from old.verify_status and new.verify_status in ('approved','rejected') then
+    insert into public.match_notifications(user_id, kind, title, body) values (
+      new.id, 'admin',
+      case when new.verify_status = 'approved' then '身分驗證通過' else '身分驗證未通過' end,
+      case when new.verify_status = 'approved' then '你的身分驗證已經通過審核。'
+           else coalesce(nullif(new.verify_reason, ''), '請重新上傳驗證照。') end
+    );
+  end if;
+  if new.account_status = 'suspended' and old.account_status is distinct from 'suspended' then
+    insert into public.match_notifications(user_id, kind, title, body) values (
+      new.id, 'admin', '帳號已被停用登入', coalesce(nullif(new.moderation_reason, ''), '如有疑問請聯絡站方。')
+    );
+  elsif old.account_status = 'suspended' and new.account_status = 'active' then
+    insert into public.match_notifications(user_id, kind, title, body) values (
+      new.id, 'admin', '帳號已恢復', '你的帳號已經恢復，可以重新登入使用。'
+    );
+  end if;
+  if new.posting_locked and not old.posting_locked then
+    insert into public.match_notifications(user_id, kind, title, body) values (
+      new.id, 'admin', '發言權限已被限制', coalesce(nullif(new.moderation_reason, ''), '如有疑問請聯絡站方。')
+    );
+  elsif old.posting_locked and not new.posting_locked then
+    insert into public.match_notifications(user_id, kind, title, body) values (
+      new.id, 'admin', '發言限制已解除', '你可以重新使用送出申請、對話與 AI 功能。'
+    );
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_notify_profile_review_change on public.match_profiles;
+create trigger trg_notify_profile_review_change after update on public.match_profiles
+  for each row execute function public.notify_profile_review_change();
+
+create or replace function public.notify_new_match_message()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_app public.applications; v_recipient uuid; v_sender_name text;
+begin
+  select * into v_app from public.applications where id = new.application_id;
+  if v_app is null then return new; end if;
+  v_recipient := case when v_app.from_user = new.sender_id then v_app.to_user else v_app.from_user end;
+  select name into v_sender_name from public.match_profiles where id = new.sender_id;
+  insert into public.match_notifications(user_id, kind, title, body, link_app_id) values (
+    v_recipient, 'message', coalesce(nullif(v_sender_name, ''), '對方') || ' 傳了新訊息給你',
+    left(new.body, 80), new.application_id
+  );
+  return new;
+end $$;
+
+drop trigger if exists trg_notify_new_match_message on public.match_messages;
+create trigger trg_notify_new_match_message after insert on public.match_messages
+  for each row execute function public.notify_new_match_message();
+
+create or replace function public.mark_notifications_read(p_ids bigint[])
+returns void language sql security definer set search_path = public as $$
+  update public.match_notifications set read_at = now()
+    where user_id = auth.uid() and id = any(p_ids) and read_at is null;
+$$;
+revoke all on function public.mark_notifications_read(bigint[]) from public, anon;
+grant execute on function public.mark_notifications_read(bigint[]) to authenticated;
+
+create or replace function public.mark_all_notifications_read()
+returns void language sql security definer set search_path = public as $$
+  update public.match_notifications set read_at = now()
+    where user_id = auth.uid() and read_at is null;
+$$;
+revoke all on function public.mark_all_notifications_read() from public, anon;
+grant execute on function public.mark_all_notifications_read() to authenticated;
+
+-- ============================================================
 -- 11) 把自己設成管理員（審核台權限）
 --    這行不會自動執行——執行完上面全部之後，自己先用這個帳號登入一次，
 --    再回到 SQL Editor，把 <你的帳號 email> 換成自己的 email，單獨執行這一段：
@@ -1500,10 +1613,13 @@ end $$;
 -- ============================================================
 revoke all on table public.match_profiles, public.applications, public.application_answers,
   public.application_private_notes, public.match_messages, public.match_blocks,
-  public.reports, public.match_moderation_actions, public.match_ai_requests from anon;
+  public.reports, public.match_moderation_actions, public.match_ai_requests,
+  public.match_notifications from anon;
 revoke truncate, references, trigger on table public.match_profiles, public.applications,
   public.application_answers, public.application_private_notes, public.match_messages,
-  public.match_blocks, public.reports, public.match_moderation_actions, public.match_ai_requests from authenticated;
+  public.match_blocks, public.reports, public.match_moderation_actions, public.match_ai_requests,
+  public.match_notifications from authenticated;
+revoke insert, update, delete on table public.match_notifications from authenticated;
 grant select, insert, update, delete on table public.match_profiles to authenticated;
 grant select, update, delete on table public.applications to authenticated;
 grant select on table public.application_answers to authenticated;
@@ -1511,6 +1627,7 @@ grant select, insert, update, delete on table public.application_private_notes t
 grant select on table public.match_messages, public.match_blocks to authenticated;
 grant insert, select, update on table public.reports to authenticated;
 grant select on table public.match_moderation_actions to authenticated;
+grant select on table public.match_notifications to authenticated;
 
 drop policy if exists "match_ai_requests_no_client_access" on public.match_ai_requests;
 create policy "match_ai_requests_no_client_access" on public.match_ai_requests for all
