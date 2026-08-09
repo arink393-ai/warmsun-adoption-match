@@ -152,6 +152,14 @@ alter table public.match_profiles add column if not exists taboo text default ''
 alter table public.match_profiles add column if not exists health text default '';
 alter table public.match_profiles add column if not exists health_tags jsonb not null default '[]'::jsonb;
 alter table public.match_profiles add column if not exists health_when text not null default 'stage2';
+-- 負債狀況跟健康告知一樣，揭露時機完全由本人決定（public／stage1／stage2／never）
+alter table public.match_profiles add column if not exists debt_when text not null default 'stage2';
+alter table public.match_profiles drop constraint if exists match_profiles_debt_when_check;
+alter table public.match_profiles add constraint match_profiles_debt_when_check
+  check (debt_when in ('public','stage1','stage2','never'));
+alter table public.match_profiles drop constraint if exists match_profiles_health_when_check;
+alter table public.match_profiles add constraint match_profiles_health_when_check
+  check (health_when in ('public','stage1','stage2','never'));
 alter table public.match_profiles add column if not exists vet_note text default '';
 alter table public.match_profiles add column if not exists stars jsonb not null default '{}'::jsonb;
 -- 我的答題紀錄：申請人送出過的答案，下次遇到相似題目可以一鍵帶入再修改
@@ -369,7 +377,30 @@ create policy "applications_delete_admin"
 create index if not exists applications_to_user_updated_idx on public.applications(to_user, updated_at desc);
 create index if not exists applications_from_user_updated_idx on public.applications(from_user, updated_at desc);
 
--- 對外一律走遮罩函式；生日、健康、體重與日常觀察依階段/本人設定逐欄揭露。
+-- 年齡在佈告欄只給區間，通過第一階段後才顯示精確歲數。
+-- age 欄位是自由文字（可能是「28」「28 歲」「二十八」），抓得到數字就分桶，抓不到就原樣回傳。
+create or replace function public.age_bucket(p_age text)
+returns text language sql immutable set search_path = '' as $$
+  select case
+    when nullif(substring(coalesce(p_age,'') from '[0-9]+'), '') is null then nullif(p_age, '')
+    when (substring(p_age from '[0-9]+'))::int < 25 then '25 歲以下'
+    when (substring(p_age from '[0-9]+'))::int < 30 then '25～29 歲'
+    when (substring(p_age from '[0-9]+'))::int < 35 then '30～34 歲'
+    when (substring(p_age from '[0-9]+'))::int < 40 then '35～39 歲'
+    when (substring(p_age from '[0-9]+'))::int < 45 then '40～44 歲'
+    when (substring(p_age from '[0-9]+'))::int < 50 then '45～49 歲'
+    else '50 歲以上'
+  end
+$$;
+
+-- 對外一律走遮罩函式，四層漸進式揭露：
+--   第 0 層（佈告欄，還沒有申請關係）：暱稱、物種性別、年齡「區間」、地區、職業、
+--                                    興趣、個性、關係期待、個性標籤、喜歡的事、禁忌、星等
+--   第 1 層（對方送出第一階段申請後）：精確年齡、身高、體重（本人另外決定公不公開）、
+--                                    學歷、婚姻、有無孩子、兵役、生活習慣
+--   第 2 層（進入第二階段後）：年收入區間、居住狀況、生育規劃、一週工作時數
+--   第 3 層（雙方都同意解鎖後）：生日、日常觀察資訊（社群帳號等）
+--   另外「健康告知」與「負債狀況」的揭露時機完全由本人自己選（public／stage1／stage2／never）
 create or replace function public.get_visible_match_profiles(p_profile_id uuid default null)
 returns setof jsonb
 language sql security definer stable set search_path = '' as $$
@@ -378,10 +409,35 @@ language sql security definer stable set search_path = '' as $$
       'credits','credit_log','is_admin','q1','q2_bank','canned','answer_bank',
       'bonus_credits','verify_task','verify_reason','verify_deleted_at',
       'moderation_reason','moderated_at','moderated_by','posting_locked','account_status',
-      'birth','health','health_tags','locked','weight_kg'
+      'restricted_credits',
+      -- 以下全部改由下面的 jsonb_build_object 依階段決定要不要給
+      'age','birth','health','health_tags','locked','weight_kg','show_weight',
+      'height_cm','education','marital','has_kids','military','habits','habits_other',
+      'income','living','kids_plan','work_hours','debt','debt_when'
     ]::text[])
     || jsonb_build_object(
-      'birth', case when rel.stage >= 1 then p.birth else null end,
+      -- 第 0 層：年齡只給區間
+      'age', case when rel.stage >= 1 then p.age else public.age_bucket(p.age) end,
+      'age_is_bucket', (rel.stage is null or rel.stage < 1),
+      -- 第 1 層
+      'height_cm',   case when rel.stage >= 1 then p.height_cm else null end,
+      'weight_kg',   case when rel.stage >= 1 and p.show_weight then p.weight_kg else null end,
+      'show_weight', case when rel.stage >= 1 then p.show_weight else false end,
+      'education',   case when rel.stage >= 1 then p.education else null end,
+      'marital',     case when rel.stage >= 1 then p.marital else null end,
+      'has_kids',    case when rel.stage >= 1 then p.has_kids else null end,
+      'military',    case when rel.stage >= 1 then p.military else null end,
+      'habits',      case when rel.stage >= 1 then p.habits else '[]'::jsonb end,
+      'habits_other',case when rel.stage >= 1 then p.habits_other else null end,
+      -- 第 2 層
+      'income',      case when rel.stage >= 2 then p.income else null end,
+      'living',      case when rel.stage >= 2 then p.living else null end,
+      'kids_plan',   case when rel.stage >= 2 then p.kids_plan else null end,
+      'work_hours',  case when rel.stage >= 2 then p.work_hours else null end,
+      -- 第 3 層：要雙方都同意解鎖
+      'birth',  case when rel.stage >= 3 and rel.unlock_from and rel.unlock_to then p.birth else null end,
+      'locked', case when rel.stage >= 3 and rel.unlock_from and rel.unlock_to then p.locked else null end,
+      -- 本人自選揭露時機
       'health', case
         when p.health_when = 'public'
           or (p.health_when = 'stage1' and rel.stage >= 1)
@@ -390,9 +446,13 @@ language sql security definer stable set search_path = '' as $$
         when p.health_when = 'public'
           or (p.health_when = 'stage1' and rel.stage >= 1)
           or (p.health_when = 'stage2' and rel.stage >= 2) then p.health_tags else '[]'::jsonb end,
-      'locked', case when rel.stage >= 3 and rel.unlock_from and rel.unlock_to then p.locked else null end,
-      'weight_kg', case when p.show_weight then p.weight_kg else null end,
-      'show_weight', p.show_weight
+      'debt', case
+        when p.debt_when = 'public'
+          or (p.debt_when = 'stage1' and rel.stage >= 1)
+          or (p.debt_when = 'stage2' and rel.stage >= 2) then p.debt else null end,
+      -- 讓畫面知道「現在是第幾層」，好顯示「🔒 通過第一階段後可見」這類提示
+      'rel_stage', coalesce(rel.stage, 0),
+      'rel_unlocked', coalesce(rel.stage >= 3 and rel.unlock_from and rel.unlock_to, false)
     )
   from public.match_profiles p
   left join lateral (
@@ -411,6 +471,8 @@ language sql security definer stable set search_path = '' as $$
 $$;
 revoke all on function public.get_visible_match_profiles(uuid) from public, anon;
 grant execute on function public.get_visible_match_profiles(uuid) to authenticated;
+revoke all on function public.age_bucket(text) from public, anon;
+grant execute on function public.age_bucket(text) to authenticated;
 
 -- ============================================================
 -- 2b) 第二階段對話：只能由安全函式送出，內含封鎖與速率限制
