@@ -168,6 +168,15 @@ alter table public.match_profiles add column if not exists stage2_photo boolean 
 -- 用來在 14 天內沒花完時收回，一併鎖進下面的 guard trigger，不能自己改。
 alter table public.match_profiles add column if not exists allow_skip boolean not null default false;
 alter table public.match_profiles add column if not exists bonus_credits jsonb not null default '[]'::jsonb;
+-- restricted_credits：一鍵通關獎勵點數不得轉讓，只能用在主治獸醫評估／進階診斷，
+-- 不能拿去付掛號費、出題費、解鎖費或再送一次快速邀請。這欄記錄「目前餘額裡有多少
+-- 是這種限定用途的點數」，花在允許的項目上會跟著扣，花在其他項目時會被排除在
+-- 可用餘額之外（見 spend_credits_for／apply_to／send_stage2／unlock_stage3／
+-- request_fast_track／accept_fast_track 裡「可用餘額 = credits - restricted_credits」的檢查）。
+alter table public.match_profiles add column if not exists restricted_credits int not null default 0;
+alter table public.match_profiles drop constraint if exists match_profiles_restricted_credits_check;
+alter table public.match_profiles add constraint match_profiles_restricted_credits_check
+  check (restricted_credits >= 0);
 
 -- 物種從「只有貓／狗」放寬成 13 種，性別改用獨立的 gender 欄位表示。
 -- 先移除舊的 check 限制，再依現有資料把 gender 補上（貓→女生、狗→男生，符合舊版的隱含規則）。
@@ -278,10 +287,10 @@ create table if not exists public.applications (
   to_user      uuid not null references auth.users(id) on delete cascade,
   stage        int  not null default 1,      -- 1 書面審查 / 2 價值觀評估 / 3 日常觀察
   status       text not null default 'open' check (status in ('open','rejected')),
-  -- 注意：第一／二階段的回答不放在這裡，而是放在 application_answers（見第 10 節），
-  -- 因為收件方要「付費解鎖」才看得到，權限必須由資料庫控管，不能只靠前端遮住。
+  -- 注意：第一／二階段的回答不放在這裡，而是放在 application_answers（見第 10 節）。
   a2_questions jsonb,                        -- 這次實際出的第二階段題目（由 pet 從題庫挑選）
-  a1_unlocked  boolean not null default false, -- 收件方是否已付費解鎖第一階段詳細回答
+  a1_unlocked  boolean not null default true, -- 申請人已經付掛號費了，第一階段完整回答一律免費給收件方看，
+                                              -- 這欄留著只是沿用舊架構、不必大改 RLS；不再收「調閱費」
   stage2_paid  boolean not null default false, -- 收件方是否已付費發出第二階段問卷
   consent_at   timestamptz,                  -- 申請人送出這份申請時同意隱私權政策的時間
   unlock_from  boolean not null default false,
@@ -303,7 +312,11 @@ alter table public.applications add column if not exists to_user uuid;
 alter table public.applications add column if not exists stage int not null default 1;
 alter table public.applications add column if not exists status text not null default 'open';
 alter table public.applications add column if not exists a2_questions jsonb;
-alter table public.applications add column if not exists a1_unlocked boolean not null default false;
+alter table public.applications add column if not exists a1_unlocked boolean not null default true;
+alter table public.applications alter column a1_unlocked set default true;
+-- 拿掉「調閱費」：申請人已經付了掛號費，第一階段完整回答一律免費開放給收件方看，
+-- 既有申請也一併補開放，不會回頭跟人收錢也不用讓舊申請卡住。
+update public.applications set a1_unlocked = true where not a1_unlocked;
 alter table public.applications add column if not exists stage2_paid boolean not null default false;
 alter table public.applications add column if not exists consent_at timestamptz;
 alter table public.applications add column if not exists unlock_from boolean not null default false;
@@ -387,7 +400,7 @@ language sql security definer stable set search_path = '' as $$
   ) rel on true
   where auth.uid() is not null
     and p.photo_status = 'approved' and p.verify_status = 'approved'
-    and p.height_cm is not null
+    and p.name <> '' and p.kind <> '' and p.species <> ''
     and p.account_status = 'active'
     and (p_profile_id is null or p.id = p_profile_id)
     and p.id <> auth.uid();
@@ -784,6 +797,7 @@ begin
     new.bonus_given := old.bonus_given;
     new.verify_deleted_at := old.verify_deleted_at;
     new.bonus_credits := old.bonus_credits;
+    new.restricted_credits := old.restricted_credits;
     new.account_status := old.account_status;
     new.posting_locked := old.posting_locked;
     new.moderation_reason := old.moderation_reason;
@@ -824,27 +838,36 @@ drop function if exists public.spend_credits_for(text, text);
 create or replace function public.spend_credits_for(p_action text, p_detail text default null)
 returns public.match_profiles
 language plpgsql security definer set search_path = public as $$
-declare v_cost int; v_label text; v_bal int; v_row public.match_profiles;
+declare v_cost int; v_label text; v_bal int; v_restricted int; v_allow_restricted boolean; v_row public.match_profiles;
 begin
   perform public.settle_bonus_credits(auth.uid());
   if not exists (select 1 from public.match_profiles where id = auth.uid()
-    and account_status = 'active' and not posting_locked and height_cm is not null) then
-    raise exception '請先完成身高資料，或確認帳號發言權限';
+    and account_status = 'active' and not posting_locked and name <> '') then
+    raise exception '請先完成基本資料，或確認帳號發言權限';
   end if;
   case p_action
-    when 'vet_review'  then v_cost := 1; v_label := '診療　主治獸醫評估';
-    when 'deep_review' then v_cost := 3; v_label := '進階診斷　客製第二階段問題';
-    when 'vet_note'    then v_cost := 1; v_label := '診療　主治獸醫備註生成';
+    when 'vet_review'  then v_cost := 1; v_label := '診療　主治獸醫評估';           v_allow_restricted := true;
+    when 'deep_review' then v_cost := 3; v_label := '進階診斷　客製第二階段問題';    v_allow_restricted := true;
+    when 'vet_note'    then v_cost := 1; v_label := '診療　主治獸醫備註生成';        v_allow_restricted := false;
     else raise exception '未知的扣點項目：%', p_action;
   end case;
 
-  select credits into v_bal from public.match_profiles where id = auth.uid() for update;
+  select credits, coalesce(restricted_credits, 0) into v_bal, v_restricted
+    from public.match_profiles where id = auth.uid() for update;
   if v_bal is null then raise exception '找不到你的帳號資料'; end if;
-  if v_bal < v_cost then raise exception '點數不足'; end if;
+  if v_allow_restricted then
+    if v_bal < v_cost then raise exception '點數不足'; end if;
+  else
+    if (v_bal - v_restricted) < v_cost then
+      raise exception '點數不足（有一部分點數是快速邀請的限定用途獎勵，只能用在主治獸醫評估與進階診斷）';
+    end if;
+  end if;
 
   perform set_config('app.bypass_profile_guard', 'on', true);
   update public.match_profiles set
     credits = credits - v_cost,
+    restricted_credits = case when v_allow_restricted
+      then greatest(0, coalesce(restricted_credits, 0) - v_cost) else restricted_credits end,
     credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', v_label || coalesce('　' || p_detail, ''), 'd', -v_cost))
   where id = auth.uid()
   returning * into v_row;
@@ -852,40 +875,12 @@ begin
   return v_row;
 end $$;
 
--- 提出認養申請：扣掛號費＋建立申請案件，包在同一個交易裡。
--- 只要有一步失敗（例如已經申請過、對方尚未審核通過），整個都會回滾，
--- 不會出現「錢扣了但申請沒送出」這種需要另外退款的中間狀態。
-create or replace function public.apply_to(p_to uuid, p_answers jsonb)
-returns public.applications
-language plpgsql security definer set search_path = public as $$
-declare
-  v_cost constant int := 1;   -- 掛號費，價格由伺服器決定，不接受前端傳金額
-  v_bal int; v_app public.applications;
-begin
-  if p_to = auth.uid() then raise exception '不能對自己提出申請'; end if;
-  if not exists (
-    select 1 from public.match_profiles
-    where id = p_to and photo_status = 'approved' and verify_status = 'approved'
-  ) then
-    raise exception '對方尚未通過審核，暫時無法申請';
-  end if;
-
-  select credits into v_bal from public.match_profiles where id = auth.uid() for update;
-  if v_bal is null or v_bal < v_cost then raise exception '掛號費不足'; end if;
-
-  insert into public.applications(from_user, to_user, stage, status, a1, paid)
-  values (auth.uid(), p_to, 1, 'open', p_answers, v_cost)
-  returning * into v_app;
-
-  perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.match_profiles set
-    credits = credits - v_cost,
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '掛號　向 ' || (select name from public.match_profiles where id = p_to) || ' 提出申請', 'd', -v_cost))
-  where id = auth.uid();
-  perform set_config('app.bypass_profile_guard', '', true);
-
-  return v_app;
-end $$;
+-- 舊版的兩參數 apply_to(uuid, jsonb) 曾經在更早的版本清掉過（改寫成殭屍函式的說明，
+-- 讓下面的 drop 去清），後來一次大改版又把完整函式本體帶了回來——雖然它插入
+-- applications(...,a1,...) 引用的 a1 欄位早就搬到 application_answers 去了，
+-- 執行到一半就會報錯，且缺少下面 3 參數版本才有的重複申請檢查、對象是否被停權檢查，
+-- 嚴格說仍是一支「一叫就炸、且防護比較弱」的殭屍函式。這次直接不建立它，
+-- 下面那個 drop 兼顧「這個檔案沒建過」與「舊資料庫可能還留著」兩種情況。
 
 -- 退回逾期未處理的掛號費：伺服器自己重新檢查一次天數／歸屬／是否已退過，
 -- 不相信前端傳來的任何數字，前端只能傳「是哪一筆申請」。
@@ -1106,8 +1101,8 @@ declare
 begin
   perform public.settle_bonus_credits(auth.uid());
   if not exists (select 1 from public.match_profiles where id = auth.uid()
-    and account_status = 'active' and not posting_locked and height_cm is not null) then
-    raise exception '請先完成身高資料，或確認帳號發言權限';
+    and account_status = 'active' and not posting_locked and name <> '') then
+    raise exception '請先完成基本資料，或確認帳號發言權限';
   end if;
   if p_to = auth.uid() then raise exception '不能對自己提出申請'; end if;
   if not exists (
@@ -1124,8 +1119,11 @@ begin
     raise exception '已經申請過了';
   end if;
 
-  select credits into v_bal from public.match_profiles where id = auth.uid() for update;
-  if v_bal is null or v_bal < v_cost then raise exception '掛號費不足'; end if;
+  select credits - coalesce(restricted_credits, 0) into v_bal
+    from public.match_profiles where id = auth.uid() for update;
+  if v_bal is null or v_bal < v_cost then
+    raise exception '掛號費不足（一鍵通關的限定用途獎勵點數不能用來付掛號費）';
+  end if;
 
   insert into public.applications(from_user, to_user, stage, status, paid, consent_at)
   values (auth.uid(), p_to, 1, 'open', v_cost, now())
@@ -1201,8 +1199,11 @@ begin
   if jsonb_array_length(coalesce(p_questions,'[]'::jsonb)) = 0 then raise exception '至少要出一題'; end if;
 
   if not v_app.stage2_paid then
-    select credits into v_bal from public.match_profiles where id = auth.uid() for update;
-    if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
+    select credits - coalesce(restricted_credits, 0) into v_bal
+      from public.match_profiles where id = auth.uid() for update;
+    if v_bal is null or v_bal < v_cost then
+      raise exception '點數不足（一鍵通關的限定用途獎勵點數不能用來付出題費）';
+    end if;
     perform set_config('app.bypass_profile_guard', 'on', true);
     update public.match_profiles set
       credits = credits - v_cost,
@@ -1258,8 +1259,11 @@ begin
   if v_app.stage <> 3 then raise exception '這筆申請還沒進入第三階段'; end if;
   if v_app.unlock_from then return v_app; end if;   -- 已解鎖就不再收費
 
-  select credits into v_bal from public.match_profiles where id = auth.uid() for update;
-  if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
+  select credits - coalesce(restricted_credits, 0) into v_bal
+    from public.match_profiles where id = auth.uid() for update;
+  if v_bal is null or v_bal < v_cost then
+    raise exception '點數不足（一鍵通關的限定用途獎勵點數不能用來付解鎖費）';
+  end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
   update public.applications set unlock_from = true where id = p_app_id returning * into v_app;
@@ -1301,20 +1305,28 @@ language plpgsql security definer set search_path = public as $$
 declare
   v_bank jsonb; v_entry jsonb; v_keep jsonb := '[]'::jsonb;
   v_credits int; v_remaining int; v_deduct int; v_total_deduct int := 0;
+  v_restricted int; v_restricted_remaining int; v_restricted_deduct int; v_total_restricted_deduct int := 0;
 begin
   if p_uid is null then return; end if;
   if p_uid <> auth.uid() and auth.role() <> 'service_role' and not public.match_is_admin(auth.uid()) then
     raise exception '無權結算其他帳號';
   end if;
-  select bonus_credits, credits into v_bank, v_credits from public.match_profiles where id = p_uid for update;
+  select bonus_credits, credits, coalesce(restricted_credits, 0) into v_bank, v_credits, v_restricted
+    from public.match_profiles where id = p_uid for update;
   if v_bank is null or jsonb_array_length(v_bank) = 0 then return; end if;
 
   v_remaining := coalesce(v_credits, 0);
+  v_restricted_remaining := v_restricted;
   for v_entry in select * from jsonb_array_elements(v_bank) loop
     if (v_entry->>'expires_at')::timestamptz <= now() then
       v_deduct := least(v_remaining, (v_entry->>'amount')::int);
       v_remaining := v_remaining - v_deduct;
       v_total_deduct := v_total_deduct + v_deduct;
+      -- 這筆獎勵到期了，不管花掉了多少，剩下追蹤的「限定用途餘額」也要跟著清掉，
+      -- 不然 restricted_credits 之後會比實際點數還多，把使用者一般點數也一起卡住。
+      v_restricted_deduct := least(v_restricted_remaining, (v_entry->>'amount')::int);
+      v_restricted_remaining := v_restricted_remaining - v_restricted_deduct;
+      v_total_restricted_deduct := v_total_restricted_deduct + v_restricted_deduct;
     else
       v_keep := v_keep || jsonb_build_array(v_entry);
     end if;
@@ -1325,6 +1337,7 @@ begin
     update public.match_profiles set
       bonus_credits = v_keep,
       credits = credits - v_total_deduct,
+      restricted_credits = greatest(0, coalesce(restricted_credits, 0) - v_total_restricted_deduct),
       credit_log = case when v_total_deduct > 0
         then public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '一鍵通關獎勵點數逾期收回', 'd', -v_total_deduct))
         else credit_log end
@@ -1352,8 +1365,10 @@ begin
   if v_app.status <> 'open' or v_app.stage >= 3 then raise exception '目前階段不能送快速邀請'; end if;
   select * into v_owner from public.match_profiles where id = v_app.to_user;
   if v_owner is null or not coalesce(v_owner.allow_skip, false) then raise exception '對方沒有開放快速邀請'; end if;
-  select credits into v_bal from public.match_profiles where id = auth.uid();
-  if coalesce(v_bal,0) < 10 then raise exception '點數不足；對方接受時需要 10 點'; end if;
+  select credits - coalesce(restricted_credits, 0) into v_bal from public.match_profiles where id = auth.uid();
+  if coalesce(v_bal,0) < 10 then
+    raise exception '點數不足；對方接受時需要 10 點（一鍵通關的限定用途獎勵點數不能用來再送一次快速邀請）';
+  end if;
   perform set_config('app.bypass_app_guard', 'on', true);
   update public.applications set fast_invite_from = true where id = p_app_id returning * into v_app;
   perform set_config('app.bypass_app_guard', '', true);
@@ -1380,8 +1395,11 @@ begin
     raise exception '你目前沒有開放快速邀請';
   end if;
 
-  select credits into v_bal from public.match_profiles where id = v_app.from_user for update;
-  if v_bal is null or v_bal < v_cost then raise exception '點數不足'; end if;
+  select credits - coalesce(restricted_credits, 0) into v_bal
+    from public.match_profiles where id = v_app.from_user for update;
+  if v_bal is null or v_bal < v_cost then
+    raise exception '點數不足（一鍵通關的限定用途獎勵點數不能用來付這筆費用）';
+  end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
   update public.applications set
@@ -1400,9 +1418,10 @@ begin
 
   update public.match_profiles set
     credits = credits + v_cost,
+    restricted_credits = coalesce(restricted_credits, 0) + v_cost,
     bonus_credits = coalesce(bonus_credits, '[]'::jsonb)
       || jsonb_build_array(jsonb_build_object('amount', v_cost, 'granted_at', now(), 'expires_at', now() + interval '14 days')),
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '接受快速邀請　獎勵點數（14 天內要花完）', 'd', v_cost))
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '接受快速邀請　獎勵點數（限定用途：只能用在主治獸醫評估／進階診斷，14 天內要花完，不得轉讓）', 'd', v_cost))
   where id = v_app.to_user;
   perform set_config('app.bypass_profile_guard', '', true);
 

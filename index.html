@@ -246,6 +246,14 @@
   <div style="border-top:1px solid var(--rule);margin:22px 0"></div>
 
   <section>
+    <p class="hint" style="text-transform:uppercase;letter-spacing:.08em;color:var(--brand);margin:0 0 10px">病歷卡長這樣（示意）</p>
+    <p class="hint" style="margin:0 0 14px">下面兩張是示範用的假資料，不是真實會員，讓你在註冊前先了解登記後看到的樣子。</p>
+    <div class="grid" id="demoCards"></div>
+  </section>
+
+  <div style="border-top:1px solid var(--rule);margin:22px 0"></div>
+
+  <section>
     <div class="notice">
       還沒有帳號嗎？<a href="#" id="homeToSignup2">免費註冊</a>，或先
       <a href="#" id="homeToHow">看看完整的認養流程說明</a>。
@@ -282,6 +290,8 @@
 <div class="pane" id="pane-me">
   <fieldset>
     <legend>登記資料</legend>
+    <div id="meCompleteness" style="margin-bottom:16px"></div>
+    <div class="hint" style="margin:0 0 10px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 第一步：基本資料（必填，填完就能送審）—</div>
     <div class="row">
       <div><label>暱稱</label><input id="mName" placeholder="例：小橘"></div>
       <div><label>身分</label>
@@ -310,7 +320,7 @@
         </select></div>
     </div>
     <div class="row">
-      <div><label>身高（cm，必填）</label><input id="mHeight" type="number" min="100" max="230" inputmode="numeric" placeholder="例：168"></div>
+      <div><label>身高（cm，選填）</label><input id="mHeight" type="number" min="100" max="230" inputmode="numeric" placeholder="例：168"></div>
       <div><label>體重（kg，選填）</label><input id="mWeight" type="number" min="25" max="350" step="0.1" inputmode="decimal" placeholder="例：58.5"></div>
       <div><label>體重揭露</label><select id="mShowWeight"><option value="false">不公開</option><option value="true">公開</option></select></div>
     </div>
@@ -358,6 +368,8 @@
     <label>自我介紹（會公開．會顯示在病歷卡的「行為觀察」欄）</label>
     <textarea id="mBio" rows="4" placeholder="興趣、生活型態、想找什麼樣的人⋯⋯"></textarea>
 
+    <div class="hint" style="margin:20px 0 4px;font-weight:700;letter-spacing:.05em;color:var(--brand-dk)">— 第二步：詳細資料與病歷卡（選填，先送審、之後隨時可以回來補）—</div>
+    <div class="hint" style="margin:0 0 16px">以下都不是送審的必填項目，資料越完整，對方越容易判斷合不合適，但不填也可以先讓大頭照送審。</div>
     <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 病歷卡（會公開）—</div>
     <label>健康與性格評估</label>
     <div class="row" id="mStars"></div>
@@ -415,10 +427,11 @@
       <input type="checkbox" id="mAllowSkip" style="width:auto;margin:4px 0 0">
       <span style="font-size:13px;color:var(--ink)">開放「快速邀請」：申請人可先提出邀請，<b>不會立即扣點或解鎖</b>。
         只有你主動接受後，系統才從對方扣 10 點並讓雙方快速解鎖；你可以拒絕或繼續正常階段。
-        這 10 點會進到你的帳號，但限 <b>14 天</b>內用完。</span>
+        這 10 點會進到你的帳號，限 <b>14 天</b>內用完，且<b>只能用在「請主治獸醫評估」或「進階診斷」，
+        不能拿去付掛號費、出題費、解鎖費，也不能轉讓給其他帳號</b>。</span>
     </label>
 
-    <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 詳細資料（必填．會公開）—</div>
+    <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 詳細資料（選填．會公開）—</div>
     <div class="row">
       <div><label>年收入區間</label>
         <select id="mIncome"><option value="" disabled selected>請選擇</option>
@@ -460,11 +473,11 @@
           <option>ISTP</option><option>ISFP</option><option>ESTP</option><option>ESFP</option>
         </select></div>
     </div>
-    <label>一週工作時數（含通勤）</label>
+    <label>一週工作時數（含通勤．選填）</label>
     <input id="mWorkHours" placeholder="例：45 小時">
-    <label>興趣與休閒活動（可複選，至少選 1 項）</label>
+    <label>興趣與休閒活動（可複選，選填）</label>
     <div class="row" id="mInterests" style="flex-wrap:wrap;gap:6px 16px"></div>
-    <label>個性介紹（可複選，至少選 1 項）</label>
+    <label>個性介紹（可複選，選填）</label>
     <div class="row" id="mPersonality" style="flex-wrap:wrap;gap:6px 16px"></div>
     <label>生活習慣（可複選，選填，據實勾選就好）</label>
     <div class="row" id="mHabits" style="flex-wrap:wrap;gap:6px 16px"></div>
@@ -493,6 +506,7 @@
     </label>
     <div class="bar">
       <button id="mSave">儲存登記</button>
+      <button type="button" class="ghost" id="mDiscard">捨棄變更，重新載入</button>
       <button class="ghost" id="mPurge">刪除我的所有資料</button>
       <span class="msg" id="meMsg"></span>
     </div>
@@ -518,12 +532,15 @@
       <span id="balance">0</span> <span style="font-size:14px;color:var(--ink-soft)">點</span></p>
     <p class="hint">
       <b>掛號費</b>　送出一份認養申請：<span id="clinicApplyCost">1</span> 點<br>
-      <b>調閱費</b>　調閱一位申請人的第一階段詳細回答：<span id="clinicUnlockCost">1</span> 點<br>
       <b>出題費</b>　發出第二階段問卷給一位申請人：<span id="clinicStage2Cost">2</span> 點<br>
       <b>解鎖費</b>　通過三階段審查後解鎖對方的日常觀察資訊：<span id="clinicStage3Cost">3</span> 點<br>
       <b>診療費</b>　請主治獸醫評估一位申請人：<span id="clinicVetCost">1</span> 點<br>
       <b>進階診斷</b>　請主治獸醫客製第二階段問題：<span id="clinicDeepCost">3</span> 點<br>
-      <b>快速邀請</b>　登記人開放時可提出邀請；對方接受後才扣 <span id="clinicSkipCost">10</span> 點並快速解鎖（點數會進到對方帳號，限14天內用完）<br>
+      <b>備註生成</b>　請 AI 生成一句主治獸醫備註：1 點（自己手打免費，不會被覆蓋）<br>
+      <b>快速邀請</b>　登記人開放時可提出邀請；對方接受後才扣 <span id="clinicSkipCost">10</span> 點並快速解鎖
+      （這 <span id="clinicSkipCost2">10</span> 點會進到登記人帳號，<b>限定用在「診療費」與「進階診斷」，不能付其他費用、不能轉讓</b>，限 14 天內用完）<br>
+      <span style="color:var(--ink)">申請人的第一階段完整回答一律免費開放給收件人閱讀——對方既然已經付了掛號費，就應該被看見；
+      付費項目只用在額外的分析與服務。</span><br>
       收費是為了讓雙方都慎重：申請前先想清楚，收到申請的人也不會被大量亂投的訊息淹沒。<br>
       若對方超過 <span id="clinicRefundDays">14</span> 天未處理你的申請，可以在「我送出的申請」退回掛號費。
     </p>
@@ -582,9 +599,16 @@
   </fieldset>
   <fieldset>
     <legend>關於診療點數</legend>
-    <p>送出一份認養申請需要 <span id="howApplyCost">1</span> 點掛號費；請主治獸醫評估一位申請人需要 <span id="howVetCost">1</span> 點診療費。新加入贈送 <span id="howFreeCredits">5</span> 點。</p>
+    <p>新加入贈送 <span id="howFreeCredits">5</span> 點；完成登記並通過照片審核，再贈 5 點。</p>
+    <p><b>申請方</b>：送出一份認養申請需要 <span id="howApplyCost">1</span> 點掛號費。</p>
+    <p><b>收件方（皆為選用，不付費也能完整使用流程）</b>：發出第二階段問卷 2 點、請主治獸醫評估一位申請人
+    需要 <span id="howVetCost">1</span> 點診療費、請主治獸醫客製第二階段問題（進階診斷）3 點、
+    通過三階段審查後解鎖對方的日常觀察資訊 3 點。</p>
+    <p class="hint"><b>申請人的完整回答一律免費開放給收件方閱讀。</b>對方既然已經付了掛號費，就應該被看見；付費項目只用在額外的分析與服務。</p>
     <p class="hint">收費不是門檻，而是節奏。要付出一點成本，大家才會挑真正想認識的人申請，收到申請的人也才有辦法認真讀完每一份。</p>
     <p class="hint">若對方超過 14 天沒有處理你的申請，可以在「我送出的申請」自行退回掛號費。</p>
+    <p class="hint">「快速邀請」開放後，登記人接受邀請可獲得 10 點獎勵，但這 10 點限定用在「請主治獸醫評估」或
+    「進階診斷」，不能拿去付掛號費、出題費或解鎖費，也不能轉讓給其他帳號，限 14 天內用完，逾期會自動收回。</p>
   </fieldset>
   <fieldset>
     <legend>照片與身分規則</legend>
@@ -829,7 +853,6 @@ const DEFAULT_Q2 = [
 const APPLY_COST = 1;      /* 送出申請的掛號費 */
 const VET_COST = 1;        /* 主治獸醫評估的診療費 */
 const DEEP_COST = 3;       /* 進階診斷：AI 客製第二階段問題（實際收費以資料庫 spend_credits_for 為準） */
-const UNLOCK_A1_COST = 1;  /* 調閱第一階段詳細回答（實際收費以資料庫 unlock_a1 為準） */
 const UNLOCK_STAGE3_COST = 3; /* 申請人解鎖對方的日常觀察資訊（實際收費以資料庫 unlock_stage3 為準） */
 const STAGE2_COST = 2;     /* 發出第二階段問卷（實際收費以資料庫 send_stage2 為準） */
 const SKIP_COST = 10;      /* 雙方同意快速邀請：接受後才扣點，限14天內用完 */
@@ -968,7 +991,7 @@ $('homeToHow').onclick = (e) => { e.preventDefault(); gotoTab('how'); };
 
 DB.onAuthChange(async (user, authEvent) => {
   if(!user){
-    me = null; myProfile = null;
+    me = null; myProfile = null; meFormLoaded = false;
     $('topbarGuest').style.display = 'flex'; $('topbarUser').style.display = 'none';
     const activeBtn = $('tabbar').querySelector('.tabbtn.on');
     if(activeBtn && PROTECTED_TABS.includes(activeBtn.dataset.k)) gotoTab('home');
@@ -1042,13 +1065,20 @@ function initCenter(){
     const b = e.target.closest('.tabbtn'); if(!b) return;
     showSub(b.dataset.k);
   };
+  $('pane-me').addEventListener('input', () => renderCompleteness());
+  $('pane-me').addEventListener('change', () => renderCompleteness());
   showSub(curSub);
 }
+let meFormLoaded = false;
 function showSub(k){
   curSub = k;
   document.querySelectorAll('#subbar .tabbtn').forEach(x => x.classList.toggle('on', x.dataset.k === k));
   SUBS.forEach(s => { const el = $('pane-' + s.k); if(el) el.classList.toggle('on', s.k === k); });
-  if(k === 'me') fillMe();
+  /* 「我的資料」故意只在登入後第一次進來時才把表單填上伺服器資料——
+     如果每次切換分頁都重填，正在編輯到一半、還沒按「儲存登記」的內容
+     會被整個蓋掉，這是使用者反映最困擾的一點。要重新載入伺服器上的
+     版本，請按表單裡的「捨棄變更」。 */
+  if(k === 'me' && !meFormLoaded){ fillMe(); meFormLoaded = true; }
   if(k === 'in') renderInbox();
   if(k === 'out') renderOutbox();
   if(k === 'tpl') renderTpl();
@@ -1141,6 +1171,36 @@ async function fillMe(){
   $('stage2PhotoState').textContent = myProfile.stage2_photo ? '已上傳。' : '尚未上傳（選填）。';
   const task = showVerifyTask(myProfile);
   if(!myProfile.verify_task){ myProfile = await DB.saveMyProfile({verify_task: task}); }
+  renderCompleteness();
+}
+
+/* 個人資料完整度：基本資料＋詳細資料合起來算，只是提醒、不會擋送審。
+   REQUIRED_DETAIL_SELECTS 宣告在這支函式下面，故意等呼叫的當下才讀，
+   避免 const 初始化順序的暫時性死區（TDZ）在頁面載入時就整頁掛掉。 */
+function computeCompleteness(){
+  const hasPhoto = (myProfile && myProfile.photo_status && myProfile.photo_status !== 'none')
+    || $('mPhoto').dataset.new === '1';
+  const basic = [!!mName.value.trim(), !!mBio.value.trim(), !!mSpecies.value, hasPhoto];
+  const selectIds = ['mEducation','mMbti', ...REQUIRED_DETAIL_SELECTS.map(([id]) => id)];
+  const detail = [
+    !!mHeight.value, !!mWeight.value, !!mWorkHours.value.trim(),
+    !!mTraits.value.trim(), !!mLikes.value.trim(), !!mWants.value.trim(),
+    getCheckGroup('mInterests').length > 0, getCheckGroup('mPersonality').length > 0,
+    ...selectIds.map(id => !!$(id).value)
+  ];
+  const all = basic.concat(detail);
+  return Math.round(all.filter(Boolean).length / all.length * 100);
+}
+function renderCompleteness(){
+  if(!$('meCompleteness')) return;
+  const pct = computeCompleteness();
+  $('meCompleteness').innerHTML = `
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);margin-bottom:4px">
+      <span>資料完整度（第一步必填＋第二步選填）</span><span>${pct}%</span>
+    </div>
+    <div style="height:6px;border-radius:999px;background:var(--paper-2);overflow:hidden">
+      <div style="height:100%;width:${pct}%;background:var(--brand);border-radius:999px"></div>
+    </div>`;
 }
 $('mFile').onchange = async (e) => {
   const f = e.target.files[0]; if(!f) return;
@@ -1180,18 +1240,14 @@ const REQUIRED_DETAIL_SELECTS = [
   ['mRelGoal','關係期待'], ['mKidsPlan','生育規劃']
 ];
 $('mSave').onclick = async () => {
+  /* 第一步：基本資料——只有這些是送審的必填項目。第二步的詳細資料全部改成選填，
+     可以先送審、之後想到再回來補；用上面的「資料完整度」提醒還缺什麼，不會擋你。 */
   const name = mName.value.trim();
   if(!name){ flash('meMsg','請填暱稱'); return; }
-  const height = parseInt(mHeight.value, 10);
-  if(!height || height < 100 || height > 230){ flash('meMsg','請填寫 100～230 cm 的身高'); return; }
+  const height = mHeight.value === '' ? null : parseInt(mHeight.value, 10);
+  if(height !== null && (height < 100 || height > 230)){ flash('meMsg','身高需介於 100～230 cm，或留空'); return; }
   const weight = mWeight.value === '' ? null : Number(mWeight.value);
   if(weight !== null && (weight < 25 || weight > 350)){ flash('meMsg','體重需介於 25～350 kg，或留空'); return; }
-  for(const [id, label] of REQUIRED_DETAIL_SELECTS){
-    if(!$(id).value){ flash('meMsg', `詳細資料還沒填完：請選擇「${label}」`); return; }
-  }
-  if(!mWorkHours.value.trim()){ flash('meMsg','詳細資料還沒填完：請填寫「一週工作時數」'); return; }
-  if(!getCheckGroup('mInterests').length){ flash('meMsg','詳細資料還沒填完：請至少勾選一項「興趣與休閒活動」'); return; }
-  if(!getCheckGroup('mPersonality').length){ flash('meMsg','詳細資料還沒填完：請至少勾選一項「個性介紹」'); return; }
   if(!$('mConsent').checked){ flash('meMsg','請先閱讀並勾選同意隱私權政策'); return; }
   const newPhoto  = $('mPhoto').dataset.new  === '1' ? $('mPhoto').src  : null;
   const newVerify = $('mVerify').dataset.new === '1' ? $('mVerify').src : null;
@@ -1261,7 +1317,7 @@ $('mSave').onclick = async () => {
     $('verifyState').textContent = verifyStateText(myProfile);
     $('stage1PhotoState').textContent = myProfile.stage1_photo ? '已上傳。' : '尚未上傳（選填）。';
     $('stage2PhotoState').textContent = myProfile.stage2_photo ? '已上傳。' : '尚未上傳（選填）。';
-    flash('meMsg','已儲存'); renderBoard();
+    flash('meMsg','已儲存'); renderBoard(); renderCompleteness();
   }catch(e){ flash('meMsg', e.message || '儲存失敗'); }
 };
 $('mVetNoteAi').onclick = async () => {
@@ -1290,6 +1346,11 @@ $('mVetNoteAi').onclick = async () => {
   }catch(e){
     flash('mVetNoteMsg', e.message || '生成失敗（未扣點）');
   }
+};
+$('mDiscard').onclick = async () => {
+  if(!confirm('確定要捨棄目前還沒儲存的變更，重新載入伺服器上的版本嗎？')) return;
+  try{ myProfile = await DB.getMyProfile(); await fillMe(); flash('meMsg','已重新載入'); }
+  catch(e){ flash('meMsg', e.message || '載入失敗'); }
 };
 $('mPurge').onclick = async () => {
   if(!confirm('這會刪除你的登記、照片、所有申請紀錄與點數紀錄，且無法復原。確定嗎？')) return;
@@ -1393,6 +1454,44 @@ function starRow(p){
     const n = Math.max(1, Math.min(5, parseInt(s[f.k], 10) || 3));
     return chartRow(f.label, `<span style="letter-spacing:1px;color:var(--brand)">${'★'.repeat(n)}${'☆'.repeat(5-n)}</span>`);
   }).join('');
+}
+/* 首頁示意病歷卡：訪客還沒登入看不到真正的佈告欄，先用假資料讓人知道長什麼樣子 */
+const DEMO_PROFILES = [
+  {name:'小橘', species:'cat', gender:'f', age:'28', height_cm:162, area:'台北', job:'插畫工作者', education:'大學',
+   traits:'慢熱,理性,喜歡閱讀', likes:'曬太陽,看展覽,手沖咖啡', taboo:'冷暴力,情緒勒索',
+   stars:{warm:4,active:2,slow:4,routine:3,indep:4}, vet_note:'需要一個願意慢慢聊、不催促的人。'},
+  {name:'阿明', species:'dog', gender:'m', age:'31', height_cm:176, area:'新竹', job:'軟體工程師', education:'碩士',
+   traits:'務實,幽默,喜歡運動', likes:'爬山,桌遊,煮飯', taboo:'欺騙,不尊重時間',
+   stars:{warm:3,active:5,slow:2,routine:4,indep:3}, vet_note:'活動力旺盛，適合喜歡戶外的人。'}
+];
+function renderDemoCards(){
+  const el = $('demoCards'); if(!el) return;
+  el.innerHTML = DEMO_PROFILES.map((p,i) => `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;
+         padding-bottom:8px;border-bottom:1px solid var(--rule)">
+      <div>
+        <div class="hint" style="font-size:11px;letter-spacing:.1em">病例號碼　AM-${1001+i}-${p.species==='cat'?'C':'D'}
+          <span style="color:var(--brand)">示意</span></div>
+        <h3>${SPECIES_EMOJI[p.species] || '🐾'} ${esc(p.name)}</h3>
+      </div>
+      <span class="pill">${p.species === 'cat' ? '待認養' : '飼主'}</span>
+    </div>
+    <div style="width:100%;height:150px;border-radius:4px;margin:10px 0;background:var(--paper-2);
+         display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:12px">（示意大頭照）</div>
+    ${chartSec('基本資料')}
+    ${chartRow('物種', esc(SPECIES[p.species] || '—') + '　' + esc(GENDER[p.gender] || ''))}
+    ${chartRow('年齡', esc(p.age) + ' 歲')}
+    ${chartRow('身高', esc(p.height_cm) + ' cm')}
+    ${chartRow('活動範圍', esc(p.area))}
+    ${chartRow('日常', esc(p.job))}
+    ${chartRow('學歷', esc(p.education))}
+    ${chartSec('健康與性格評估')}
+    ${starRow(p)}
+    ${chartSec('個性標籤')}<div>${chips(p.traits)}</div>
+    ${chartSec('最喜歡的事')}<div>${chips(p.likes)}</div>
+    ${chartSec('禁忌事項')}<div>${chips(p.taboo, true)}</div>
+    ${chartSec('主治獸醫備註')}<div class="lock">${esc(p.vet_note)}</div>
+  </div>`).join('');
 }
 async function renderBoard(){
   const sp = fSpecies.value, gd = fGender.value, kd = fKind.value, q = fText.value.trim().toLowerCase();
@@ -1561,7 +1660,7 @@ function openApply(toId){
       <div class="lock" style="max-height:220px;overflow:auto">
         <b>申請前的告知事項</b><br>
         一、你在這份申請表填寫的內容，<b>只有 ${esc(to.name)} 本人看得到</b>，其他會員與訪客都看不到。<br>
-        二、對方需要另外付出點數才能調閱你的詳細回答；在那之前對方只會看到你的基本資料。<br>
+        二、你送出後對方就能直接讀到完整回答，不需要對方另外付費調閱。<br>
         三、你的回答會存進<b>你自己的「我的答題紀錄」</b>，方便下次遇到相似題目時直接沿用。這份紀錄只有你看得到，隨時可以刪除。<br>
         四、送出後會扣除 ${APPLY_COST} 點掛號費。若對方超過 ${REFUND_DAYS} 天未處理，你可以自行退回掛號費。<br>
         五、任何階段你都可以直接停止，不需要理由。<br>
@@ -1785,17 +1884,11 @@ async function renderInbox(){
           ⚡ 你們雙方已同意快速邀請，略過剩餘問卷並完成解鎖。
         </div>` : a.a1
         ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1)
-        : `<div class="lock" style="margin-top:12px">
-             🔒 <b>第一階段詳細回答尚未調閱</b><br>
-             這位申請人已經完整填寫了 ${q1.length} 題書面審查。調閱詳細回答需要 ${UNLOCK_A1_COST} 點，
-             目前餘額 ${myProfile ? myProfile.credits : 0} 點。
-             <div class="bar">
-               <button class="ghost unlockA1" data-app="${a.id}">調閱詳細回答（${UNLOCK_A1_COST} 點）</button>
-             </div>
-           </div>`}
+        : `<p class="hint" style="margin-top:12px">這位申請人的第一階段回答還沒有讀到，請重新整理頁面看看。</p>`}
       ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
       ${a.fast_invite_from && !a.fast_invite_to && a.status === 'open' && a.stage < 3 ? `<div class="notice">
-        對方送來快速邀請。只有你按下接受後，才會扣對方 ${SKIP_COST} 點並快速解鎖；你也可以不接受，繼續正常審查。
+        對方送來快速邀請。只有你按下接受後，才會扣對方 ${SKIP_COST} 點並快速解鎖，這 ${SKIP_COST} 點會進到你的帳號、
+        限定用在「請主治獸醫評估」或「進階診斷」；你也可以不接受，繼續正常審查。
         <div class="bar"><button class="ghost acceptFastInvite" data-app="${a.id}">接受快速邀請</button></div>
       </div>` : ''}
       ${a.stage >= 2 && a.status === 'open' ? `<div class="bar"><button class="ghost openChat" data-app="${a.id}" data-name="${esc(from.name)}">開啟第二階段對話</button></div>` : ''}
@@ -1833,16 +1926,6 @@ function bindInbox(){
     Object.assign(a, updated);
     renderInbox(); renderBoard();
   };
-  $('inbox').querySelectorAll('.unlockA1').forEach(b => b.onclick = async () => {
-    const a = apps.find(x => x.id === b.dataset.app);
-    if((myProfile.credits||0) < UNLOCK_A1_COST){ alert('點數不足，請到「診療室」查看加值方式。'); return; }
-    if(!confirm(`調閱這份第一階段詳細回答會扣 ${UNLOCK_A1_COST} 點，確定嗎？`)) return;
-    try{
-      await DB.unlockA1(a.id);
-      myProfile = await DB.getMyProfile();
-      renderInbox();
-    }catch(e){ alert(e.message || '操作失敗'); }
-  });
   $('inbox').querySelectorAll('.pass').forEach(b => b.onclick = async () => {
     const a = apps.find(x => x.id === b.dataset.app);
     try{
@@ -1884,7 +1967,7 @@ function bindInbox(){
     deepReview(a, inboxFromProfiles[a.from_user] || {name:'申請人'});
   });
   $('inbox').querySelectorAll('.acceptFastInvite').forEach(b => b.onclick = async () => {
-    if(!confirm('接受後會從對方帳號扣 10 點，並讓雙方快速解鎖。確定接受？')) return;
+    if(!confirm('接受後會從對方帳號扣 10 點，並讓雙方快速解鎖。這 10 點會進到你的帳號，限定用在「請主治獸醫評估」或「進階診斷」，14 天內要花完。確定接受？')) return;
     const a = apps.find(x => x.id === b.dataset.app);
     try{ const updated = await DB.acceptFastTrack(a.id); Object.assign(a, updated); renderInbox(); renderBoard(); }
     catch(e){ alert(e.message || '操作失敗'); }
@@ -2442,10 +2525,9 @@ function renderStage3Notice(){
 ['clinicApplyCost','howApplyCost'].forEach(id => $(id).textContent = APPLY_COST);
 ['clinicVetCost','howVetCost'].forEach(id => $(id).textContent = VET_COST);
 $('clinicDeepCost').textContent = DEEP_COST;
-$('clinicUnlockCost').textContent = UNLOCK_A1_COST;
 $('clinicStage2Cost').textContent = STAGE2_COST;
 $('clinicStage3Cost').textContent = UNLOCK_STAGE3_COST;
-$('clinicSkipCost').textContent = SKIP_COST;
+['clinicSkipCost','clinicSkipCost2'].forEach(id => $(id).textContent = SKIP_COST);
 $('clinicRefundDays').textContent = REFUND_DAYS;
 $('howFreeCredits').textContent = 5;
 $('howPhotoBonus').textContent = PHOTO_BONUS;
@@ -2462,5 +2544,6 @@ renderCheckGroup('mHealthTags', HEALTH_OPTS);
 renderCheckGroup('mReqHabits', REQ_HABITS_OPTS);
 initTabs();
 initCenter();
+renderDemoCards();
 </script>
 </html>

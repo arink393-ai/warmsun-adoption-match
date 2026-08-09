@@ -238,7 +238,6 @@ const DEFAULT_Q2 = [
   '如果對方需要一整天安靜休息，你會怎麼看待？',
   '你認為自己的缺點是什麼？'
 ];
-const UNLOCK_A1_COST = 1;  /* 調閱第一階段詳細回答（實際收費以資料庫 unlock_a1 為準） */
 const STAGE2_COST = 2;     /* 發出第二階段問卷（實際收費以資料庫 send_stage2 為準） */
 
 /* 第二階段題庫：十類共 48 題 */
@@ -431,13 +430,11 @@ async function renderRoster(){
              .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
       ${a.skipped ? `<div class="hint" style="margin-top:12px">⚡ 你們雙方已同意快速邀請，略過剩餘問卷並完成解鎖。</div>` : a.a1
         ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1)
-        : `<div class="lock" style="margin-top:12px">
-             🔒 第一階段詳細回答尚未調閱，需要 ${UNLOCK_A1_COST} 點。
-             <div class="bar"><button class="ghost unlockA1" data-app="${a.id}">調閱詳細回答（${UNLOCK_A1_COST} 點）</button></div>
-           </div>`}
+        : `<p class="hint" style="margin-top:12px">這位申請人的第一階段回答還沒有讀到，請重新整理頁面看看。</p>`}
       ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
       ${a.fast_invite_from && !a.fast_invite_to && a.status === 'open' && a.stage < 3 ? `<div class="notice" style="margin-top:12px">
-        對方送來快速邀請；只有你接受後才會扣對方 10 點並快速解鎖。你也可以繼續正常審查。
+        對方送來快速邀請；只有你接受後才會扣對方 10 點並快速解鎖，這 10 點會進到你的帳號、限定用在
+        「請主治獸醫評估」或「進階診斷」。你也可以繼續正常審查。
         <div class="bar"><button class="ghost acceptFastInvite" data-app="${a.id}">接受快速邀請</button></div>
       </div>` : ''}
       <div class="bar">
@@ -466,13 +463,6 @@ async function renderRoster(){
 }
 function bindRoster(){
   const upd = async (id, patch) => { await DB.updateApplication(id, patch); await renderRoster(); };
-  $('roster').querySelectorAll('.unlockA1').forEach(b => b.onclick = async () => {
-    const a = roster.find(x => x.id === b.dataset.app);
-    if((myProfile.credits||0) < UNLOCK_A1_COST){ alert('點數不足，請到配對站「診療室」查看加值方式。'); return; }
-    if(!confirm(`調閱這份第一階段詳細回答會扣 ${UNLOCK_A1_COST} 點，確定嗎？`)) return;
-    try{ await DB.unlockA1(a.id); myProfile = await DB.getMyProfile(); await renderRoster(); }
-    catch(e){ alert(e.message||'操作失敗'); }
-  });
   $('roster').querySelectorAll('.pass').forEach(b => b.onclick = async () => {
     const a = roster.find(x => x.id === b.dataset.app);
     try{
@@ -498,7 +488,7 @@ function bindRoster(){
     try{ await DB.consentUnlockTo(b.dataset.app); await renderRoster(); }catch(e){ alert(e.message||'操作失敗'); }
   });
   $('roster').querySelectorAll('.acceptFastInvite').forEach(b => b.onclick = async () => {
-    if(!confirm('接受後會從對方帳號扣 10 點，並讓雙方快速解鎖。確定接受？')) return;
+    if(!confirm('接受後會從對方帳號扣 10 點，並讓雙方快速解鎖。這 10 點會進到你的帳號，限定用在「請主治獸醫評估」或「進階診斷」，14 天內要花完。確定接受？')) return;
     try{ await DB.acceptFastTrack(b.dataset.app); myProfile = await DB.getMyProfile(); await renderRoster(); }
     catch(e){ alert(e.message || '操作失敗'); }
   });

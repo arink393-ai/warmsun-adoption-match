@@ -255,12 +255,6 @@
       .subscribe();
     return () => sb.removeChannel(channel);
   }
-  // 收件方付費解鎖第一階段詳細回答（1 點，價格由伺服器決定）
-  async function unlockA1(appId) {
-    const { data, error } = await sb.rpc('unlock_a1', { p_app_id: appId });
-    if (error) throw error;
-    return data;
-  }
   // 收件方付費發出第二階段問卷（2 點），同時把申請推進到第二階段
   async function sendStage2(appId, questions) {
     const { data, error } = await sb.rpc('send_stage2', { p_app_id: appId, p_questions: questions });
@@ -471,7 +465,7 @@
     listMessages, sendMessage, closeChat, subscribeMessages,
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
     applyTo, refundApplication, adminAddCredits,
-    unlockA1, sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
+    sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
     requestFastTrack, acceptFastTrack, settleBonusCredits,
     getPrivateNote, savePrivateNote,
     hasClaudeProxy, askClaude, askClaudeRaw, spendCreditFor,
