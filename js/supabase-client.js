@@ -276,16 +276,33 @@
     return data;
   }
   // 第三階段：申請人付 3 點解鎖對方的日常觀察資訊
-  async function unlockStage3(appId) {
-    const { data, error } = await sb.rpc('unlock_stage3', { p_app_id: appId });
+  // 交換聯絡方式風險最高，兩邊都要先在畫面上確認過安全提醒（safetyAck）伺服器才會放行
+  async function unlockStage3(appId, safetyAck) {
+    const { data, error } = await sb.rpc('unlock_stage3', { p_app_id: appId, p_safety_ack: !!safetyAck });
     if (error) throw error;
     return data;
   }
   // 第三階段：收件方免費同意解鎖
-  async function consentUnlockTo(appId) {
-    const { data, error } = await sb.rpc('consent_unlock_to', { p_app_id: appId });
+  async function consentUnlockTo(appId, safetyAck) {
+    const { data, error } = await sb.rpc('consent_unlock_to', { p_app_id: appId, p_safety_ack: !!safetyAck });
     if (error) throw error;
     return data;
+  }
+
+  // ── 安全中心：使用者層級封鎖 ──────────────────────────
+  async function blockUser(targetId, reason) {
+    const { error } = await sb.rpc('block_user', { p_target: targetId, p_reason: reason || '' });
+    if (error) throw error;
+  }
+  async function unblockUser(targetId) {
+    const { error } = await sb.rpc('unblock_user', { p_target: targetId });
+    if (error) throw error;
+  }
+  async function listBlockedUsers() {
+    const { data, error } = await sb.from('match_user_blocks').select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
   }
   // 優先邀請（取代舊版快速邀請）：付點數讓申請在對方收件匣被優先考慮，附一封短邀請信，
   // 不會跳過任何審查階段，點數留在平台、不轉給任何一方。
@@ -462,6 +479,7 @@
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
     applyTo, refundApplication, adminAddCredits,
     sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
+    blockUser, unblockUser, listBlockedUsers,
     sendPriorityInvite, settleBonusCredits,
     getPrivateNote, savePrivateNote,
     hasClaudeProxy, askClaude, askClaudeRaw, spendCreditFor,

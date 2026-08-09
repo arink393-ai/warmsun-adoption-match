@@ -393,6 +393,66 @@ returns text language sql immutable set search_path = '' as $$
   end
 $$;
 
+-- ============================================================
+-- 2a-2) 安全中心：使用者層級的封鎖（跟下面 match_blocks 的「關閉單一對話」不同，
+--       這裡是「我完全不想再看到這個人，也不想被他看到」）
+-- ============================================================
+create table if not exists public.match_user_blocks (
+  blocker_id uuid not null references auth.users(id) on delete cascade,
+  blocked_id uuid not null references auth.users(id) on delete cascade,
+  reason     text not null default '',
+  created_at timestamptz not null default now(),
+  primary key (blocker_id, blocked_id),
+  constraint match_user_blocks_not_self check (blocker_id <> blocked_id)
+);
+create index if not exists match_user_blocks_blocked_idx on public.match_user_blocks(blocked_id);
+alter table public.match_user_blocks enable row level security;
+
+-- 只看得到、也只能刪自己封鎖的名單；被封鎖的人查不到誰封鎖了他（避免報復）
+drop policy if exists "user_blocks_select_own" on public.match_user_blocks;
+create policy "user_blocks_select_own" on public.match_user_blocks for select to authenticated
+  using (blocker_id = auth.uid());
+drop policy if exists "user_blocks_delete_own" on public.match_user_blocks;
+create policy "user_blocks_delete_own" on public.match_user_blocks for delete to authenticated
+  using (blocker_id = auth.uid());
+-- insert 一律走下面的 block_user()，才能同時關掉既有對話
+
+create or replace function public.block_user(p_target uuid, p_reason text default '')
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if p_target is null or p_target = auth.uid() then raise exception '不能封鎖自己'; end if;
+  insert into public.match_user_blocks(blocker_id, blocked_id, reason)
+    values (auth.uid(), p_target, left(coalesce(p_reason,''), 500))
+    on conflict (blocker_id, blocked_id) do update set reason = excluded.reason;
+  -- 封鎖之後，雙方之間所有還開著的對話一併關閉，對方不會再收到新訊息
+  insert into public.match_blocks(application_id, blocker_id, reason)
+    select a.id, auth.uid(), '已封鎖對方'
+      from public.applications a
+     where (a.from_user = auth.uid() and a.to_user = p_target)
+        or (a.to_user = auth.uid() and a.from_user = p_target)
+    on conflict do nothing;
+end $$;
+revoke all on function public.block_user(uuid, text) from public, anon;
+grant execute on function public.block_user(uuid, text) to authenticated;
+
+create or replace function public.unblock_user(p_target uuid)
+returns void language sql security definer set search_path = public as $$
+  delete from public.match_user_blocks where blocker_id = auth.uid() and blocked_id = p_target;
+$$;
+revoke all on function public.unblock_user(uuid) from public, anon;
+grant execute on function public.unblock_user(uuid) to authenticated;
+
+-- 是否有任一方向的封鎖（單向封鎖就雙向都看不到，避免「被封鎖的人還能一直看對方」）
+create or replace function public.match_is_blocked(a uuid, b uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.match_user_blocks
+     where (blocker_id = a and blocked_id = b) or (blocker_id = b and blocked_id = a)
+  )
+$$;
+revoke all on function public.match_is_blocked(uuid, uuid) from public, anon;
+grant execute on function public.match_is_blocked(uuid, uuid) to authenticated;
+
 -- 對外一律走遮罩函式，四層漸進式揭露：
 --   第 0 層（佈告欄，還沒有申請關係）：暱稱、物種性別、年齡「區間」、地區、職業、
 --                                    興趣、個性、關係期待、個性標籤、喜歡的事、禁忌、星等
@@ -467,7 +527,13 @@ language sql security definer stable set search_path = '' as $$
     and p.name <> '' and p.kind <> '' and p.species <> ''
     and p.account_status = 'active'
     and (p_profile_id is null or p.id = p_profile_id)
-    and p.id <> auth.uid();
+    and p.id <> auth.uid()
+    -- 安全中心：任一方封鎖了對方，雙方就都不會再出現在彼此的佈告欄上
+    and not exists (
+      select 1 from public.match_user_blocks ub
+       where (ub.blocker_id = auth.uid() and ub.blocked_id = p.id)
+          or (ub.blocker_id = p.id and ub.blocked_id = auth.uid())
+    );
 $$;
 revoke all on function public.get_visible_match_profiles(uuid) from public, anon;
 grant execute on function public.get_visible_match_profiles(uuid) to authenticated;
@@ -520,6 +586,7 @@ begin
   if v_app is null or auth.uid() not in (v_app.from_user, v_app.to_user) then raise exception '無權使用這個對話'; end if;
   if v_app.stage < 2 or v_app.status <> 'open' then raise exception '第二階段後且申請進行中才能對話'; end if;
   if exists (select 1 from public.match_blocks where application_id = p_app_id) then raise exception '這段對話已被關閉'; end if;
+  if public.match_is_blocked(v_app.from_user, v_app.to_user) then raise exception '這段對話已被關閉'; end if;
   select * into v_profile from public.match_profiles where id = auth.uid();
   if v_profile.account_status <> 'active' or v_profile.posting_locked then raise exception '你的發言權限目前受限'; end if;
   if p_kind not in ('message','question') then raise exception '不支援的訊息類型'; end if;
@@ -1178,6 +1245,7 @@ begin
     raise exception '請先完成基本資料，或確認帳號發言權限';
   end if;
   if p_to = auth.uid() then raise exception '不能對自己提出申請'; end if;
+  if public.match_is_blocked(auth.uid(), p_to) then raise exception '無法對這個帳號提出申請'; end if;
   if not exists (
     select 1 from public.match_profiles
     where id = p_to and photo_status = 'approved' and verify_status = 'approved'
@@ -1329,7 +1397,11 @@ end $$;
 -- 兩邊都解鎖了才會互相看到——維持原本互相同意的精神，只是申請人這邊多一道付費關卡。
 -- 解鎖聯絡方式改成免費（新的點數哲學：免費的是「建立關係」，收費的是「效率與 AI」）。
 -- 函式名稱保留 unlock_stage3，前端呼叫的地方不用跟著改。
-create or replace function public.unlock_stage3(p_app_id uuid)
+-- 交換聯絡方式是整個流程裡風險最高的一步，所以兩邊的解鎖函式都要求先確認過安全提醒
+-- （p_safety_ack）。畫面上會跳出安全中心的檢查清單，勾完才會帶 true 進來——
+-- 舊的單參數版本要明確 drop 掉，不然會留下一支可以繞過確認的覆載。
+drop function if exists public.unlock_stage3(uuid);
+create or replace function public.unlock_stage3(p_app_id uuid, p_safety_ack boolean default false)
 returns public.applications
 language plpgsql security definer set search_path = public as $$
 declare v_app public.applications;
@@ -1339,6 +1411,8 @@ begin
   if v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
   if v_app.stage <> 3 then raise exception '這筆申請還沒進入第三階段'; end if;
   if v_app.unlock_from then return v_app; end if;
+  if public.match_is_blocked(v_app.from_user, v_app.to_user) then raise exception '這段聯繫已經結束'; end if;
+  if not coalesce(p_safety_ack, false) then raise exception '請先閱讀並確認安全提醒'; end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
   update public.applications set unlock_from = true where id = p_app_id returning * into v_app;
@@ -1348,7 +1422,8 @@ begin
 end $$;
 
 -- 收件方同意解鎖（免費，維持原本設計）
-create or replace function public.consent_unlock_to(p_app_id uuid)
+drop function if exists public.consent_unlock_to(uuid);
+create or replace function public.consent_unlock_to(p_app_id uuid, p_safety_ack boolean default false)
 returns public.applications
 language plpgsql security definer set search_path = public as $$
 declare v_app public.applications;
@@ -1357,6 +1432,9 @@ begin
   if v_app is null then raise exception '找不到這筆申請'; end if;
   if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
   if v_app.stage <> 3 then raise exception '這筆申請還沒進入第三階段'; end if;
+  if v_app.unlock_to then return v_app; end if;
+  if public.match_is_blocked(v_app.from_user, v_app.to_user) then raise exception '這段聯繫已經結束'; end if;
+  if not coalesce(p_safety_ack, false) then raise exception '請先閱讀並確認安全提醒'; end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
   update public.applications set unlock_to = true where id = p_app_id returning * into v_app;
@@ -1672,12 +1750,15 @@ grant execute on function public.mark_all_notifications_read() to authenticated;
 revoke all on table public.match_profiles, public.applications, public.application_answers,
   public.application_private_notes, public.match_messages, public.match_blocks,
   public.reports, public.match_moderation_actions, public.match_ai_requests,
-  public.match_notifications from anon;
+  public.match_notifications, public.match_user_blocks from anon;
 revoke truncate, references, trigger on table public.match_profiles, public.applications,
   public.application_answers, public.application_private_notes, public.match_messages,
   public.match_blocks, public.reports, public.match_moderation_actions, public.match_ai_requests,
-  public.match_notifications from authenticated;
+  public.match_notifications, public.match_user_blocks from authenticated;
 revoke insert, update, delete on table public.match_notifications from authenticated;
+-- 封鎖名單只能自己看與自己解除；新增一律走 block_user()，才會一併關掉既有對話
+revoke insert, update on table public.match_user_blocks from authenticated;
+grant select, delete on table public.match_user_blocks to authenticated;
 grant select, insert, update, delete on table public.match_profiles to authenticated;
 grant select, update, delete on table public.applications to authenticated;
 grant select on table public.application_answers to authenticated;
@@ -1697,12 +1778,12 @@ grant execute on function public.handle_new_match_user() to postgres, service_ro
 revoke all on function public.match_is_admin(uuid), public.spend_credits_for(text,text),
   public.apply_to(uuid,jsonb,jsonb), public.refund_application(uuid),
   public.admin_add_credits(uuid,int,text,text), public.unlock_a1(uuid),
-  public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid),
-  public.consent_unlock_to(uuid), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
+  public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid,boolean),
+  public.consent_unlock_to(uuid,boolean), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
   public.submit_stage2(uuid,jsonb,jsonb) from public, anon;
 grant execute on function public.match_is_admin(uuid), public.spend_credits_for(text,text),
   public.apply_to(uuid,jsonb,jsonb), public.refund_application(uuid),
   public.admin_add_credits(uuid,int,text,text), public.unlock_a1(uuid),
-  public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid),
-  public.consent_unlock_to(uuid), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
+  public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid,boolean),
+  public.consent_unlock_to(uuid,boolean), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
   public.submit_stage2(uuid,jsonb,jsonb) to authenticated;

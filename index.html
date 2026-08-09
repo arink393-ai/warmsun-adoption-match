@@ -140,7 +140,10 @@
   .google-btn:hover{background:var(--paper-2);border-color:var(--rule)}
   .or{display:flex;align-items:center;gap:10px;color:var(--ink-soft);font-size:12px;margin:14px 0}
   .or::before,.or::after{content:'';flex:1;height:1px;background:var(--rule)}
-  #chatDialog{width:min(620px,calc(100vw - 24px));border:1px solid var(--rule);border-radius:8px;padding:0;background:var(--paper);color:var(--ink)}
+  #chatDialog,#safetyDialog,#reallyDialog{width:min(620px,calc(100vw - 24px));border:1px solid var(--rule);
+    border-radius:8px;padding:0;background:var(--paper);color:var(--ink)}
+  #safetyDialog::backdrop,#reallyDialog::backdrop{background:rgba(28,23,18,.48)}
+  #reallyDialog{width:min(460px,calc(100vw - 24px))}
   #chatDialog::backdrop{background:rgba(28,23,18,.48)}
   .chatHead{padding:14px 16px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;gap:12px;align-items:center}
   #chatMessages{height:min(52vh,440px);overflow:auto;padding:14px 16px;background:var(--paper-2)}
@@ -180,7 +183,41 @@
     <textarea id="chatBody" rows="3" maxlength="2000" placeholder="寫下想說的話或想深入了解的感情問題…"></textarea>
     <div class="bar">
       <button id="chatSend">傳送訊息</button><button class="ghost" id="chatAsk">以感情問題傳送</button>
-      <button class="ghost" id="chatBlock">結束／封鎖對話</button><span class="msg" id="chatMsg"></span>
+      <button class="ghost" id="chatBlock">結束對話</button>
+      <button class="ghost" id="chatBlockUser">封鎖這個人</button><span class="msg" id="chatMsg"></span>
+    </div>
+  </div>
+</dialog>
+
+<!-- 交換聯絡方式前的安全提醒：這是整個流程風險最高的一步 -->
+<dialog id="safetyDialog" aria-labelledby="safetyTitle">
+  <div class="chatHead"><strong id="safetyTitle">🛡️ 交換聯絡方式前，先看一下</strong>
+    <button class="ghost" id="safetyClose">取消</button></div>
+  <div style="padding:14px 16px">
+    <p class="hint" style="margin-top:0">解鎖之後，對方就會看到你填的日常觀察資訊（IG 等）。這一步沒有辦法收回，請先確認：</p>
+    <div id="safetyChecks"></div>
+    <p class="hint" style="margin-top:12px">
+      任何時候覺得不對勁，都可以直接<b>封鎖</b>或<b>檢舉</b>，不需要解釋，也不用擔心失禮。
+    </p>
+    <div class="bar">
+      <button id="safetyGo" disabled>我已確認，解鎖聯絡方式</button>
+      <button class="ghost" id="safetyCancel">再想想</button>
+      <span class="msg" id="safetyMsg"></span>
+    </div>
+  </div>
+</dialog>
+
+<!-- 進入第三階段前的溫柔確認：把「不好意思拒絕」變成一個可以按的選項 -->
+<dialog id="reallyDialog" aria-labelledby="reallyTitle">
+  <div class="chatHead"><strong id="reallyTitle">再確認一下</strong>
+    <button class="ghost" id="reallyClose">關閉</button></div>
+  <div style="padding:18px 16px">
+    <p style="margin-top:0">你現在是<b>真的想繼續認識這個人</b>，還是只是不好意思拒絕？</p>
+    <p class="hint">在這裡停下來完全沒有問題。提早確認彼此不適合，本來就是這個平台想幫你做到的事。</p>
+    <div class="bar" style="margin-top:16px">
+      <button id="reallyYes">想繼續 ❤️</button>
+      <button class="ghost" id="reallyNo">先停在這裡也沒關係</button>
+      <span class="msg" id="reallyMsg"></span>
     </div>
   </div>
 </dialog>
@@ -808,7 +845,9 @@
     ・每張病歷卡皆有檢舉按鈕，你也可以來信檢舉。<br>
     ・本平台將於<b>收到檢舉後 3 個工作日內回覆處理進度</b>。<br>
     ・涉及性騷擾、恐嚇或疑似違法者，本平台得先行停權再進行查證，並保留紀錄供後續追溯。<br>
-    ・本平台無法對會員之間的私下往來或線下見面負責，請自行評估風險、選擇公開場所、告知親友行蹤。</p>
+    ・你也可以直接<b>封鎖</b>對方，封鎖後雙方都不會再出現在彼此的佈告欄，對方不會收到通知。<br>
+    ・本平台無法對會員之間的私下往來或線下見面負責，請自行評估風險、選擇公開場所、告知親友行蹤——
+    完整建議與封鎖名單管理請見「<a href="#" data-goto="safety">🛡️ 安全中心</a>」。</p>
 
     <p><b>七、內容與授權</b><br>
     ・你上傳的照片與文字，著作權仍屬於你；你授權本平台在提供服務所必要的範圍內顯示、儲存與傳輸，此授權於你刪除內容或帳號時終止。<br>
@@ -865,6 +904,39 @@
     若你已扣點但服務未成功提供（例如評估產生失敗、系統中斷），系統會自動不扣點或補回點數。如未自動補回，請來信告知。</p>
 
     <p class="hint">目前線上儲值尚未開放（見「診療室」說明），這份退費政策先備妥，等正式開放購買點數時就直接適用，不用臨時再補。</p>
+  </fieldset>
+</div>
+
+<!-- 安全中心 -->
+<div class="pane" id="pane-safety">
+  <fieldset>
+    <legend>🛡️ 暖陽安全中心</legend>
+    <p class="hint" style="margin-top:0">這些原本只寫在服務條款裡，但真正需要它們的時候不會有人去翻條款。所以放在這裡，也會在你第一次要交換聯絡方式時主動跳出來。</p>
+
+    <div class="hint" style="margin:18px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 第一次見面 —</div>
+    <div class="lock" style="line-height:2">
+      ☑ 約在<b>公共場所</b>（咖啡廳、餐廳、白天的公園）<br>
+      ☑ <b>自行前往、自行離開</b>，不搭對方的車<br>
+      ☑ 事先<b>告訴朋友或家人</b>你要去哪裡、跟誰見面、大概幾點回來<br>
+      ☑ <b>不提供住家地址</b>，也不要第一次就約在任何一方家裡<br>
+      ☑ <b>不借貸、不代收款、不投資</b>——這是詐騙最常見的切入點<br>
+      ☑ 飲料不離視線，覺得不舒服<b>可以直接離開</b>，不需要解釋
+    </div>
+
+    <div class="hint" style="margin:18px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 遇到狀況時你可以做的事 —</div>
+    <p><b>封鎖</b>：在對話視窗或佈告欄卡片上按「封鎖這個人」。封鎖之後<b>雙方都不會再出現在彼此的佈告欄</b>，
+    既有的對話會直接關閉，對方也無法再對你提出申請。對方<b>不會</b>收到通知，也查不到是誰封鎖了他。</p>
+    <p><b>檢舉</b>：佈告欄卡片上有檢舉按鈕。我們會在<b>收到檢舉後 3 個工作日內</b>回覆處理進度；
+    涉及性騷擾、恐嚇或疑似違法時，會先行停權再查證。</p>
+    <p><b>兩個都做也可以</b>：封鎖是保護自己，檢舉是讓站方知道。建議一起使用。</p>
+
+    <div class="hint" style="margin:18px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 我封鎖的人 —</div>
+    <div id="blockedList"><p class="hint">讀取中⋯⋯</p></div>
+
+    <p class="hint" style="margin-top:18px">
+      緊急狀況請直接撥打 <b>110</b>；性騷擾、性侵害相關可撥 <b>113</b> 保護專線。
+      平台端的問題請來信 <a href="mailto:warmsun.shelter@gmail.com">warmsun.shelter@gmail.com</a>。
+    </p>
   </fieldset>
 </div>
 
@@ -1114,7 +1186,7 @@ DB.onAuthChange(async (user, authEvent) => {
 /* ── 分頁 ── */
 const PANES = [
   {k:'home', t:'首頁'}, {k:'board', t:'佈告欄'}, {k:'center', t:'個人中心'}, {k:'admin', t:'管理後台'},
-  {k:'how', t:'流程說明'}, {k:'privacy', t:'隱私權'}, {k:'terms', t:'服務條款'}
+  {k:'how', t:'流程說明'}, {k:'safety', t:'🛡️ 安全中心'}, {k:'privacy', t:'隱私權'}, {k:'terms', t:'服務條款'}
 ];
 const SUBS = [
   {k:'me', t:'我的資料'}, {k:'in', t:'我的收件匣'}, {k:'out', t:'我的申請'},
@@ -1158,6 +1230,7 @@ function initTabs(){
     if(b.dataset.k === 'board') renderBoard();
     if(b.dataset.k === 'center') showSub(curSub);
     if(b.dataset.k === 'admin') renderAdminHome();
+    if(b.dataset.k === 'safety') renderBlockedList();
   };
   document.addEventListener('click', e => {
     const g = e.target.closest('[data-goto]'); if(!g) return;
@@ -1728,17 +1801,21 @@ async function renderBoard(){
       </div>
       <div class="bar" style="margin-top:4px">
         <button class="ghost report" data-id="${p.id}" style="font-size:11px;padding:3px 8px">⚑ 檢舉</button>
+        <button class="ghost blockBtn" data-id="${p.id}" data-name="${esc(p.name)}" style="font-size:11px;padding:3px 8px">🚫 封鎖</button>
       </div>
     </div>`;
   }).join('');
   $('board').querySelectorAll('.apply').forEach(b => b.onclick = () => openApply(b.dataset.id));
   $('board').querySelectorAll('.report').forEach(b => b.onclick = () => reportProfile(b.dataset.id));
+  $('board').querySelectorAll('.blockBtn').forEach(b => b.onclick = () => blockUserFlow(b.dataset.id, b.dataset.name));
 }
 async function reportProfile(id){
   const why = prompt('請說明檢舉原因（例如：疑似盜圖、資料造假、騷擾訊息）');
   if(!why) return;
-  try{ await DB.submitReport(id, why); alert('已收到檢舉，管理員會盡快處理。'); }
-  catch(e){ alert(e.message || '送出失敗'); }
+  try{
+    await DB.submitReport(id, why);
+    alert('已收到檢舉，我們會在 3 個工作日內回覆處理進度。\n\n如果你不想再看到這個人，也可以在卡片上按「🚫 封鎖」。');
+  }catch(e){ alert(e.message || '送出失敗'); }
 }
 function stageText(a){
   if(a.status === 'rejected') return '未通過';
@@ -1966,7 +2043,7 @@ async function renderOutbox(){
           <button class="ghost refund" data-app="${a.id}">對方逾期未處理，退回掛號費</button>
         </div>` : ''}
       ${a.refunded ? '<p class="hint">掛號費已退回。</p>' : ''}
-      ${a.stage >= 2 && a.status === 'open' ? `<div class="bar"><button class="ghost openChat" data-app="${a.id}" data-name="${esc(to.name)}">開啟第二階段對話</button></div>` : ''}
+      ${a.stage >= 2 && a.status === 'open' ? `<div class="bar"><button class="ghost openChat" data-app="${a.id}" data-name="${esc(to.name)}" data-uid="${a.to_user}">開啟第二階段對話</button></div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(to.locked || '對方尚未填寫')}</div>` : ''}
     </fieldset>`;
   }).join('');
@@ -2008,14 +2085,14 @@ function bindOutbox(){
       renderOutbox();
     }catch(e){ alert(e.message || '送出失敗'); }
   });
-  $('outbox').querySelectorAll('.unlock').forEach(b => b.onclick = async () => {
+  $('outbox').querySelectorAll('.unlock').forEach(b => b.onclick = () => {
     const a = apps.find(x => x.id === b.dataset.app);
-    if(!confirm('解鎖對方的日常觀察資訊是免費的，確定要解鎖嗎？')) return;
-    try{
-      const updated = await DB.unlockStage3(a.id);
+    /* 交換聯絡方式是風險最高的一步，先跑安全中心的檢查清單，勾完才會真的送出 */
+    openSafetyDialog(async () => {
+      const updated = await DB.unlockStage3(a.id, true);
       Object.assign(a, updated);
       renderOutbox(); renderBoard();
-    }catch(e){ alert(e.message || '操作失敗'); }
+    });
   });
   $('outbox').querySelectorAll('.priorityInvite').forEach(b => b.onclick = async () => {
     const a = apps.find(x => x.id === b.dataset.app);
@@ -2031,7 +2108,7 @@ function bindOutbox(){
       renderOutbox(); renderBoard();
     }catch(e){ alert(e.message || '操作失敗'); }
   });
-  $('outbox').querySelectorAll('.openChat').forEach(b => b.onclick = () => openChat(b.dataset.app, b.dataset.name));
+  $('outbox').querySelectorAll('.openChat').forEach(b => b.onclick = () => openChat(b.dataset.app, b.dataset.name, b.dataset.uid));
 }
 
 /* ── 我收到的申請 ── */
@@ -2062,7 +2139,7 @@ async function renderInbox(){
         ⭐ 對方付點數送了一封優先邀請信，希望你優先考慮這筆申請（不影響審查流程，你一樣可以照原本的節奏處理）：
         ${a.priority_note ? `<div class="lock" style="margin-top:6px">${esc(a.priority_note)}</div>` : ''}
       </div>` : ''}
-      ${a.stage >= 2 && a.status === 'open' ? `<div class="bar"><button class="ghost openChat" data-app="${a.id}" data-name="${esc(from.name)}">開啟第二階段對話</button></div>` : ''}
+      ${a.stage >= 2 && a.status === 'open' ? `<div class="bar"><button class="ghost openChat" data-app="${a.id}" data-name="${esc(from.name)}" data-uid="${a.from_user}">開啟第二階段對話</button></div>` : ''}
       <div class="bar">
         ${a.status === 'open' && a.stage === 1 && a.a1 ? `
           <button class="pass" data-app="${a.id}">通過，發出第二階段問卷（${STAGE2_COST} 點）</button>
@@ -2113,8 +2190,18 @@ function bindInbox(){
         Object.assign(a, updated);
         myProfile = await DB.getMyProfile();
       }else{
-        const updated = await DB.advanceStage3(a.id);
-        Object.assign(a, updated);
+        /* 進第三階段等於準備交換聯絡方式，先問一次「你是真的想繼續，還是不好意思拒絕？」，
+           把「其實不想繼續」變成一個可以直接按下去的選項，而不是只能硬著頭皮往下走。 */
+        openReallyDialog(async () => {
+          const updated = await DB.advanceStage3(a.id);
+          Object.assign(a, updated);
+          renderInbox(); renderBoard();
+        }, async () => {
+          const note = prompt('想留一句話給對方嗎？（可留空，已帶入你的「婉拒」範本，可直接修改）', tplById('no'));
+          if(note === null) return;
+          await upd(a.id, {status:'rejected', note: note||null});
+        });
+        return;
       }
       renderInbox(); renderBoard();
     }catch(e){ alert(e.message||'操作失敗'); }
@@ -2124,10 +2211,12 @@ function bindInbox(){
     if(note === null) return;
     try{ await upd(b.dataset.app, {status:'rejected', note: note||null}); }catch(e){ alert(e.message||'操作失敗'); }
   });
-  $('inbox').querySelectorAll('.unlockTo').forEach(b => b.onclick = async () => {
+  $('inbox').querySelectorAll('.unlockTo').forEach(b => b.onclick = () => {
     const a = apps.find(x => x.id === b.dataset.app);
-    try{ const updated = await DB.consentUnlockTo(a.id); Object.assign(a, updated); renderInbox(); renderBoard(); }
-    catch(e){ alert(e.message||'操作失敗'); }
+    openSafetyDialog(async () => {
+      const updated = await DB.consentUnlockTo(a.id, true);
+      Object.assign(a, updated); renderInbox(); renderBoard();
+    });
   });
   $('inbox').querySelectorAll('.vet').forEach(b => b.onclick = () => {
     const a = apps.find(x => x.id === b.dataset.app);
@@ -2137,19 +2226,20 @@ function bindInbox(){
     const a = apps.find(x => x.id === b.dataset.app);
     deepReview(a, inboxFromProfiles[a.from_user] || {name:'申請人'});
   });
-  $('inbox').querySelectorAll('.openChat').forEach(b => b.onclick = () => openChat(b.dataset.app, b.dataset.name));
+  $('inbox').querySelectorAll('.openChat').forEach(b => b.onclick = () => openChat(b.dataset.app, b.dataset.name, b.dataset.uid));
 }
 
 /* ── 第二階段即時對話 ── */
-let activeChat = null, stopChatSubscription = null;
+let activeChat = null, stopChatSubscription = null, activeChatOther = null;
 function renderChatMessages(rows){
   $('chatMessages').innerHTML = rows.length ? rows.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">
     <div class="hint">${m.kind === 'question' ? '感情問題・' : ''}${new Date(m.created_at).toLocaleString('zh-TW')}</div>
     <div style="white-space:pre-wrap">${esc(m.body)}</div></div>`).join('') : '<div class="empty">還沒有訊息，從一個真誠的問題開始吧。</div>';
   $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
 }
-async function openChat(appId, name){
-  activeChat = appId; $('chatTitle').textContent = `與 ${name} 的第二階段對話`;
+async function openChat(appId, name, otherId){
+  activeChat = appId; activeChatOther = {id: otherId || null, name: name || '對方'};
+  $('chatTitle').textContent = `與 ${name} 的第二階段對話`;
   $('chatDialog').showModal(); $('chatMessages').innerHTML = '<p class="hint">讀取對話中⋯⋯</p>';
   try{ renderChatMessages(await DB.listMessages(appId)); }
   catch(e){ $('chatMessages').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; }
@@ -2171,6 +2261,104 @@ $('chatBlock').onclick = async () => {
   const reason = prompt('原因（選填，僅供安全處理）') || '';
   try{ await DB.closeChat(activeChat, reason); $('chatDialog').close(); activeChat = null; if(stopChatSubscription) stopChatSubscription(); }
   catch(e){ flash('chatMsg', e.message || '操作失敗'); }
+};
+$('chatBlockUser').onclick = async () => {
+  if(!activeChatOther || !activeChatOther.id){ flash('chatMsg','找不到對方的帳號'); return; }
+  const done = await blockUserFlow(activeChatOther.id, activeChatOther.name);
+  if(done){ $('chatDialog').close(); activeChat = null; if(stopChatSubscription) stopChatSubscription(); }
+};
+
+/* ── 安全中心 ───────────────────────────────────────── */
+/* 封鎖：雙向從佈告欄消失、關掉既有對話、對方不能再申請；對方不會收到通知 */
+async function blockUserFlow(targetId, name){
+  if(!confirm(`確定要封鎖${name ? `「${name}」` : '這個人'}嗎？\n\n`
+    + '・你們雙方都不會再出現在彼此的佈告欄\n'
+    + '・目前的對話會直接關閉，對方無法再傳訊息\n'
+    + '・對方也不能再對你提出申請\n'
+    + '・對方不會收到通知，也查不到是誰封鎖了他\n\n'
+    + '你隨時可以到「安全中心」解除封鎖。')) return false;
+  const reason = prompt('原因（選填，只有你自己看得到）') || '';
+  try{
+    await DB.blockUser(targetId, reason);
+    profiles = await DB.listProfiles();
+    renderBoard(); renderBlockedList();
+    alert('已封鎖。如果對方的行為涉及騷擾或違規，也請一併使用「檢舉」讓站方知道。');
+    return true;
+  }catch(e){ alert(e.message || '操作失敗'); return false; }
+}
+async function renderBlockedList(){
+  const box = $('blockedList'); if(!box) return;
+  if(!me){ box.innerHTML = '<p class="hint">登入後才看得到自己的封鎖名單。</p>'; return; }
+  let rows = [];
+  try{ rows = await DB.listBlockedUsers(); }
+  catch(e){ box.innerHTML = `<p class="hint">讀取失敗：${esc(e.message||'')}</p>`; return; }
+  if(!rows.length){ box.innerHTML = '<div class="empty">目前沒有封鎖任何人。</div>'; return; }
+  box.innerHTML = rows.map(r => `<div class="qa">
+      <b>${esc((r.blocked_id||'').slice(0,8))}</b>　封鎖於 ${new Date(r.created_at).toLocaleDateString('zh-TW')}
+      ${r.reason ? `<br>原因：${esc(r.reason)}` : ''}
+      <div class="bar"><button class="ghost unblockBtn" data-id="${r.blocked_id}">解除封鎖</button></div>
+    </div>`).join('');
+  box.querySelectorAll('.unblockBtn').forEach(b => b.onclick = async () => {
+    if(!confirm('解除封鎖後，你們會重新出現在彼此的佈告欄上。確定嗎？')) return;
+    try{
+      await DB.unblockUser(b.dataset.id);
+      profiles = await DB.listProfiles();
+      renderBoard(); renderBlockedList();
+    }catch(e){ alert(e.message || '操作失敗'); }
+  });
+}
+
+/* 交換聯絡方式前的安全提醒：六項都勾了才能按解鎖，勾選狀態同時當成伺服器要的 safety ack */
+const SAFETY_ITEMS = [
+  '第一次見面我會約在公共場所',
+  '我會自行前往、自行離開，不搭對方的車',
+  '我會事先告訴朋友或家人見面的時間與地點',
+  '我不會提供住家地址，也不會第一次就約在家裡',
+  '我知道平台不會經手金錢，任何借貸、代收款、投資邀約都是警訊',
+  '我知道覺得不舒服時可以直接離開，並隨時封鎖或檢舉'
+];
+let safetyOnConfirm = null;
+function openSafetyDialog(onConfirm){
+  safetyOnConfirm = onConfirm;
+  $('safetyChecks').innerHTML = SAFETY_ITEMS.map((t,i) =>
+    `<label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0">
+       <input type="checkbox" class="safetyChk" data-i="${i}" style="width:auto;margin:4px 0 0">
+       <span style="font-size:13px;color:var(--ink)">${esc(t)}</span>
+     </label>`).join('');
+  const sync = () => {
+    const all = [...$('safetyChecks').querySelectorAll('.safetyChk')].every(c => c.checked);
+    $('safetyGo').disabled = !all;
+  };
+  $('safetyChecks').querySelectorAll('.safetyChk').forEach(c => c.onchange = sync);
+  sync();
+  $('safetyMsg').textContent = '';
+  $('safetyDialog').showModal();
+}
+function closeSafetyDialog(){ $('safetyDialog').close(); safetyOnConfirm = null; }
+$('safetyClose').onclick = closeSafetyDialog;
+$('safetyCancel').onclick = closeSafetyDialog;
+$('safetyGo').onclick = async () => {
+  const fn = safetyOnConfirm; if(!fn) return;
+  $('safetyGo').disabled = true; $('safetyMsg').textContent = '處理中⋯⋯';
+  try{ await fn(); closeSafetyDialog(); }
+  catch(e){ $('safetyMsg').textContent = e.message || '操作失敗'; $('safetyGo').disabled = false; }
+};
+
+/* 進第三階段前的溫柔確認：讓「不好意思拒絕」變成一個可以按的選項 */
+let reallyOnYes = null, reallyOnNo = null;
+function openReallyDialog(onYes, onNo){
+  reallyOnYes = onYes; reallyOnNo = onNo;
+  $('reallyMsg').textContent = '';
+  $('reallyDialog').showModal();
+}
+$('reallyClose').onclick = () => $('reallyDialog').close();
+$('reallyYes').onclick = async () => {
+  const fn = reallyOnYes; $('reallyDialog').close();
+  if(fn) try{ await fn(); }catch(e){ alert(e.message || '操作失敗'); }
+};
+$('reallyNo').onclick = async () => {
+  const fn = reallyOnNo; $('reallyDialog').close();
+  if(fn) try{ await fn(); }catch(e){ alert(e.message || '操作失敗'); }
 };
 
 /* ── 通知鈴鐺：管理員審核結果、新訊息（管理員訊息用暖黃色標注） ── */
