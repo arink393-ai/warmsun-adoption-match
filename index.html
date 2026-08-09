@@ -120,6 +120,19 @@
   .notifEmpty{padding:16px;text-align:center}
   .notifFoot{padding:8px 14px;border-top:1px solid var(--rule);text-align:right}
   .notifFoot button{font-size:11px;padding:4px 8px}
+  /* 登記精靈：把四十幾個欄位拆成五步，一次只看一段 */
+  .wizSteps{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px}
+  .wizStep{flex:1 1 0;min-width:96px;text-align:left;background:none;border:none;padding:0;cursor:pointer;
+    font-family:var(--font-body);color:var(--ink-soft);font-size:11px;line-height:1.4}
+  .wizStep .bar2{display:block;height:3px;border-radius:999px;background:var(--rule);margin-bottom:6px}
+  .wizStep.done .bar2{background:color-mix(in srgb, var(--brand) 45%, transparent)}
+  .wizStep.on .bar2{background:var(--brand)}
+  .wizStep.on{color:var(--brand-dk);font-weight:600}
+  .wizPanel{display:none}
+  .wizPanel.on{display:block}
+  .wizNav{display:flex;justify-content:space-between;gap:10px;align-items:center;
+    margin-top:20px;padding-top:16px;border-top:1px solid var(--rule)}
+  @media(max-width:600px){ .wizStep{min-width:0} .wizStep .wizT{display:none} }
   #gateForm .switcher{display:flex;gap:6px;justify-content:center;margin-top:14px;font-size:12px}
   #gateForm .switcher button{background:none;border:none;color:var(--brand);cursor:pointer;padding:2px;font-size:12px}
   .google-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;color:var(--ink);
@@ -193,10 +206,10 @@
   </div>
   <span class="tag">ADOPTION CENTER</span>
   <h1>暖陽動物之家｜認養配對所</h1>
-  <p class="sub">挑一種最像你的動物登記，性別另外選。想認識誰，就提出認養申請，通過三階段審查才會解鎖日常觀察。</p>
+  <p class="sub" id="mastheadSub">挑一種最像你的動物登記，性別另外選。想認識誰，就提出認養申請，通過三階段審查才會解鎖日常觀察。</p>
 </header>
 
-<div class="notice">
+<div class="notice" id="protoNotice">
   這是配對原型的公開站。個人資料只有登入的會員看得到；申請往來只有你和對方看得到。
 </div>
 
@@ -206,57 +219,77 @@
 
 <!-- 首頁 -->
 <div class="pane on" id="pane-home">
-  <section style="padding:10px 0 6px">
+  <!-- 第一屏：只留一句話與兩個動作，不要一次塞完所有東西 -->
+  <section style="padding:28px 0 34px;text-align:center">
     <span class="tag">ADOPTION · MATCHMAKING</span>
-    <h1 style="margin:14px 0 10px">借用嚴謹的認養手續，<br>找一輩子的家人。</h1>
-    <p class="sub" style="font-size:15px;line-height:1.8;max-width:64ch">
-      暖陽動物之家是一個交友平台，用「動物認養」的比喻，取代速食式的滑卡交友。
-      想認識誰，就提出一份認養申請，通過三階段審查後，才會漸進解鎖更深的聯繫方式。
-      我們相信，慎重不是門檻，而是對彼此人生的尊重。
+    <h1 style="margin:18px 0 14px;font-size:clamp(26px,5vw,40px);line-height:1.35">
+      不滑卡。<br>先好好認識，再決定要不要靠近。
+    </h1>
+    <p class="sub" style="font-size:15px;line-height:1.85;max-width:52ch;margin:0 auto">
+      暖陽不保證你遇見對的人，<br>但希望讓你少把時間留給錯的人。
     </p>
-    <div class="bar" style="margin-top:14px">
-      <button id="homeToBoard">查看佈告欄</button>
-      <button class="ghost" id="homeToRegister">開始登記</button>
+    <div class="bar" style="margin-top:24px;justify-content:center">
+      <button id="homeToBoard">看看誰在等家</button>
+      <button class="ghost" id="homeToRegister">建立我的病歷卡</button>
     </div>
   </section>
 
-  <div style="border-top:1px solid var(--rule);margin:22px 0"></div>
+  <div style="border-top:1px solid var(--rule);margin:0 0 26px"></div>
 
+  <!-- 認識的順序：從「排除不適合」的角度說明，而不是「認識更多人」 -->
   <section>
-    <p class="hint" style="text-transform:uppercase;letter-spacing:.08em;color:var(--brand);margin:0 0 10px">三階段，慢慢認識</p>
+    <p class="hint" style="text-transform:uppercase;letter-spacing:.08em;color:var(--brand);margin:0 0 6px">怎麼運作</p>
+    <p style="margin:0 0 16px;max-width:60ch">
+      一般交友軟體的順序是「喜歡 → 聊天 → 相處 → 才發現價值觀不合」。
+      暖陽把順序倒過來：<b>先確認基本相容，再談價值觀與溝通，最後才看有沒有心動。</b>
+    </p>
     <div class="grid">
       <div class="card">
-        <div class="kind">STAGE 01</div>
-        <h3>書面審查</h3>
-        <p class="bio">提出認養申請、回答五道題目，讓對方認識真實的你，雙方都還不提供任何聯絡方式。</p>
+        <div class="kind">STEP 01</div>
+        <h3>看佈告欄</h3>
+        <p class="bio">先看得到暱稱、年齡區間、地區、興趣與個性。精確年齡、身高、收入這些都還看不到——這是刻意的。</p>
       </div>
       <div class="card">
-        <div class="kind">STAGE 02</div>
-        <h3>價值觀評估</h3>
-        <p class="bio">回答幾道情境題，沒有標準答案，誠實與前後一致，比漂亮的回答更重要。</p>
+        <div class="kind">STEP 02</div>
+        <h3>提出認養申請</h3>
+        <p class="bio">回答對方出的題目，對方讀完決定要不要往下走。每 7 天前 3 筆申請免費。</p>
       </div>
       <div class="card">
-        <div class="kind">STAGE 03</div>
-        <h3>日常觀察解鎖</h3>
-        <p class="bio">雙方都同意後，才會互相顯示日常觀察資訊。解鎖是雙向的，單方同意不會揭露。</p>
+        <div class="kind">STEP 03</div>
+        <h3>價值觀與對話</h3>
+        <p class="bio">通過第一階段後開放第二階段情境題與雙向對話，也才看得到收入、居住、生育規劃。</p>
+      </div>
+      <div class="card">
+        <div class="kind">STEP 04</div>
+        <h3>雙方同意解鎖</h3>
+        <p class="bio">兩邊都按下同意，才會互相顯示生日與聯絡方式。單方同意不會揭露任何東西。</p>
       </div>
     </div>
+    <p class="hint" style="margin-top:12px">
+      沒有走到最後也是好結果——在投入更多時間與情感之前，就確認彼此需求不同，本來就是這個平台想幫你做到的事。
+      <a href="#" id="homeToHow">看完整的流程說明</a>
+    </p>
   </section>
 
-  <div style="border-top:1px solid var(--rule);margin:22px 0"></div>
+  <div style="border-top:1px solid var(--rule);margin:26px 0"></div>
 
   <section>
-    <p class="hint" style="text-transform:uppercase;letter-spacing:.08em;color:var(--brand);margin:0 0 10px">病歷卡長這樣（示意）</p>
-    <p class="hint" style="margin:0 0 14px">下面兩張是示範用的假資料，不是真實會員，讓你在註冊前先了解登記後看到的樣子。</p>
+    <p class="hint" style="text-transform:uppercase;letter-spacing:.08em;color:var(--brand);margin:0 0 6px">病歷卡長這樣</p>
+    <p class="hint" style="margin:0 0 14px">
+      下面兩張是<b>示範用的假資料</b>，不是真實會員。內容就是你在佈告欄上會看到的樣子——
+      下面那幾個上鎖的區塊，要真的往下走才會打開。
+    </p>
     <div class="grid" id="demoCards"></div>
   </section>
 
-  <div style="border-top:1px solid var(--rule);margin:22px 0"></div>
+  <div style="border-top:1px solid var(--rule);margin:26px 0"></div>
 
-  <section>
-    <div class="notice">
-      還沒有帳號嗎？<a href="#" id="homeToSignup2">免費註冊</a>，或先
-      <a href="#" id="homeToHow">看看完整的認養流程說明</a>。
+  <section style="text-align:center;padding-bottom:8px">
+    <p style="margin:0 0 14px;max-width:52ch;margin-inline:auto">
+      準備好了嗎？建立病歷卡是免費的，通過審核後才會出現在佈告欄上。
+    </p>
+    <div class="bar" style="justify-content:center">
+      <button id="homeToSignup2">免費建立我的病歷卡</button>
     </div>
   </section>
 </div>
@@ -291,42 +324,36 @@
   <fieldset>
     <legend>登記資料</legend>
     <div id="meCompleteness" style="margin-bottom:16px"></div>
-    <div class="hint" style="margin:0 0 10px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 第一步：基本資料（必填，填完就能送審）—</div>
-    <div class="row">
-      <div><label>暱稱</label><input id="mName" placeholder="例：小橘"></div>
-      <div><label>身分</label>
-        <select id="mKind">
-          <option value="pet">待認養（我想被認識）</option>
-          <option value="keeper">飼主（我想認識別人）</option>
-        </select></div>
-      <div><label>物種</label><select id="mSpecies"></select></div>
-      <div><label>性別</label>
-        <select id="mGender">
-          <option value="f">女生</option>
-          <option value="m">男生</option>
-          <option value="x">不透露</option>
-        </select></div>
-    </div>
-    <div class="row">
-      <div><label>年齡</label><input id="mAge" placeholder="例：28"></div>
-      <div><label>居住地</label><input id="mArea" placeholder="例：台北"></div>
-      <div><label>職業</label><input id="mJob" placeholder="例：工程師"></div>
-    </div>
-    <div class="row">
-      <div><label>學歷（選填）</label>
-        <select id="mEducation"><option value="">請選擇</option>
-          <option>高中職以下</option><option>高中職</option><option>專科</option>
-          <option>大學</option><option>碩士</option><option>博士</option><option>其他</option>
-        </select></div>
-    </div>
-    <div class="row">
-      <div><label>身高（cm，選填）</label><input id="mHeight" type="number" min="100" max="230" inputmode="numeric" placeholder="例：168"></div>
-      <div><label>體重（kg，選填）</label><input id="mWeight" type="number" min="25" max="350" step="0.1" inputmode="decimal" placeholder="例：58.5"></div>
-      <div><label>體重揭露</label><select id="mShowWeight"><option value="false">不公開</option><option value="true">公開</option></select></div>
-    </div>
-    <label>生日（對方送出第一階段申請後才會顯示）</label>
-    <input id="mBirth" placeholder="例：12/25 或 1994/12/25">
+    <div class="wizSteps" id="wizSteps"></div>
 
+    <!-- ── 第 1 步：你是誰 ───────────────────────────── -->
+    <div class="wizPanel on" data-step="1">
+      <p class="hint" style="margin:0 0 12px">先填這一步就好，其他都可以之後再回來補。</p>
+      <div class="row">
+        <div><label>暱稱（必填）</label><input id="mName" placeholder="例：小橘"></div>
+        <div><label>身分</label>
+          <select id="mKind">
+            <option value="pet">待認養（我想被認識）</option>
+            <option value="keeper">飼主（我想認識別人）</option>
+          </select></div>
+        <div><label>物種</label><select id="mSpecies"></select></div>
+        <div><label>性別</label>
+          <select id="mGender">
+            <option value="f">女生</option>
+            <option value="m">男生</option>
+            <option value="x">不透露</option>
+          </select></div>
+      </div>
+      <div class="row">
+        <div><label>年齡</label><input id="mAge" placeholder="例：28"></div>
+        <div><label>居住地</label><input id="mArea" placeholder="例：台北"></div>
+        <div><label>職業</label><input id="mJob" placeholder="例：工程師"></div>
+      </div>
+      <p class="hint">年齡在佈告欄上只會顯示區間（例如「25～29 歲」），對方送出第一階段申請後才看得到精確歲數。</p>
+    </div>
+
+    <!-- ── 第 2 步：照片與身分驗證 ───────────────────── -->
+    <div class="wizPanel" data-step="2">
     <label>大頭照（必填．需通過審核才會公開）</label>
     <div class="row" style="align-items:flex-start">
       <div style="flex:0 0 120px">
@@ -364,18 +391,14 @@
         <p class="hint" id="verifyState"></p>
       </div>
     </div>
+    </div>
 
+    <!-- ── 第 3 步：自我介紹與病歷卡 ─────────────────── -->
+    <div class="wizPanel" data-step="3">
+    <p class="hint" style="margin:0 0 12px">這一步以後都是選填的，先送審也可以，之後隨時回來補。</p>
     <label>自我介紹（會公開．會顯示在病歷卡的「行為觀察」欄）</label>
     <textarea id="mBio" rows="4" placeholder="興趣、生活型態、想找什麼樣的人⋯⋯"></textarea>
 
-    <div class="hint" style="margin:20px 0 4px;font-weight:700;letter-spacing:.05em;color:var(--brand-dk)">— 第二步：詳細資料與病歷卡（選填，先送審、之後隨時可以回來補）—</div>
-    <div class="hint" style="margin:0 0 12px">以下都不是送審的必填項目，資料越完整，對方越容易判斷合不合適，但不填也可以先讓大頭照送審。</div>
-    <div class="notice" style="margin:0 0 16px">
-      🔒 <b>這些資料不會一次全部公開</b>：佈告欄上別人只看得到暱稱、年齡區間、地區、職業、興趣、
-      個性、關係期待與病歷卡；<b>身高、學歷、婚姻、孩子、生活習慣</b>要等對方送出第一階段申請後才會顯示；
-      <b>年收入、居住狀況、生育規劃、工作時數</b>要進入第二階段後才會顯示；<b>生日與日常觀察資訊</b>
-      則要雙方都同意解鎖才看得到。健康告知與負債狀況的開放時機由你自己決定，也可以選「永遠不公開」。
-    </div>
     <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 病歷卡（會公開）—</div>
     <label>健康與性格評估</label>
     <div class="row" id="mStars"></div>
@@ -428,43 +451,75 @@
         <p class="hint" id="stage2PhotoState"></p>
       </div>
     </div>
+    </div>
 
-
-    <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 詳細資料（選填．會公開）—</div>
+    <!-- ── 第 4 步：分階段才會揭露的資料 ─────────────── -->
+    <div class="wizPanel" data-step="4">
+    <div class="notice" style="margin:0 0 16px">
+      🔒 <b>這一步的資料不會一次全部公開。</b><br>
+      <b>對方送出第一階段申請後</b>才看得到：身高、體重、學歷、婚姻、孩子、兵役、生活習慣。<br>
+      <b>進入第二階段後</b>才看得到：年收入、居住狀況、生育規劃、工作時數。<br>
+      <b>雙方都同意解鎖後</b>才看得到：生日。<br>
+      健康告知與負債狀況的開放時機由你自己決定，也可以選「永遠不公開」。
+    </div>
+    <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 第一階段後開放 —</div>
     <div class="row">
-      <div><label>年收入區間</label>
-        <select id="mIncome"><option value="" disabled selected>請選擇</option>
-          <option>60 萬以下</option><option>60～72 萬</option><option>72～90 萬</option>
-          <option>90～120 萬</option><option>120 萬以上</option><option>不透露</option></select></div>
+      <div><label>身高（cm，選填）</label><input id="mHeight" type="number" min="100" max="230" inputmode="numeric" placeholder="例：168"></div>
+      <div><label>體重（kg，選填）</label><input id="mWeight" type="number" min="25" max="350" step="0.1" inputmode="decimal" placeholder="例：58.5"></div>
+      <div><label>體重揭露</label><select id="mShowWeight"><option value="false">不公開</option><option value="true">公開</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>學歷（選填）</label>
+        <select id="mEducation"><option value="">請選擇</option>
+          <option>高中職以下</option><option>高中職</option><option>專科</option>
+          <option>大學</option><option>碩士</option><option>博士</option><option>其他</option>
+        </select></div>
       <div><label>婚姻狀態</label>
         <select id="mMarital"><option value="" disabled selected>請選擇</option>
           <option>未婚</option><option>離婚</option><option>喪偶</option><option>其他</option></select></div>
       <div><label>是否有孩子</label>
         <select id="mHasKids"><option value="" disabled selected>請選擇</option>
           <option>沒有</option><option>有，同住</option><option>有，未同住</option></select></div>
-    </div>
-    <div class="row">
       <div><label>兵役狀況</label>
         <select id="mMilitary"><option value="" disabled selected>請選擇</option>
           <option>已服完義務役</option><option>已服完替代役</option><option>免役</option>
           <option>無兵役義務</option><option>尚未服役</option><option>不適用</option></select></div>
+    </div>
+    <label>生活習慣（可複選，選填，據實勾選就好）</label>
+    <div class="row" id="mHabits" style="flex-wrap:wrap;gap:6px 16px"></div>
+    <input id="mHabitsOther" placeholder="其他習慣（選填）" style="margin-top:8px">
+
+    <div class="hint" style="margin:20px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 第二階段後開放 —</div>
+    <div class="row">
+      <div><label>年收入區間</label>
+        <select id="mIncome"><option value="" disabled selected>請選擇</option>
+          <option>60 萬以下</option><option>60～72 萬</option><option>72～90 萬</option>
+          <option>90～120 萬</option><option>120 萬以上</option><option>不透露</option></select></div>
       <div><label>居住狀況</label>
         <select id="mLiving"><option value="" disabled selected>請選擇</option>
           <option>自己住</option><option>與父母同住</option><option>與室友同住</option><option>其他</option></select></div>
+      <div><label>生育規劃</label>
+        <select id="mKidsPlan"><option value="" disabled selected>請選擇</option>
+          <option>想要小孩</option><option>不確定，需要再溝通</option><option>不想要小孩</option>
+          <option>已有小孩，不打算再生</option><option>其他</option></select></div>
+    </div>
+    <label>一週工作時數（含通勤．選填）</label>
+    <input id="mWorkHours" placeholder="例：45 小時">
+
+    <div class="hint" style="margin:20px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 由你自己決定開放時機 —</div>
+    <div class="row">
       <div><label>負債狀況</label>
         <select id="mDebt"><option value="" disabled selected>請選擇</option>
           <option>沒有</option><option>有，可負擔範圍內</option><option>有，目前壓力較大</option></select></div>
       <div><label>負債狀況什麼時候讓對方看到</label><select id="mDebtWhen"></select></div>
     </div>
+
+    <div class="hint" style="margin:20px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 佈告欄就看得到 —</div>
     <div class="row">
       <div><label>關係期待</label>
         <select id="mRelGoal"><option value="" disabled selected>請選擇</option>
           <option>以結婚為前提的長期穩定關係</option><option>長期交往，順其自然發展</option>
           <option>先以朋友身分互相了解</option><option>其他</option></select></div>
-      <div><label>生育規劃</label>
-        <select id="mKidsPlan"><option value="" disabled selected>請選擇</option>
-          <option>想要小孩</option><option>不確定，需要再溝通</option><option>不想要小孩</option>
-          <option>已有小孩，不打算再生</option><option>其他</option></select></div>
       <div><label>MBTI（選填）</label>
         <select id="mMbti"><option value="">請選擇</option>
           <option>INTJ</option><option>INTP</option><option>ENTJ</option><option>ENTP</option>
@@ -473,17 +528,18 @@
           <option>ISTP</option><option>ISFP</option><option>ESTP</option><option>ESFP</option>
         </select></div>
     </div>
-    <label>一週工作時數（含通勤．選填）</label>
-    <input id="mWorkHours" placeholder="例：45 小時">
     <label>興趣與休閒活動（可複選，選填）</label>
     <div class="row" id="mInterests" style="flex-wrap:wrap;gap:6px 16px"></div>
     <label>個性介紹（可複選，選填）</label>
     <div class="row" id="mPersonality" style="flex-wrap:wrap;gap:6px 16px"></div>
-    <label>生活習慣（可複選，選填，據實勾選就好）</label>
-    <div class="row" id="mHabits" style="flex-wrap:wrap;gap:6px 16px"></div>
-    <input id="mHabitsOther" placeholder="其他習慣（選填）" style="margin-top:8px">
 
-    <label style="margin-top:20px">希望對方是（會公開）</label>
+    <label style="margin-top:20px">生日（雙方同意解鎖後才會顯示給對方）</label>
+    <input id="mBirth" placeholder="例：12/25 或 1994/12/25">
+    </div>
+
+    <!-- ── 第 5 步：希望遇到什麼樣的人 ───────────────── -->
+    <div class="wizPanel" data-step="5">
+    <label>希望對方是（會公開）</label>
     <textarea id="mWants" rows="3" placeholder="例：重視溝通、個性穩定⋯⋯"></textarea>
 
     <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 希望對方的條件（選填．會公開）—</div>
@@ -498,19 +554,28 @@
     <label>生活習慣要求（可複選）</label>
     <div class="row" id="mReqHabits" style="flex-wrap:wrap;gap:6px 16px"></div>
 
-    <label>日常觀察資訊（第三階段解鎖後才會顯示給對方）</label>
+    <label>日常觀察資訊（雙方同意解鎖後才會顯示給對方）</label>
     <textarea id="mLocked" rows="2" placeholder="例：IG @your_account"></textarea>
     <label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px">
       <input type="checkbox" id="mConsent" style="width:auto;margin:4px 0 0">
       <span style="font-size:13px;color:var(--ink)">我已閱讀並同意「<a href="#" data-goto="privacy">隱私權政策</a>」與「<a href="#" data-goto="terms">服務條款</a>」，了解照片與資料的蒐集目的、保存期限、刪除方式，以及帳號規範與退費規則。</span>
     </label>
-    <div class="bar">
+    </div>
+
+    <!-- 上一步／下一步；儲存永遠看得到，任何一步都可以先存起來 -->
+    <div class="wizNav">
+      <button type="button" class="ghost" id="wizPrev">← 上一步</button>
+      <span class="hint" id="wizWhere"></span>
+      <button type="button" id="wizNext">下一步 →</button>
+    </div>
+    <div class="bar" style="margin-top:14px">
       <button id="mSave">儲存登記</button>
       <button type="button" class="ghost" id="mDiscard">捨棄變更，重新載入</button>
       <button class="ghost" id="mPurge">刪除我的所有資料</button>
       <span class="msg" id="meMsg"></span>
     </div>
-    <p class="hint" style="margin-top:10px">待認養身分想自訂第一階段題目、第二階段題庫、罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」設定。</p>
+    <p class="hint" style="margin-top:10px">隨時都可以按「儲存登記」，不必等填到最後一步。第一次登記只要填完第 1、2 步就能送審。</p>
+    <p class="hint">待認養身分想自訂第一階段題目、第二階段題庫、罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」設定。</p>
   </fieldset>
 </div>
 
@@ -1015,7 +1080,11 @@ $('topLogin').onclick = () => openGate('login');
 $('topSignup').onclick = () => openGate('signup');
 $('homeToBoard').onclick = () => gotoTab('board');
 $('homeToRegister').onclick = () => { gotoTab('center'); showSub('me'); };
-$('homeToSignup2').onclick = (e) => { e.preventDefault(); openGate('signup'); };
+/* 已經登入的人按這顆應該直接去填病歷卡，而不是又跳一次註冊視窗 */
+$('homeToSignup2').onclick = (e) => {
+  e.preventDefault();
+  if(me){ gotoTab('center'); showSub('me'); } else openGate('signup');
+};
 $('homeToHow').onclick = (e) => { e.preventDefault(); gotoTab('how'); };
 
 DB.onAuthChange(async (user, authEvent) => {
@@ -1057,6 +1126,14 @@ function gotoTab(k){
   const b = $('tabbar').querySelector(`.tabbtn[data-k="${k}"]`); if(!b) return;
   b.click();
 }
+/* 首頁自己就有完整的品牌標語與說明，頁首那段長副標與原型公告在首頁上會變成
+   「同一件事講兩次」，所以只在首頁把它們收起來，其他分頁維持原樣。 */
+function applyHomeChrome(k){
+  const onHome = k === 'home';
+  const sub = $('mastheadSub'), notice = $('protoNotice');
+  if(sub) sub.style.display = onHome ? 'none' : '';
+  if(notice) notice.style.display = onHome ? 'none' : '';
+}
 /* 管理後台分頁只有管理員自己看得到；一般會員不該看到這個選項，
    即使硬點進去伺服器端也會被 RLS 擋下、看不到任何資料，但畫面上先不要讓人誤會有這個功能。 */
 function renderTabBar(){
@@ -1067,14 +1144,17 @@ function renderTabBar(){
   const keepKey = visible.some(p => p.k === activeKey) ? activeKey : visible[0].k;
   $('tabbar').innerHTML = visible.map((p) =>
     `<button class="tabbtn${p.k === keepKey ? ' on' : ''}" data-k="${p.k}">${p.t}</button>`).join('');
+  applyHomeChrome(keepKey);
 }
 function initTabs(){
   renderTabBar();
+  applyHomeChrome(($('tabbar').querySelector('.tabbtn.on') || {dataset:{}}).dataset.k || 'home');
   $('tabbar').onclick = e => {
     const b = e.target.closest('.tabbtn'); if(!b) return;
     if(PROTECTED_TABS.includes(b.dataset.k) && !me){ rememberPendingTab(b.dataset.k); openGate('login'); return; }
     document.querySelectorAll('#tabbar .tabbtn').forEach(x => x.classList.toggle('on', x === b));
     document.querySelectorAll('#app > .pane').forEach(x => x.classList.toggle('on', x.id === 'pane-' + b.dataset.k));
+    applyHomeChrome(b.dataset.k);
     if(b.dataset.k === 'board') renderBoard();
     if(b.dataset.k === 'center') showSub(curSub);
     if(b.dataset.k === 'admin') renderAdminHome();
@@ -1225,11 +1305,50 @@ function renderCompleteness(){
   const pct = computeCompleteness();
   $('meCompleteness').innerHTML = `
     <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);margin-bottom:4px">
-      <span>資料完整度（第一步必填＋第二步選填）</span><span>${pct}%</span>
+      <span>資料完整度（填越完整，對方越容易判斷合不合適）</span><span>${pct}%</span>
     </div>
     <div style="height:6px;border-radius:999px;background:var(--paper-2);overflow:hidden">
       <div style="height:100%;width:${pct}%;background:var(--brand);border-radius:999px"></div>
     </div>`;
+}
+
+/* ── 登記精靈：一次只顯示一段，減少「四十幾個欄位一次攤開」的疲勞感 ── */
+const WIZ_STEPS = [
+  {n:1, t:'你是誰'},
+  {n:2, t:'照片與驗證'},
+  {n:3, t:'自我介紹'},
+  {n:4, t:'分階段資料'},
+  {n:5, t:'希望遇到誰'}
+];
+let wizCur = 1;
+function gotoWizStep(n){
+  wizCur = Math.max(1, Math.min(WIZ_STEPS.length, n));
+  document.querySelectorAll('#pane-me .wizPanel').forEach(el =>
+    el.classList.toggle('on', Number(el.dataset.step) === wizCur));
+  document.querySelectorAll('#wizSteps .wizStep').forEach(el => {
+    const s = Number(el.dataset.step);
+    el.classList.toggle('on', s === wizCur);
+    el.classList.toggle('done', s < wizCur);
+  });
+  $('wizPrev').style.visibility = wizCur === 1 ? 'hidden' : 'visible';
+  $('wizNext').style.visibility = wizCur === WIZ_STEPS.length ? 'hidden' : 'visible';
+  const step = WIZ_STEPS[wizCur - 1];
+  $('wizWhere').textContent = `第 ${wizCur} / ${WIZ_STEPS.length} 步・${step.t}`;
+  /* 換頁時把畫面捲回表單頂端，不然在手機上會停在上一段的中間 */
+  const box = $('pane-me'); if(box && box.scrollIntoView) box.scrollIntoView({block:'start', behavior:'smooth'});
+}
+function initWizard(){
+  $('wizSteps').innerHTML = WIZ_STEPS.map(s =>
+    `<button type="button" class="wizStep" data-step="${s.n}" title="第 ${s.n} 步・${s.t}">
+       <span class="bar2"></span><span class="wizN">${s.n}.</span> <span class="wizT">${s.t}</span>
+     </button>`).join('');
+  $('wizSteps').onclick = e => {
+    const b = e.target.closest('.wizStep'); if(!b) return;
+    gotoWizStep(Number(b.dataset.step));
+  };
+  $('wizPrev').onclick = () => gotoWizStep(wizCur - 1);
+  $('wizNext').onclick = () => gotoWizStep(wizCur + 1);
+  gotoWizStep(1);
 }
 $('mFile').onchange = async (e) => {
   const f = e.target.files[0]; if(!f) return;
@@ -2591,6 +2710,7 @@ renderCheckGroup('mHealthTags', HEALTH_OPTS);
 renderCheckGroup('mReqHabits', REQ_HABITS_OPTS);
 initTabs();
 initCenter();
+initWizard();
 renderDemoCards();
 </script>
 </html>
