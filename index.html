@@ -3,6 +3,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>暖陽動物之家｜認養配對所</title>
+<meta name="description" content="暖陽動物之家是一個用「動物認養」比喻取代滑卡交友的配對平台。提出認養申請，通過三階段審查，才會漸進解鎖更深的聯繫。">
+<meta property="og:title" content="暖陽動物之家｜認養配對所">
+<meta property="og:description" content="借用嚴謹的認養手續，找一輩子的家人。">
+<meta property="og:type" content="website">
+<!-- og:image 故意先不加：專案裡還沒有實際的預覽圖檔（og.png），
+     指到一張不存在的圖分享出去只會顯示破圖，比完全不設定更難看。
+     之後準備好圖檔、放進專案根目錄後，再補上：
+     <meta property="og:image" content="https://arink393-ai.github.io/warmsun-adoption-match/og.png"> -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Lora:wght@400;500;600&family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500&display=swap" rel="stylesheet">
@@ -481,7 +489,7 @@
     <textarea id="mLocked" rows="2" placeholder="例：IG @your_account"></textarea>
     <label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px">
       <input type="checkbox" id="mConsent" style="width:auto;margin:4px 0 0">
-      <span style="font-size:13px;color:var(--ink)">我已閱讀並同意「<a href="#" data-goto="privacy">隱私權政策</a>」，了解照片與資料的蒐集目的、保存期限與刪除方式。</span>
+      <span style="font-size:13px;color:var(--ink)">我已閱讀並同意「<a href="#" data-goto="privacy">隱私權政策</a>」與「<a href="#" data-goto="terms">服務條款</a>」，了解照片與資料的蒐集目的、保存期限、刪除方式，以及帳號規範與退費規則。</span>
     </label>
     <div class="bar">
       <button id="mSave">儲存登記</button>
@@ -580,10 +588,20 @@
   </fieldset>
   <fieldset>
     <legend>照片與身分規則</legend>
-    <p>登記必須上傳<b>本人、單人、看得清楚五官</b>的照片，經系統初步檢查與人工審核後才會公開。</p>
-    <p>以下情況不予通過，且無法登記、提出申請或接受申請：非真人照片（風景、寵物、動漫、AI 生成圖）、多人合照無法辨識、明星或網路名人照片、盜用他人照片。</p>
+    <p>登記必須上傳一張大頭照，並另外上傳一張<b>驗證照</b>（不公開），兩者都通過審核後，你的病歷卡才會出現在佈告欄。</p>
+    <p><b>可以使用的大頭照</b><br>
+    ・本人、單人、看得清楚五官的照片<br>
+    ・<b>AI 形象照</b>：可以使用，但必須勾選聲明，表示這張圖與本人高度相似（自評 95% 以上），並同意以私密驗證照進行人工比對確認</p>
+    <p><b>不予通過的情況</b><br>
+    ・非人物照片（風景、寵物、動漫、插畫、物品）<br>
+    ・多人合照，無法辨識是哪一位<br>
+    ・明星、網紅或他人的照片<br>
+    ・與驗證照明顯不是同一個人<br>
+    ・看不清楚五官（過度遮蔽、過曝、太模糊）</p>
+    <p class="hint"><b>審核時間</b>：本人實拍照片通常較快；AI 形象照約 7 個工作天，因為需要人工逐一比對。</p>
+    <p class="hint"><b>驗證照怎麼拍</b>：系統會隨機指定一個動作與四位數代碼，請依指示拍攝。這張照片不會出現在佈告欄，也不會給任何申請人看到，審核通過或退回後立即刪除。</p>
     <p class="hint">照片通過審核並填妥基本資料，可獲得 <span id="howPhotoBonus">5</span> 點獎勵。</p>
-    <p class="hint">系統只能做初步判斷，是否為盜用仍需人工查核；若發現盜用，登記會被移除且不退點。</p>
+    <p class="hint"><b>關於盜用</b>：系統只能初步判斷照片是否符合規則，無法確認是否為盜用。若查證屬實為盜用他人照片，登記會被移除、帳號停權，且已使用的點數不予退還。</p>
   </fieldset>
 </div>
 
@@ -591,34 +609,156 @@
 <div class="pane" id="pane-privacy">
   <fieldset>
     <legend>隱私權政策</legend>
-    <p><b>一、蒐集目的</b><br>
-    本平台蒐集個人資料，目的僅限於：認養配對媒合、身分真實性審核、以及申請進度通知。不會用於其他目的。</p>
+    <p class="hint">最後更新：2026 年 8 月</p>
 
-    <p><b>二、蒐集項目</b><br>
-    ・公開資料：暱稱、年齡、居住地、職業、自我介紹、擇偶條件、大頭照<br>
-    ・僅供審核：驗證照（不公開，審核通過後立即刪除）<br>
-    ・僅在解鎖後顯示給特定對象：日常觀察資訊（社群帳號等）<br>
-    ・申請內容：你填寫的認養申請表回答</p>
+    <p><b>一、蒐集目的</b><br>
+    本平台蒐集個人資料，目的僅限於：認養配對媒合、身分真實性審核、申請進度通知、以及必要的客訴與檢舉處理。不會用於其他目的。</p>
+
+    <p><b>二、蒐集項目</b></p>
+    <p class="hint"><b>（1）公開資料——通過審核後，所有登入會員可見</b><br>
+    暱稱、物種、性別、年齡、居住地、職業、學歷、身高、體重（可選擇是否公開）、自我介紹、個性標籤、最喜歡的事、
+    禁忌事項、性格星等、主治獸醫備註、擇偶條件（婚姻要求、年齡範圍、孩子要求、生活習慣要求）、大頭照。</p>
+    <p class="hint"><b>（2）詳細資料——通過審核後，所有登入會員可見</b><br>
+    年收入區間、婚姻狀態、是否有孩子、兵役狀況、居住狀況、負債狀況、關係期待、生育規劃、MBTI、
+    一週工作時數、興趣與休閒、個性介紹、生活習慣。</p>
+    <p class="hint"><b>（3）分階段揭露資料——僅特定對象、在特定條件成立後可見</b><br>
+    ・生日（月／日）：對方送出第一階段申請後<br>
+    ・加碼照片（第一階段）：申請人進入第二階段時<br>
+    ・加碼照片（第二階段）：申請人進入第三階段時<br>
+    ・健康告知：由本人自行決定內容與開放時機（公開／第一階段後／第二階段後），完全自願，不填則不會出現此欄位<br>
+    ・日常觀察資訊（社群帳號等）：雙方都同意解鎖後</p>
+    <p class="hint"><b>（4）僅供審核，不對外顯示</b><br>驗證照、AI 形象照聲明紀錄。</p>
+    <p class="hint"><b>（5）僅你自己可見</b><br>你送出的申請答案（答題紀錄）、回覆範本、診療點數與交易紀錄、站方通知與訊息通知。</p>
+    <p class="hint"><b>（6）帳號資料</b><br>Email、登入憑證（由 Supabase 驗證服務保管，本平台不儲存明文密碼）。</p>
 
     <p><b>三、保存期限</b><br>
-    ・驗證照：<b>審核通過或退回後立即刪除</b><br>
-    ・公開資料與申請紀錄：保存至你自行刪除為止<br>
-    ・取消登記後：相關資料於系統中一併移除</p>
+    ・驗證照：<b>審核通過或退回後立即刪除</b>，最長不超過 30 天<br>
+    ・公開資料、詳細資料、加碼照片：保存至你自行刪除或取消登記<br>
+    ・申請往來與答題紀錄：保存至你自行刪除或取消登記<br>
+    ・交易與點數紀錄：依商業會計法規定保存，不隨帳號刪除而移除，但會與個人身分脫鉤<br>
+    ・檢舉紀錄：處理完成後保存 1 年，供爭議追溯</p>
 
     <p><b>四、第三方處理</b><br>
-    大頭照的初步檢查與主治獸醫評估會將內容傳送至 AI 服務（Anthropic Claude）進行分析。該服務不會用於訓練模型。驗證照<b>不會</b>傳送給任何第三方，僅由管理者人工檢視。</p>
+    ・大頭照的初步檢查、主治獸醫評估與進階診斷，會將相關內容傳送至 AI 服務（Anthropic Claude）進行分析。該服務不會將內容用於訓練模型。<br>
+    ・驗證照<b>不會</b>傳送給任何第三方，僅由管理者人工檢視。<br>
+    ・資料庫與登入服務由 Supabase 提供。<br>
+    ・付款由第三方金流服務處理，本平台不會取得或儲存你的信用卡號。</p>
 
     <p><b>五、你的權利</b><br>
     你可以隨時查詢、更正或刪除自己的資料。<br>
     ・修改：到「我的登記」直接編輯<br>
-    ・刪除：到「我的登記」按「刪除我的所有資料」，將移除登記、照片、申請紀錄與點數紀錄，且無法復原</p>
+    ・刪除：到「我的登記」按「刪除我的所有資料」，將移除登記、照片、申請紀錄與點數紀錄，且無法復原<br>
+    ・其他請求：來信 <a href="mailto:arink393@gmail.com">arink393@gmail.com</a></p>
 
-    <p><b>六、不做的事</b><br>
+    <p><b>六、我們不做的事</b><br>
     ・不會將你的資料販售或提供給廣告商<br>
     ・不會在未解鎖的情況下向他人顯示你的聯絡方式<br>
-    ・不會用臉部辨識技術自動比對照片，身分審核一律由人工進行</p>
+    ・不會使用臉部辨識技術自動比對照片，身分審核一律由人工進行<br>
+    ・不會向未登入的訪客顯示任何會員的個人資料</p>
 
-    <p class="hint">本平台目前為原型階段。資料儲存在 Supabase 資料庫，並以帳號登入與 Row Level Security 做存取控管，但仍建議不要填寫過於敏感的真實資料。</p>
+    <p><b>七、年齡限制</b><br>
+    本平台僅提供年滿 18 歲者使用。若發現未成年註冊，帳號將被移除。</p>
+
+    <p class="hint"><b>八、目前狀態</b><br>
+    本平台為原型階段。資料儲存於 Supabase 資料庫，並以帳號登入與 Row Level Security 控管存取；仍建議不要填寫過於敏感的真實資料。</p>
+  </fieldset>
+</div>
+
+<!-- 服務條款 -->
+<div class="pane" id="pane-terms">
+  <fieldset>
+    <legend>服務條款</legend>
+    <p class="hint">最後更新：2026 年 8 月　｜　⚠️ 本頁為一般實務草稿，不是法律意見，正式收費前請諮詢律師或會計師。</p>
+
+    <p><b>一、關於本服務</b><br>
+    暖陽動物之家（以下稱「本平台」）是一個以「動物認養」為比喻的線上交友配對服務，提供會員登記、瀏覽、提出認養申請、
+    分階段互動，以及選用性的付費輔助服務。<b>本平台不提供代為安排見面、不保證配對成功，也不介入會員之間的私下往來。</b></p>
+
+    <p><b>二、資格</b><br>
+    ・使用本平台須年滿 18 歲。若發現未成年註冊，帳號將被移除且不予退費。<br>
+    ・每人限申請一個帳號。發現重複帳號、代註冊或販售帳號者，得停權處理。<br>
+    ・註冊即表示你已閱讀並同意本條款與<a href="#" data-goto="privacy">隱私權政策</a>。</p>
+
+    <p><b>三、帳號與資料真實性</b><br>
+    ・你應提供真實資料。登記照片必須是本人；使用 AI 形象照者，須勾選聲明並通過人工驗證比對。<br>
+    ・帳號與密碼由你自行保管。若發現遭盜用，請立即來信通知。<br>
+    ・你可以隨時修改或刪除自己的資料。</p>
+
+    <p><b>四、禁止行為</b><br>
+    於本平台從事下列行為者，本平台得視情節限制功能、停權或永久終止帳號：<br>
+    1. 盜用他人照片、冒用他人身分　2. 對其他會員為性騷擾、性暗示、辱罵、人身攻擊或恐嚇
+    3. 以本平台從事商業行銷、詐騙、招募、借貸或色情交易　4. 索取或散布他人個人資料、對外公開他人在平台內的往來內容
+    5. 在對方明確表示停止後，仍持續騷擾或以更換帳號的方式聯繫　6. 以自動化程式大量操作、干擾系統運作
+    7. 其他違反法令或明顯逾越合理界線的行為<br>
+    <b>因前述事由遭終止帳號者，未使用的點數不予退還。</b></p>
+
+    <p><b>五、審核機制</b><br>
+    ・大頭照與驗證照須經系統初步檢查與人工審核，通過後才會公開。<br>
+    ・驗證照僅供審核，不對外顯示，審核完成後立即刪除。<br>
+    ・本平台不使用臉部辨識技術自動比對，身分審核一律由人工進行。<br>
+    ・審核為人工判斷，可能有誤。若你對結果有疑問，可來信申覆。</p>
+
+    <p><b>六、檢舉與處理</b><br>
+    ・每張病歷卡皆有檢舉按鈕，你也可以來信檢舉。<br>
+    ・本平台將於<b>收到檢舉後 3 個工作日內回覆處理進度</b>。<br>
+    ・涉及性騷擾、恐嚇或疑似違法者，本平台得先行停權再進行查證，並保留紀錄供後續追溯。<br>
+    ・本平台無法對會員之間的私下往來或線下見面負責，請自行評估風險、選擇公開場所、告知親友行蹤。</p>
+
+    <p><b>七、內容與授權</b><br>
+    ・你上傳的照片與文字，著作權仍屬於你；你授權本平台在提供服務所必要的範圍內顯示、儲存與傳輸，此授權於你刪除內容或帳號時終止。<br>
+    ・大頭照的初步檢查與付費的評估服務會將內容傳送至 AI 服務（Anthropic Claude）進行分析；驗證照不會傳送給任何第三方。</p>
+
+    <p><b>八、付費服務</b><br>
+    ・本平台的核心流程（登記、瀏覽、提出申請、回答問卷、審查、解鎖）皆可免費使用。<br>
+    ・付費項目為選用性的輔助服務，收費方式與點數用途詳見「診療點數」頁面與下方退費政策。<br>
+    ・各項服務的點數費率若有調整，將於官網公告，<b>已購買尚未使用的點數不受影響</b>。</p>
+
+    <p><b>九、服務變更與終止</b><br>
+    ・你可以隨時停止使用並刪除帳號。<br>
+    ・本平台如需暫停或終止全部服務，將<b>於終止前至少 30 日在首頁公告</b>，並依退費政策退還未使用的點數。<br>
+    ・本條款如有重大變更，將於生效前至少 7 日公告；你若不同意，可於生效前終止帳號並申請退還未使用點數。</p>
+
+    <p><b>十、免責</b><br>
+    ・本平台不保證你一定能配對成功、收到申請或建立關係。<br>
+    ・本平台不對會員所提供資料的真實性負保證責任，審核僅為合理程度的查核。<br>
+    ・因不可歸責於本平台之事由（系統維護、第三方服務中斷、天災等）造成的暫時中斷，本平台將盡速修復，不另負賠償責任。</p>
+
+    <p><b>十一、爭議處理</b><br>
+    ・有任何問題請先來信 <a href="mailto:arink393@gmail.com">arink393@gmail.com</a>，本平台將於 3 個工作日內回覆。<br>
+    ・消費爭議得依消費者保護法申訴、申請調解。<br>
+    ・因本服務所生訴訟，<span class="hint">雙方合意管轄法院尚未填寫——正式上線前請自行確認營業所在地並補上，例如「台灣台北地方法院」</span>，
+    但不排除消費者保護法第 47 條及民事訴訟法關於小額訴訟管轄之適用。</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>退費政策</legend>
+
+    <p><b>一、點數的性質</b><br>
+    ・點數僅能用於本平台的服務，<b>不得轉讓、不得提領、不得兌換現金</b>。<br>
+    ・點數不會過期（活動性質的贈點除外，其效期將於發放時載明）。<br>
+    ・贈送的點數（新客禮、完成登記獎勵、活動贈點）<b>不列入退費計算</b>。</p>
+
+    <p><b>二、可以退費的情況</b><br>
+    ・購買後 <b>7 日內</b>且該筆點數<b>完全未使用</b>：全額退還<br>
+    ・購買後 7 日內但已使用部分點數：退還未使用部分，扣除已使用點數之對應金額<br>
+    ・帳號由你主動刪除：退還未使用點數之對應金額<br>
+    ・本平台停止營運：退還全部未使用點數之對應金額，且不扣除任何費用<br>
+    ・因本平台系統錯誤導致扣點：全額補回點數，或依你的選擇退還現金</p>
+
+    <p><b>三、不予退費的情況</b><br>
+    1. 已使用的點數（服務已提供者，如已產生的獸醫評估、已發出的問卷、已解鎖的資訊）
+    2. 贈送的點數　3. 因違反服務條款遭停權或終止帳號　4. 對配對結果不滿意（本平台提供的是服務本身，不保證結果）</p>
+
+    <p><b>四、退費方式與時間</b><br>
+    ・請來信 <a href="mailto:arink393@gmail.com">arink393@gmail.com</a>，載明帳號、購買日期與退費原因。<br>
+    ・本平台將於收到申請後 <b>7 個工作日內</b>確認，並於確認後 <b>30 日內</b>退還。<br>
+    ・退款一律<b>原路退回原付款方式</b>。若原管道無法退款，將以雙方同意的方式辦理。<br>
+    ・金流商可能收取的手續費由本平台負擔，不從退款金額中扣除。</p>
+
+    <p class="hint"><b>五、服務未提供時的處理</b><br>
+    若你已扣點但服務未成功提供（例如評估產生失敗、系統中斷），系統會自動不扣點或補回點數。如未自動補回，請來信告知。</p>
+
+    <p class="hint">目前線上儲值尚未開放（見「診療室」說明），這份退費政策先備妥，等正式開放購買點數時就直接適用，不用臨時再補。</p>
   </fieldset>
 </div>
 
@@ -853,7 +993,7 @@ DB.onAuthChange(async (user, authEvent) => {
 /* ── 分頁 ── */
 const PANES = [
   {k:'home', t:'首頁'}, {k:'board', t:'佈告欄'}, {k:'center', t:'個人中心'}, {k:'admin', t:'管理後台'},
-  {k:'how', t:'流程說明'}, {k:'privacy', t:'隱私權'}
+  {k:'how', t:'流程說明'}, {k:'privacy', t:'隱私權'}, {k:'terms', t:'服務條款'}
 ];
 const SUBS = [
   {k:'me', t:'我的資料'}, {k:'in', t:'我的收件匣'}, {k:'out', t:'我的申請'},
@@ -1792,10 +1932,12 @@ async function startNotificationSubscription(){
   stopNotificationSubscription();
   try{ notifications = await DB.listNotifications(); }catch(e){ notifications = []; }
   renderNotifBell();
-  stopNotifSub = DB.subscribeNotifications(me.id, async () => {
-    try{ notifications = await DB.listNotifications(); }catch(e){}
-    renderNotifBell();
-  });
+  try{
+    stopNotifSub = DB.subscribeNotifications(me.id, async () => {
+      try{ notifications = await DB.listNotifications(); }catch(e){}
+      renderNotifBell();
+    });
+  }catch(e){ /* Realtime 訂閱失敗不影響其他功能，鈴鐺仍會顯示登入當下讀到的通知 */ }
 }
 function renderNotifBell(){
   const unread = notifications.filter(n => !n.read_at).length;
@@ -2274,8 +2416,12 @@ async function boot(){
   await DB.settleBonusCredits();
   myProfile = await DB.ensureProfile();
   renderTabBar();
-  profiles = await DB.listProfiles();
-  apps = (await DB.listOutbox()).concat(await DB.listInbox());
+  /* 佈告欄／收件匣資料是輔助內容，這裡故意各自 try/catch——
+     單一次 RPC 失敗（例如網路不穩、剛部署完 schema 還沒完全生效）
+     不該連累到後面的 fillMe()／導去 pendingTab 都一起不執行，
+     不然使用者登入後只會卡在空白首頁，完全不知道發生了什麼事。 */
+  try{ profiles = await DB.listProfiles(); }catch(e){ profiles = []; }
+  try{ apps = (await DB.listOutbox()).concat(await DB.listInbox()); }catch(e){ apps = []; }
   if(!templateMaster.length){ try{ templateMaster = await DB.getTemplateMaster(); }catch(e){} }
   await fillMe(); renderBoard(); showMyLinks(); renderStage3Notice();
 }
