@@ -423,13 +423,6 @@
       </div>
     </div>
 
-    <label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px">
-      <input type="checkbox" id="mAllowSkip" style="width:auto;margin:4px 0 0">
-      <span style="font-size:13px;color:var(--ink)">開放「快速邀請」：申請人可先提出邀請，<b>不會立即扣點或解鎖</b>。
-        只有你主動接受後，系統才從對方扣 10 點並讓雙方快速解鎖；你可以拒絕或繼續正常階段。
-        這 10 點會進到你的帳號，限 <b>14 天</b>內用完，且<b>只能用在「請主治獸醫評估」或「進階診斷」，
-        不能拿去付掛號費、出題費、解鎖費，也不能轉讓給其他帳號</b>。</span>
-    </label>
 
     <div class="hint" style="margin:16px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 詳細資料（選填．會公開）—</div>
     <div class="row">
@@ -531,18 +524,21 @@
     <p style="font-size:26px;font-family:'Noto Serif TC',serif;color:var(--brand);margin:4px 0">
       <span id="balance">0</span> <span style="font-size:14px;color:var(--ink-soft)">點</span></p>
     <p class="hint">
-      <b>掛號費</b>　送出一份認養申請：<span id="clinicApplyCost">1</span> 點<br>
+      <b style="color:var(--ink)">免費的是「建立關係」：</b>建立病歷卡、瀏覽會員、每 7 天內前 <span id="clinicFreeApplyQuota">3</span>
+      筆認養申請、回答問題、聊天、通過三階段審查後解鎖對方的日常觀察資訊，全部不用花點數。<br>
+      <b style="color:var(--ink)">收費的是「效率與 AI」：</b>
+    </p>
+    <p class="hint">
+      <b>額外掛號費</b>　超過每 7 天 <span id="clinicFreeApplyQuota2">3</span> 筆免費申請後，多送一筆：<span id="clinicApplyCost">1</span> 點<br>
       <b>出題費</b>　發出第二階段問卷給一位申請人：<span id="clinicStage2Cost">2</span> 點<br>
-      <b>解鎖費</b>　通過三階段審查後解鎖對方的日常觀察資訊：<span id="clinicStage3Cost">3</span> 點<br>
       <b>診療費</b>　請主治獸醫評估一位申請人：<span id="clinicVetCost">1</span> 點<br>
       <b>進階診斷</b>　請主治獸醫客製第二階段問題：<span id="clinicDeepCost">3</span> 點<br>
       <b>備註生成</b>　請 AI 生成一句主治獸醫備註：1 點（自己手打免費，不會被覆蓋）<br>
-      <b>快速邀請</b>　登記人開放時可提出邀請；對方接受後才扣 <span id="clinicSkipCost">10</span> 點並快速解鎖
-      （這 <span id="clinicSkipCost2">10</span> 點會進到登記人帳號，<b>限定用在「診療費」與「進階診斷」，不能付其他費用、不能轉讓</b>，限 14 天內用完）<br>
-      <span style="color:var(--ink)">申請人的第一階段完整回答一律免費開放給收件人閱讀——對方既然已經付了掛號費，就應該被看見；
-      付費項目只用在額外的分析與服務。</span><br>
-      收費是為了讓雙方都慎重：申請前先想清楚，收到申請的人也不會被大量亂投的訊息淹沒。<br>
-      若對方超過 <span id="clinicRefundDays">14</span> 天未處理你的申請，可以在「我送出的申請」退回掛號費。
+      <b>優先邀請</b>　讓你的申請在對方收件匣多一個優先標記，附上一封最多 300 字的邀請信：
+      <span id="clinicSkipCost">3</span> 點（<b>不會跳過任何審查階段</b>，點數留在平台，不會轉給對方）<br>
+      <span style="color:var(--ink)">申請人的第一階段完整回答一律免費開放給收件人閱讀——對方既然已經送出申請，就應該被看見；
+      付費項目只用在額外的分析與服務，不是用來「談戀愛的門票」。</span><br>
+      若你付費送出的申請，對方超過 <span id="clinicRefundDays">14</span> 天未處理，可以在「我送出的申請」退回這筆費用。
     </p>
     <div class="bar" id="topupBar"></div>
     <p class="hint" id="clinicMsg" style="margin-top:8px"></p>
@@ -600,15 +596,15 @@
   <fieldset>
     <legend>關於診療點數</legend>
     <p>新加入贈送 <span id="howFreeCredits">5</span> 點；完成登記並通過照片審核，再贈 5 點。</p>
-    <p><b>申請方</b>：送出一份認養申請需要 <span id="howApplyCost">1</span> 點掛號費。</p>
-    <p><b>收件方（皆為選用，不付費也能完整使用流程）</b>：發出第二階段問卷 2 點、請主治獸醫評估一位申請人
-    需要 <span id="howVetCost">1</span> 點診療費、請主治獸醫客製第二階段問題（進階診斷）3 點、
-    通過三階段審查後解鎖對方的日常觀察資訊 3 點。</p>
-    <p class="hint"><b>申請人的完整回答一律免費開放給收件方閱讀。</b>對方既然已經付了掛號費，就應該被看見；付費項目只用在額外的分析與服務。</p>
-    <p class="hint">收費不是門檻，而是節奏。要付出一點成本，大家才會挑真正想認識的人申請，收到申請的人也才有辦法認真讀完每一份。</p>
-    <p class="hint">若對方超過 14 天沒有處理你的申請，可以在「我送出的申請」自行退回掛號費。</p>
-    <p class="hint">「快速邀請」開放後，登記人接受邀請可獲得 10 點獎勵，但這 10 點限定用在「請主治獸醫評估」或
-    「進階診斷」，不能拿去付掛號費、出題費或解鎖費，也不能轉讓給其他帳號，限 14 天內用完，逾期會自動收回。</p>
+    <p><b>免費的是「建立關係」</b>：建立病歷卡、瀏覽會員、每 7 天內前 <span id="howFreeApplyQuota">3</span> 筆
+    認養申請、回答問題、聊天、通過三階段審查後解鎖對方的日常觀察資訊，完全不用花點數。</p>
+    <p><b>收費的是「效率與 AI」</b>：超過每週免費次數後多送一筆申請 <span id="howApplyCost">1</span> 點、
+    發出第二階段問卷 2 點、請主治獸醫評估一位申請人需要 <span id="howVetCost">1</span> 點診療費、
+    請主治獸醫客製第二階段問題（進階診斷）3 點、AI 生成一句主治獸醫備註 1 點、
+    送一封優先邀請信讓申請被優先考慮 3 點（不會跳過任何審查階段）。</p>
+    <p class="hint"><b>申請人的完整回答一律免費開放給收件方閱讀。</b>對方既然已經送出申請，就應該被看見；付費項目只用在額外的分析與服務，不是談戀愛的門票。</p>
+    <p class="hint">不想讓使用者以為要花錢才能開始認識人，所以核心流程盡量免費；點數只用在真的能節省時間、提供額外分析的地方。</p>
+    <p class="hint">若你付費送出的申請，對方超過 14 天沒有處理，可以在「我送出的申請」自行退回這筆費用。</p>
   </fieldset>
   <fieldset>
     <legend>照片與身分規則</legend>
@@ -672,7 +668,7 @@
     你可以隨時查詢、更正或刪除自己的資料。<br>
     ・修改：到「我的登記」直接編輯<br>
     ・刪除：到「我的登記」按「刪除我的所有資料」，將移除登記、照片、申請紀錄與點數紀錄，且無法復原<br>
-    ・其他請求：來信 <a href="mailto:arink393@gmail.com">arink393@gmail.com</a></p>
+    ・其他請求：來信 <a href="mailto:warmsun.shelter@gmail.com">warmsun.shelter@gmail.com</a></p>
 
     <p><b>六、我們不做的事</b><br>
     ・不會將你的資料販售或提供給廣告商<br>
@@ -748,7 +744,7 @@
     ・因不可歸責於本平台之事由（系統維護、第三方服務中斷、天災等）造成的暫時中斷，本平台將盡速修復，不另負賠償責任。</p>
 
     <p><b>十一、爭議處理</b><br>
-    ・有任何問題請先來信 <a href="mailto:arink393@gmail.com">arink393@gmail.com</a>，本平台將於 3 個工作日內回覆。<br>
+    ・有任何問題請先來信 <a href="mailto:warmsun.shelter@gmail.com">warmsun.shelter@gmail.com</a>，本平台將於 3 個工作日內回覆。<br>
     ・消費爭議得依消費者保護法申訴、申請調解。<br>
     ・因本服務所生訴訟，<span class="hint">雙方合意管轄法院尚未填寫——正式上線前請自行確認營業所在地並補上，例如「台灣台北地方法院」</span>，
     但不排除消費者保護法第 47 條及民事訴訟法關於小額訴訟管轄之適用。</p>
@@ -774,7 +770,7 @@
     2. 贈送的點數　3. 因違反服務條款遭停權或終止帳號　4. 對配對結果不滿意（本平台提供的是服務本身，不保證結果）</p>
 
     <p><b>四、退費方式與時間</b><br>
-    ・請來信 <a href="mailto:arink393@gmail.com">arink393@gmail.com</a>，載明帳號、購買日期與退費原因。<br>
+    ・請來信 <a href="mailto:warmsun.shelter@gmail.com">warmsun.shelter@gmail.com</a>，載明帳號、購買日期與退費原因。<br>
     ・本平台將於收到申請後 <b>7 個工作日內</b>確認，並於確認後 <b>30 日內</b>退還。<br>
     ・退款一律<b>原路退回原付款方式</b>。若原管道無法退款，將以雙方同意的方式辦理。<br>
     ・金流商可能收取的手續費由本平台負擔，不從退款金額中扣除。</p>
@@ -850,14 +846,21 @@ const DEFAULT_Q2 = [
   '你認為自己的缺點是什麼？'
 ];
 
-const APPLY_COST = 1;      /* 送出申請的掛號費 */
+const APPLY_COST = 1;      /* 超過每週免費申請次數後，額外一筆的掛號費 */
+const FREE_APPLY_QUOTA = 3;  /* 每 7 天內免費送出申請的次數（實際次數以資料庫 apply_to 為準） */
 const VET_COST = 1;        /* 主治獸醫評估的診療費 */
 const DEEP_COST = 3;       /* 進階診斷：AI 客製第二階段問題（實際收費以資料庫 spend_credits_for 為準） */
-const UNLOCK_STAGE3_COST = 3; /* 申請人解鎖對方的日常觀察資訊（實際收費以資料庫 unlock_stage3 為準） */
 const STAGE2_COST = 2;     /* 發出第二階段問卷（實際收費以資料庫 send_stage2 為準） */
-const SKIP_COST = 10;      /* 雙方同意快速邀請：接受後才扣點，限14天內用完 */
+const PRIORITY_INVITE_COST = 3;  /* 優先邀請（取代舊版快速邀請）：不跳過審查，只是讓申請被優先考慮 */
 const REFUND_DAYS = 14;    /* 對方超過幾天未處理可退點 */
 const PHOTO_BONUS = 5;     /* 照片審核通過＋資料填妥的獎勵點數 */
+/* 這週還剩幾筆免費申請額度（跟資料庫 apply_to 的「過去 7 天」滾動視窗算法一致）；
+   純粹用來讓畫面上的文字／按鈕即時反映對不對得上，真正扣不扣點還是伺服器說了算。 */
+function freeApplyRemaining(){
+  const weekAgo = Date.now() - 7*24*60*60*1000;
+  const recentCount = apps.filter(a => a.from_user === (me && me.id) && new Date(a.created_at).getTime() > weekAgo).length;
+  return Math.max(0, FREE_APPLY_QUOTA - recentCount);
+}
 const PACKS = [
   {n:1,  price:30,  label:'單次診療'},
   {n:5,  price:120, label:'五次回診包'},
@@ -914,7 +917,7 @@ function setCheckGroup(containerId, values){
 }
 
 let me = null, myProfile = null, profiles = [], apps = [], templateMaster = [];
-const OWNER_EMAIL = 'arink393@gmail.com';
+const OWNER_EMAIL = 'warmsun.shelter@gmail.com';
 const PROTECTED_TABS = ['board', 'center', 'admin'];
 const PENDING_TAB_KEY = 'warmsun.pendingTab';
 let pendingTab = (() => {
@@ -1084,7 +1087,7 @@ function showSub(k){
   if(k === 'tpl') renderTpl();
   if(k === 'clinic') renderClinic();
 }
-/* 私人工具連結：只有站長本人（arink393@gmail.com）看得到 */
+/* 私人工具連結：只有站長本人（warmsun.shelter@gmail.com）看得到 */
 function showMyLinks(){
   let box = $('ownerToolBox');
   const isOwner = me && (me.email || '').toLowerCase() === OWNER_EMAIL;
@@ -1154,7 +1157,6 @@ async function fillMe(){
   mReqKids.value = myProfile.req_kids||'';
   setCheckGroup('mReqHabits', myProfile.req_habits);
   mConsent.checked = !!myProfile.consent;
-  mAllowSkip.checked = !!myProfile.allow_skip;
   if(myProfile.photo_status !== 'none') $('mPhoto').src = DB.avatarUrl(me.id, myProfile.updated_at);
   if(myProfile.verify_status !== 'none' && myProfile.verify_status !== 'approved'){
     try{ $('mVerify').src = await DB.getVerifySignedUrl(me.id); }catch(e){}
@@ -1273,7 +1275,6 @@ $('mSave').onclick = async () => {
       habits: getCheckGroup('mHabits'), habits_other: mHabitsOther.value.trim(),
       req_marital: mReqMarital.value, req_age_min: mReqAgeMin.value.trim(), req_age_max: mReqAgeMax.value.trim(),
       req_kids: mReqKids.value, req_habits: getCheckGroup('mReqHabits'),
-      allow_skip: $('mAllowSkip').checked,
       consent: true
     };
     if(!myProfile.consent) patch.consent_at = new Date().toISOString();
@@ -1558,7 +1559,7 @@ async function renderBoard(){
         !myProfile || !myProfile.kind ? '<span class="hint">請先完成自己的登記</span>'
         : !isApproved(myProfile) ? '<span class="hint">你的照片尚未通過審核，暫時無法提出申請</span>'
         : app ? `<span class="stage s${app.status==='rejected'?0:app.stage}">目前：${stageText(app)}</span>`
-        : `<button class="ghost apply" data-id="${p.id}">提出認養申請（${APPLY_COST} 點）</button>`}
+        : `<button class="ghost apply" data-id="${p.id}">提出認養申請${freeApplyRemaining() > 0 ? '（免費）' : `（${APPLY_COST} 點）`}</button>`}
       </div>
       <div class="bar" style="margin-top:4px">
         <button class="ghost report" data-id="${p.id}" style="font-size:11px;padding:3px 8px">⚑ 檢舉</button>
@@ -1662,7 +1663,8 @@ function openApply(toId){
         一、你在這份申請表填寫的內容，<b>只有 ${esc(to.name)} 本人看得到</b>，其他會員與訪客都看不到。<br>
         二、你送出後對方就能直接讀到完整回答，不需要對方另外付費調閱。<br>
         三、你的回答會存進<b>你自己的「我的答題紀錄」</b>，方便下次遇到相似題目時直接沿用。這份紀錄只有你看得到，隨時可以刪除。<br>
-        四、送出後會扣除 ${APPLY_COST} 點掛號費。若對方超過 ${REFUND_DAYS} 天未處理，你可以自行退回掛號費。<br>
+        四、${freeApplyRemaining() > 0 ? '每 7 天內前 ' + FREE_APPLY_QUOTA + ' 筆申請免費，這是你這週的第 ' + (FREE_APPLY_QUOTA - freeApplyRemaining() + 1) + ' 筆。'
+          : '你這 7 天內的免費申請次數已經用完，送出後會扣除 ' + APPLY_COST + ' 點。若對方超過 ' + REFUND_DAYS + ' 天未處理，你可以自行退回。'}<br>
         五、任何階段你都可以直接停止，不需要理由。<br>
         六、完整規範請見「<a href="#" data-goto="privacy">隱私權政策</a>」。
       </div>
@@ -1688,7 +1690,9 @@ function showApplyForm(box, toId, to, q1){
   box.innerHTML = `
     <fieldset><legend>向 ${esc(to.name)} 提出認養申請</legend>
       <p class="hint">第一階段書面審查。對方會讀到你的回答，決定是否進入第二階段。</p>
-      <p class="hint">送出需要 <b>${APPLY_COST} 點掛號費</b>，目前餘額 ${myProfile ? myProfile.credits : 0} 點。</p>
+      <p class="hint">${freeApplyRemaining() > 0
+        ? `這是你這 7 天內第 ${FREE_APPLY_QUOTA - freeApplyRemaining() + 1} 筆申請，<b>免費</b>。`
+        : `你這 7 天內的免費申請次數已經用完，送出需要 <b>${APPLY_COST} 點掛號費</b>，目前餘額 ${myProfile ? myProfile.credits : 0} 點。`}</p>
       ${q1.map((q,i) => questionBlock(q, i, 'a1q')).join('')}
       <div class="bar"><button id="sendApply">下一步：領養切結書</button>
         <button class="ghost" id="cancelApply2">取消</button><span class="msg" id="applyMsg"></span></div>
@@ -1699,7 +1703,7 @@ function showApplyForm(box, toId, to, q1){
     const ans = [...box.querySelectorAll('.a1q')].map(t => t.value.trim());
     if(ans.some(a => !a)){ flash('applyMsg','每一題都要回答'); return; }
     if(!isApproved(myProfile)){ flash('applyMsg','你的照片尚未通過審核，無法提出申請'); return; }
-    if((myProfile.credits||0) < APPLY_COST){ flash('applyMsg','掛號費不足，請到「診療室」查看加值方式'); return; }
+    if(freeApplyRemaining() <= 0 && (myProfile.credits||0) < APPLY_COST){ flash('applyMsg','掛號費不足，請到「診療室」查看加值方式'); return; }
     showAdoptionPledge(box, toId, to, q1, ans);
   };
 }
@@ -1731,7 +1735,7 @@ function showAdoptionPledge(box, toId, to, q1, ans){
         <div><label>獸醫核章</label><input value="🩺 暖陽動物之家 系統核章" disabled></div>
       </div>
       <div class="bar">
-        <button id="sendApplyFinal">簽署並送出申請（${APPLY_COST} 點）</button>
+        <button id="sendApplyFinal">簽署並送出申請${freeApplyRemaining() > 0 ? '（免費）' : `（${APPLY_COST} 點）`}</button>
         <button class="ghost" id="backApply">上一步</button>
         <span class="msg" id="applyMsg"></span>
       </div>
@@ -1739,7 +1743,8 @@ function showAdoptionPledge(box, toId, to, q1, ans){
   $('backApply').onclick = () => showApplyForm(box, toId, to, q1);
   $('sendApplyFinal').onclick = async () => {
     if(!$('pledgeSigner').value.trim()){ flash('applyMsg','請在「認養人」欄位簽下你的暱稱'); return; }
-    if(!confirm(`送出這份申請會扣 ${APPLY_COST} 點掛號費，確定嗎？`)) return;
+    if(!confirm(freeApplyRemaining() > 0 ? '確定送出這份申請嗎？（這是這 7 天內的免費額度，不會扣點）'
+      : `送出這份申請會扣 ${APPLY_COST} 點掛號費，確定嗎？`)) return;
     try{
       const app = await DB.applyTo(toId, ans, q1);
       myProfile = await DB.getMyProfile();
@@ -1771,15 +1776,16 @@ async function renderOutbox(){
                + q2.map((q,i) => questionBlock(q, i, 'a2q-' + a.id)).join('')
                + `<div class="bar"><button class="sendQ2" data-app="${a.id}" data-n="${q2.length}">送出回答</button></div></div>` : ''}
       ${a.stage === 3 && !a.unlock_from ? `<div class="notice">
-          🔔 恭喜通過三階段審查！付 ${UNLOCK_STAGE3_COST} 點可以解鎖 ${esc(to.name)} 的日常觀察資訊。
-          <div class="bar"><button class="ghost unlock" data-app="${a.id}">解鎖對方的日常觀察資訊（${UNLOCK_STAGE3_COST} 點）</button></div>
+          🔔 恭喜通過三階段審查！可以免費解鎖 ${esc(to.name)} 的日常觀察資訊。
+          <div class="bar"><button class="ghost unlock" data-app="${a.id}">解鎖對方的日常觀察資訊（免費）</button></div>
         </div>` : ''}
       ${a.stage === 3 && a.unlock_from && !a.unlock_to ? `<p class="hint">已解鎖你這邊，等待對方同意解鎖。</p>` : ''}
-      ${(to.allow_skip && a.status === 'open' && a.stage < 3 && !a.skipped) ? `<div class="notice">
-          ⚡ ${esc(to.name)} 開放「快速邀請」。送出邀請不扣點；對方接受後才扣 ${SKIP_COST} 點並完成快速解鎖。
-          <div class="bar">${a.fast_invite_from
-            ? '<span class="hint">邀請已送出，等待對方決定。</span>'
-            : `<button class="ghost fastInvite" data-app="${a.id}">送出快速邀請</button>`}</div>
+      ${(a.status === 'open' && a.stage < 3) ? `<div class="notice">
+          ⭐ 想讓 ${esc(to.name)} 優先考慮這筆申請嗎？付 ${PRIORITY_INVITE_COST} 點可以附上一封最多 300 字的邀請信，
+          在對方收件匣多一個優先標記——<b>不會跳過任何審查階段</b>，對方一樣要走完三階段審查。
+          <div class="bar">${a.priority_invite
+            ? '<span class="hint">已送出優先邀請，等待對方查看。</span>'
+            : `<button class="ghost priorityInvite" data-app="${a.id}">送出優先邀請（${PRIORITY_INVITE_COST} 點）</button>`}</div>
         </div>` : ''}
       ${(a.stage >= 2 && to.stage1_photo) ? `<div style="margin-top:10px">
           <p class="hint" style="margin-bottom:4px">🎁 第一階段加碼照片</p>
@@ -1839,21 +1845,22 @@ function bindOutbox(){
   });
   $('outbox').querySelectorAll('.unlock').forEach(b => b.onclick = async () => {
     const a = apps.find(x => x.id === b.dataset.app);
-    if((myProfile.credits||0) < UNLOCK_STAGE3_COST){ alert('點數不足，請到「診療室」查看加值方式。'); return; }
-    if(!confirm(`解鎖對方的日常觀察資訊會扣 ${UNLOCK_STAGE3_COST} 點，確定嗎？`)) return;
+    if(!confirm('解鎖對方的日常觀察資訊是免費的，確定要解鎖嗎？')) return;
     try{
       const updated = await DB.unlockStage3(a.id);
       Object.assign(a, updated);
-      myProfile = await DB.getMyProfile();
       renderOutbox(); renderBoard();
     }catch(e){ alert(e.message || '操作失敗'); }
   });
-  $('outbox').querySelectorAll('.fastInvite').forEach(b => b.onclick = async () => {
+  $('outbox').querySelectorAll('.priorityInvite').forEach(b => b.onclick = async () => {
     const a = apps.find(x => x.id === b.dataset.app);
-    if((myProfile.credits||0) < SKIP_COST){ alert('點數不足，請到「診療室」查看加值方式。'); return; }
-    if(!confirm(`送出邀請現在不扣點；只有對方接受後才會扣 ${SKIP_COST} 點並快速解鎖。確定送出？`)) return;
+    if((myProfile.credits||0) < PRIORITY_INVITE_COST){ alert('點數不足，請到「診療室」查看加值方式。'); return; }
+    const note = prompt('寫一封最多 300 字的優先邀請信（選填，可以留空）：');
+    if(note === null) return;
+    if(note.length > 300){ alert('邀請信請控制在 300 字以內'); return; }
+    if(!confirm(`送出優先邀請會扣 ${PRIORITY_INVITE_COST} 點，不會跳過任何審查階段。確定送出？`)) return;
     try{
-      const updated = await DB.requestFastTrack(a.id);
+      const updated = await DB.sendPriorityInvite(a.id, note);
       Object.assign(a, updated);
       myProfile = await DB.getMyProfile();
       renderOutbox(); renderBoard();
@@ -1886,10 +1893,9 @@ async function renderInbox(){
         ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1)
         : `<p class="hint" style="margin-top:12px">這位申請人的第一階段回答還沒有讀到，請重新整理頁面看看。</p>`}
       ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
-      ${a.fast_invite_from && !a.fast_invite_to && a.status === 'open' && a.stage < 3 ? `<div class="notice">
-        對方送來快速邀請。只有你按下接受後，才會扣對方 ${SKIP_COST} 點並快速解鎖，這 ${SKIP_COST} 點會進到你的帳號、
-        限定用在「請主治獸醫評估」或「進階診斷」；你也可以不接受，繼續正常審查。
-        <div class="bar"><button class="ghost acceptFastInvite" data-app="${a.id}">接受快速邀請</button></div>
+      ${a.priority_invite ? `<div class="notice">
+        ⭐ 對方付點數送了一封優先邀請信，希望你優先考慮這筆申請（不影響審查流程，你一樣可以照原本的節奏處理）：
+        ${a.priority_note ? `<div class="lock" style="margin-top:6px">${esc(a.priority_note)}</div>` : ''}
       </div>` : ''}
       ${a.stage >= 2 && a.status === 'open' ? `<div class="bar"><button class="ghost openChat" data-app="${a.id}" data-name="${esc(from.name)}">開啟第二階段對話</button></div>` : ''}
       <div class="bar">
@@ -1965,12 +1971,6 @@ function bindInbox(){
   $('inbox').querySelectorAll('.deep').forEach(b => b.onclick = () => {
     const a = apps.find(x => x.id === b.dataset.app);
     deepReview(a, inboxFromProfiles[a.from_user] || {name:'申請人'});
-  });
-  $('inbox').querySelectorAll('.acceptFastInvite').forEach(b => b.onclick = async () => {
-    if(!confirm('接受後會從對方帳號扣 10 點，並讓雙方快速解鎖。這 10 點會進到你的帳號，限定用在「請主治獸醫評估」或「進階診斷」，14 天內要花完。確定接受？')) return;
-    const a = apps.find(x => x.id === b.dataset.app);
-    try{ const updated = await DB.acceptFastTrack(a.id); Object.assign(a, updated); renderInbox(); renderBoard(); }
-    catch(e){ alert(e.message || '操作失敗'); }
   });
   $('inbox').querySelectorAll('.openChat').forEach(b => b.onclick = () => openChat(b.dataset.app, b.dataset.name));
 }
@@ -2516,18 +2516,18 @@ function renderStage3Notice(){
   if(badge) badge.textContent = pending.length ? `我的申請 🔔${pending.length}` : '我的申請';
   if(!pending.length){ $('stage3Notice').innerHTML = ''; return; }
   $('stage3Notice').innerHTML = `<div class="notice">
-    🔔 你有 ${pending.length} 筆申請已經通過三階段審查，付 ${UNLOCK_STAGE3_COST} 點就能解鎖對方的日常觀察資訊。
+    🔔 你有 ${pending.length} 筆申請已經通過三階段審查，可以免費解鎖對方的日常觀察資訊。
     <a href="#" id="stage3NoticeGo">前往「個人中心 → 我的申請」查看</a>
   </div>`;
   $('stage3NoticeGo').onclick = (e) => { e.preventDefault(); gotoTab('center'); showSub('out'); };
 }
 
 ['clinicApplyCost','howApplyCost'].forEach(id => $(id).textContent = APPLY_COST);
+['clinicFreeApplyQuota','clinicFreeApplyQuota2','howFreeApplyQuota'].forEach(id => $(id).textContent = FREE_APPLY_QUOTA);
 ['clinicVetCost','howVetCost'].forEach(id => $(id).textContent = VET_COST);
 $('clinicDeepCost').textContent = DEEP_COST;
 $('clinicStage2Cost').textContent = STAGE2_COST;
-$('clinicStage3Cost').textContent = UNLOCK_STAGE3_COST;
-['clinicSkipCost','clinicSkipCost2'].forEach(id => $(id).textContent = SKIP_COST);
+$('clinicSkipCost').textContent = PRIORITY_INVITE_COST;
 $('clinicRefundDays').textContent = REFUND_DAYS;
 $('howFreeCredits').textContent = 5;
 $('howPhotoBonus').textContent = PHOTO_BONUS;

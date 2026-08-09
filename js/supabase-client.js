@@ -287,14 +287,10 @@
     if (error) throw error;
     return data;
   }
-  // 快速邀請：申請人先邀請，不扣點；收件方接受後才完成扣點與解鎖。
-  async function requestFastTrack(appId) {
-    const { data, error } = await sb.rpc('request_fast_track', { p_app_id: appId });
-    if (error) throw error;
-    return data;
-  }
-  async function acceptFastTrack(appId) {
-    const { data, error } = await sb.rpc('accept_fast_track', { p_app_id: appId });
+  // 優先邀請（取代舊版快速邀請）：付點數讓申請在對方收件匣被優先考慮，附一封短邀請信，
+  // 不會跳過任何審查階段，點數留在平台、不轉給任何一方。
+  async function sendPriorityInvite(appId, note) {
+    const { data, error } = await sb.rpc('send_priority_invite', { p_app_id: appId, p_note: note || '' });
     if (error) throw error;
     return data;
   }
@@ -466,7 +462,7 @@
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
     applyTo, refundApplication, adminAddCredits,
     sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
-    requestFastTrack, acceptFastTrack, settleBonusCredits,
+    sendPriorityInvite, settleBonusCredits,
     getPrivateNote, savePrivateNote,
     hasClaudeProxy, askClaude, askClaudeRaw, spendCreditFor,
     avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto,

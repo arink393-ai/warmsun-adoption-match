@@ -432,10 +432,9 @@ async function renderRoster(){
         ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1)
         : `<p class="hint" style="margin-top:12px">這位申請人的第一階段回答還沒有讀到，請重新整理頁面看看。</p>`}
       ${a.a2 ? '<h4 style="margin:12px 0 4px;font-size:13px">第二階段回答</h4>' + qa(q2, a.a2) : ''}
-      ${a.fast_invite_from && !a.fast_invite_to && a.status === 'open' && a.stage < 3 ? `<div class="notice" style="margin-top:12px">
-        對方送來快速邀請；只有你接受後才會扣對方 10 點並快速解鎖，這 10 點會進到你的帳號、限定用在
-        「請主治獸醫評估」或「進階診斷」。你也可以繼續正常審查。
-        <div class="bar"><button class="ghost acceptFastInvite" data-app="${a.id}">接受快速邀請</button></div>
+      ${a.priority_invite ? `<div class="notice" style="margin-top:12px">
+        ⭐ 對方付點數送了一封優先邀請信，希望你優先考慮這筆申請（不影響審查流程，你一樣可以照原本的節奏處理）：
+        ${a.priority_note ? `<div class="hint" style="margin-top:6px">${esc(a.priority_note)}</div>` : ''}
       </div>` : ''}
       <div class="bar">
         ${a.status==='open' && a.stage===1 && a.a1 ? `
@@ -486,11 +485,6 @@ function bindRoster(){
   });
   $('roster').querySelectorAll('.unlockTo').forEach(b => b.onclick = async () => {
     try{ await DB.consentUnlockTo(b.dataset.app); await renderRoster(); }catch(e){ alert(e.message||'操作失敗'); }
-  });
-  $('roster').querySelectorAll('.acceptFastInvite').forEach(b => b.onclick = async () => {
-    if(!confirm('接受後會從對方帳號扣 10 點，並讓雙方快速解鎖。這 10 點會進到你的帳號，限定用在「請主治獸醫評估」或「進階診斷」，14 天內要花完。確定接受？')) return;
-    try{ await DB.acceptFastTrack(b.dataset.app); myProfile = await DB.getMyProfile(); await renderRoster(); }
-    catch(e){ alert(e.message || '操作失敗'); }
   });
   $('roster').querySelectorAll('.aiJudge').forEach(b => {
     if(!DB.hasClaudeProxy()){

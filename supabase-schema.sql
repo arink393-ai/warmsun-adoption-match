@@ -168,11 +168,10 @@ alter table public.match_profiles add column if not exists stage2_photo boolean 
 -- 用來在 14 天內沒花完時收回，一併鎖進下面的 guard trigger，不能自己改。
 alter table public.match_profiles add column if not exists allow_skip boolean not null default false;
 alter table public.match_profiles add column if not exists bonus_credits jsonb not null default '[]'::jsonb;
--- restricted_credits：一鍵通關獎勵點數不得轉讓，只能用在主治獸醫評估／進階診斷，
--- 不能拿去付掛號費、出題費、解鎖費或再送一次快速邀請。這欄記錄「目前餘額裡有多少
--- 是這種限定用途的點數」，花在允許的項目上會跟著扣，花在其他項目時會被排除在
--- 可用餘額之外（見 spend_credits_for／apply_to／send_stage2／unlock_stage3／
--- request_fast_track／accept_fast_track 裡「可用餘額 = credits - restricted_credits」的檢查）。
+-- restricted_credits：舊版「快速邀請」曾經發過不得轉讓、只能用在主治獸醫評估／進階診斷的
+-- 限定用途獎勵點數，這欄記錄「目前餘額裡有多少是這種限定用途的點數」。快速邀請本身已經
+-- 改版成不發獎勵的「優先邀請」（見 send_priority_invite），不會再有新的限定點數發出，
+-- 但既有帳號可能還留著舊的沒花完，這裡繼續保留檢查邏輯讓它自然過期收回，不用特別清資料。
 alter table public.match_profiles add column if not exists restricted_credits int not null default 0;
 alter table public.match_profiles drop constraint if exists match_profiles_restricted_credits_check;
 alter table public.match_profiles add constraint match_profiles_restricted_credits_check
@@ -330,10 +329,15 @@ alter table public.applications add column if not exists paid int not null defau
 alter table public.applications add column if not exists refunded boolean not null default false;
 alter table public.applications add column if not exists vet_scores jsonb;
 alter table public.applications add column if not exists vet_stage int;
--- 一鍵通關：跳過三階段審核直接解鎖時標記，讓畫面知道這筆沒有真的作答
+-- 一鍵通關／快速邀請（舊機制，已停用）留下的欄位：不再由任何函式寫入，純粹保留舊資料，
+-- 避免砍欄位動到既有申請紀錄。新機制見下面的 priority_invite／priority_note。
 alter table public.applications add column if not exists skipped boolean not null default false;
 alter table public.applications add column if not exists fast_invite_from boolean not null default false;
 alter table public.applications add column if not exists fast_invite_to boolean not null default false;
+-- 優先邀請（取代快速邀請）：不會跳過任何審查階段，純粹在收件匣多一個「優先考慮」標記
+-- 跟一封最多 300 字的邀請信，讓收件人自己決定要不要提早看。
+alter table public.applications add column if not exists priority_invite boolean not null default false;
+alter table public.applications add column if not exists priority_note text not null default '';
 
 alter table public.applications enable row level security;
 
@@ -1061,6 +1065,8 @@ begin
     new.skipped     := old.skipped;
     new.fast_invite_from := old.fast_invite_from;
     new.fast_invite_to := old.fast_invite_to;
+    new.priority_invite := old.priority_invite;
+    new.priority_note := old.priority_note;
   end if;
   return new;
 end $$;
@@ -1092,12 +1098,17 @@ $$;
 -- 提出申請（取代第 9 節的舊版 apply_to）：
 -- 扣掛號費＋建立申請＋寫入受保護的答案表＋記錄隱私權同意＋存進答題紀錄，全部同一個交易。
 drop function if exists public.apply_to(uuid, jsonb);
+-- 新的點數哲學：免費的是「建立關係」，收費的是「效率與 AI」。掛號費從此不再是每一筆
+-- 都收，改成每 7 天內前 3 筆免費，超過的部分才收 1 點——多數人正常使用完全不用花錢，
+-- 收費只在真的想大量灌申請時才會碰到。
 create or replace function public.apply_to(p_to uuid, p_answers jsonb, p_questions jsonb default '[]'::jsonb)
 returns public.applications
 language plpgsql security definer set search_path = public as $$
 declare
-  v_cost constant int := 1;   -- 掛號費，價格由伺服器決定
-  v_bal int; v_app public.applications; v_entries jsonb;
+  v_free_quota constant int := 3;   -- 每 7 天內免費申請次數
+  v_extra_cost constant int := 1;   -- 超過免費次數之後，每筆額外收費
+  v_cost int := 0;
+  v_recent_count int; v_bal int; v_app public.applications; v_entries jsonb;
 begin
   perform public.settle_bonus_credits(auth.uid());
   if not exists (select 1 from public.match_profiles where id = auth.uid()
@@ -1119,10 +1130,17 @@ begin
     raise exception '已經申請過了';
   end if;
 
-  select credits - coalesce(restricted_credits, 0) into v_bal
-    from public.match_profiles where id = auth.uid() for update;
-  if v_bal is null or v_bal < v_cost then
-    raise exception '掛號費不足（一鍵通關的限定用途獎勵點數不能用來付掛號費）';
+  select count(*) into v_recent_count from public.applications
+    where from_user = auth.uid() and created_at > now() - interval '7 days';
+  if v_recent_count >= v_free_quota then
+    v_cost := v_extra_cost;
+    select credits - coalesce(restricted_credits, 0) into v_bal
+      from public.match_profiles where id = auth.uid() for update;
+    if v_bal is null or v_bal < v_cost then
+      raise exception '本週 % 次免費申請已經用完，多送一筆需要 % 點，且點數不足（一鍵通關的限定用途獎勵點數不能用來付這筆費用）', v_free_quota, v_cost;
+    end if;
+  else
+    perform 1 from public.match_profiles where id = auth.uid() for update;
   end if;
 
   insert into public.applications(from_user, to_user, stage, status, paid, consent_at)
@@ -1143,7 +1161,9 @@ begin
   update public.match_profiles set
     credits = credits - v_cost,
     answer_bank = public.answer_bank_merge(answer_bank, coalesce(v_entries,'[]'::jsonb)),
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '掛號　向 ' || (select name from public.match_profiles where id = p_to) || ' 提出申請', 'd', -v_cost))
+    credit_log = case when v_cost > 0 then public.credit_log_prepend(credit_log, jsonb_build_object(
+        'at', now(), 't', '掛號　超過本週免費次數，向 ' || (select name from public.match_profiles where id = p_to) || ' 提出申請', 'd', -v_cost))
+      else credit_log end
   where id = auth.uid();
   perform set_config('app.bypass_profile_guard', '', true);
 
@@ -1245,36 +1265,22 @@ end $$;
 -- 第三階段：申請人付 3 點解鎖對方的日常觀察資訊。
 -- 收件方那邊仍然要自己免費按「同意解鎖」（見下面 consent_unlock_to），
 -- 兩邊都解鎖了才會互相看到——維持原本互相同意的精神，只是申請人這邊多一道付費關卡。
+-- 解鎖聯絡方式改成免費（新的點數哲學：免費的是「建立關係」，收費的是「效率與 AI」）。
+-- 函式名稱保留 unlock_stage3，前端呼叫的地方不用跟著改。
 create or replace function public.unlock_stage3(p_app_id uuid)
 returns public.applications
 language plpgsql security definer set search_path = public as $$
-declare
-  v_cost constant int := 3;
-  v_app public.applications; v_bal int;
+declare v_app public.applications;
 begin
-  perform public.settle_bonus_credits(auth.uid());
   select * into v_app from public.applications where id = p_app_id for update;
   if v_app is null then raise exception '找不到這筆申請'; end if;
   if v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
   if v_app.stage <> 3 then raise exception '這筆申請還沒進入第三階段'; end if;
-  if v_app.unlock_from then return v_app; end if;   -- 已解鎖就不再收費
-
-  select credits - coalesce(restricted_credits, 0) into v_bal
-    from public.match_profiles where id = auth.uid() for update;
-  if v_bal is null or v_bal < v_cost then
-    raise exception '點數不足（一鍵通關的限定用途獎勵點數不能用來付解鎖費）';
-  end if;
+  if v_app.unlock_from then return v_app; end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
   update public.applications set unlock_from = true where id = p_app_id returning * into v_app;
   perform set_config('app.bypass_app_guard', '', true);
-
-  perform set_config('app.bypass_profile_guard', 'on', true);
-  update public.match_profiles set
-    credits = credits - v_cost,
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '解鎖　對方的日常觀察資訊', 'd', -v_cost))
-  where id = auth.uid();
-  perform set_config('app.bypass_profile_guard', '', true);
 
   return v_app;
 end $$;
@@ -1354,79 +1360,50 @@ begin
   raise exception '一鍵通關已停用，請改用雙方同意的快速邀請';
 end $$;
 
--- 申請人先送出快速邀請，不扣點、不解鎖。
-create or replace function public.request_fast_track(p_app_id uuid)
-returns public.applications
-language plpgsql security definer set search_path = public as $$
-declare v_app public.applications; v_owner public.match_profiles; v_bal int;
-begin
-  select * into v_app from public.applications where id = p_app_id for update;
-  if v_app is null or v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
-  if v_app.status <> 'open' or v_app.stage >= 3 then raise exception '目前階段不能送快速邀請'; end if;
-  select * into v_owner from public.match_profiles where id = v_app.to_user;
-  if v_owner is null or not coalesce(v_owner.allow_skip, false) then raise exception '對方沒有開放快速邀請'; end if;
-  select credits - coalesce(restricted_credits, 0) into v_bal from public.match_profiles where id = auth.uid();
-  if coalesce(v_bal,0) < 10 then
-    raise exception '點數不足；對方接受時需要 10 點（一鍵通關的限定用途獎勵點數不能用來再送一次快速邀請）';
-  end if;
-  perform set_config('app.bypass_app_guard', 'on', true);
-  update public.applications set fast_invite_from = true where id = p_app_id returning * into v_app;
-  perform set_config('app.bypass_app_guard', '', true);
-  return v_app;
-end $$;
+-- 舊版「快速邀請」（付點數直接跳過三階段審查）已經整個停用：課金插隊跟「慎重不是門檻，
+-- 而是尊重」的品牌精神直接衝突，而且點數進到對方帳號，觀感上太接近「花錢買關注」。
+-- 改成「優先邀請」：不能跳過任何審查階段，純粹是申請人付點數讓自己的申請在對方收件匣裡
+-- 多一個「優先考慮」標記，附上一封最多 300 字的邀請信，對方看不看、要不要提早處理仍然
+-- 由對方決定；點數留在平台，不會轉給任何一方。
+drop function if exists public.request_fast_track(uuid);
+drop function if exists public.accept_fast_track(uuid);
 
--- 收件方接受後才扣申請人 10 點並快速解鎖；雙方都已明確表示同意。
-create or replace function public.accept_fast_track(p_app_id uuid)
+create or replace function public.send_priority_invite(p_app_id uuid, p_note text default '')
 returns public.applications
 language plpgsql security definer set search_path = public as $$
 declare
-  v_cost constant int := 10;
-  v_app public.applications; v_owner public.match_profiles; v_bal int;
+  v_cost constant int := 3;
+  v_app public.applications; v_bal int;
 begin
+  perform public.settle_bonus_credits(auth.uid());
   select * into v_app from public.applications where id = p_app_id for update;
-  if v_app is null then raise exception '找不到這筆申請'; end if;
-  if v_app.to_user <> auth.uid() then raise exception '這不是你收到的申請'; end if;
-  if v_app.status <> 'open' then raise exception '這筆申請已經結束了'; end if;
-  if v_app.stage >= 3 then raise exception '這筆申請已經在第三階段了'; end if;
-  if not v_app.fast_invite_from then raise exception '對方尚未送出快速邀請'; end if;
-
-  select * into v_owner from public.match_profiles where id = v_app.to_user for update;
-  if v_owner is null or not coalesce(v_owner.allow_skip, false) then
-    raise exception '你目前沒有開放快速邀請';
-  end if;
+  if v_app is null or v_app.from_user <> auth.uid() then raise exception '這不是你送出的申請'; end if;
+  if v_app.status <> 'open' or v_app.stage >= 3 then raise exception '目前階段不能送優先邀請'; end if;
+  if v_app.priority_invite then raise exception '已經送過優先邀請了'; end if;
 
   select credits - coalesce(restricted_credits, 0) into v_bal
-    from public.match_profiles where id = v_app.from_user for update;
+    from public.match_profiles where id = auth.uid() for update;
   if v_bal is null or v_bal < v_cost then
     raise exception '點數不足（一鍵通關的限定用途獎勵點數不能用來付這筆費用）';
   end if;
 
   perform set_config('app.bypass_app_guard', 'on', true);
   update public.applications set
-    stage = 3, a1_unlocked = true, stage2_paid = true,
-    unlock_from = true, unlock_to = true,
-    consent_at = coalesce(consent_at, now()),
-    skipped = true, fast_invite_to = true
+    priority_invite = true, priority_note = left(coalesce(p_note, ''), 300)
   where id = p_app_id returning * into v_app;
   perform set_config('app.bypass_app_guard', '', true);
 
   perform set_config('app.bypass_profile_guard', 'on', true);
   update public.match_profiles set
     credits = credits - v_cost,
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '快速邀請　雙方同意後快速解鎖', 'd', -v_cost))
-  where id = v_app.from_user;
-
-  update public.match_profiles set
-    credits = credits + v_cost,
-    restricted_credits = coalesce(restricted_credits, 0) + v_cost,
-    bonus_credits = coalesce(bonus_credits, '[]'::jsonb)
-      || jsonb_build_array(jsonb_build_object('amount', v_cost, 'granted_at', now(), 'expires_at', now() + interval '14 days')),
-    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '接受快速邀請　獎勵點數（限定用途：只能用在主治獸醫評估／進階診斷，14 天內要花完，不得轉讓）', 'd', v_cost))
-  where id = v_app.to_user;
+    credit_log = public.credit_log_prepend(credit_log, jsonb_build_object('at', now(), 't', '優先邀請　讓申請在對方收件匣被優先考慮', 'd', -v_cost))
+  where id = auth.uid();
   perform set_config('app.bypass_profile_guard', '', true);
 
   return v_app;
 end $$;
+revoke all on function public.send_priority_invite(uuid, text) from public, anon;
+grant execute on function public.send_priority_invite(uuid, text) to authenticated;
 
 -- 申請人送出第二階段回答（一併存進答題紀錄）
 create or replace function public.submit_stage2(p_app_id uuid, p_answers jsonb, p_questions jsonb default '[]'::jsonb)
@@ -1660,12 +1637,10 @@ revoke all on function public.match_is_admin(uuid), public.spend_credits_for(tex
   public.admin_add_credits(uuid,int,text,text), public.unlock_a1(uuid),
   public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid),
   public.consent_unlock_to(uuid), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
-  public.request_fast_track(uuid), public.accept_fast_track(uuid),
   public.submit_stage2(uuid,jsonb,jsonb) from public, anon;
 grant execute on function public.match_is_admin(uuid), public.spend_credits_for(text,text),
   public.apply_to(uuid,jsonb,jsonb), public.refund_application(uuid),
   public.admin_add_credits(uuid,int,text,text), public.unlock_a1(uuid),
   public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid),
   public.consent_unlock_to(uuid), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
-  public.request_fast_track(uuid), public.accept_fast_track(uuid),
   public.submit_stage2(uuid,jsonb,jsonb) to authenticated;

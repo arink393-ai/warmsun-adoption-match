@@ -17,7 +17,7 @@
   - **待認養**（被追求的一方）：收件審查（通過／婉拒／解鎖）、自訂第一階段題目、
     第二階段價值觀題庫（十類 48 題可勾選）、罐頭回覆庫、AI 建議評分（免費、不扣點）。
   - **飼主**（提出申請的一方）：送出的申請進度、私人筆記、回答小抄。
-- `shelter-review-assistant.html` — **私人工具**，只綁定站長本人的會員帳號（`arink393@gmail.com`），
+- `shelter-review-assistant.html` — **私人工具**，只綁定站長本人的會員帳號（`warmsun.shelter@gmail.com`），
   跟平台的多人資料模型完全分開（不使用 `profiles`／`applications`），資料存在只有本人能存取的
   `owner_kv` 資料表。用來管理小橘的 Dcard 企劃：病例設定、罐頭回覆、FAQ、貼文申請書、
   表單匯入評分、AI 判斷該用哪封罐頭。登入後會在「個人中心 → 我的資料」看到這個工具的連結
@@ -100,7 +100,7 @@ bucket 與對應權限的 SQL，跑過整份腳本就會自動建好，不用另
 ### 6. 私人工具（`shelter-review-assistant.html`）
 
 這個工具只給站長本人使用，跟平台其他會員的資料完全分開：
-1. 打開 `index.html` 裡的 `const OWNER_EMAIL = 'arink393@gmail.com';`（在 `<script>` 區塊裡）
+1. 打開 `index.html` 裡的 `const OWNER_EMAIL = 'warmsun.shelter@gmail.com';`（在 `<script>` 區塊裡）
    跟 `shelter-review-assistant.html` 裡同名的常數，確認都是你自己的帳號 email，兩邊要一致。
 2. 用這個帳號登入 `index.html` 後，到「個人中心 → 我的資料」最下面會看到
    「小橘的 Dcard 企劃工具（僅本人可見）」連結，點進去就是 `shelter-review-assistant.html`。
