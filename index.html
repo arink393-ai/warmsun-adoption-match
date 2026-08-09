@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>暖陽動物之家｜認養配對所</title>
-<meta name="description" content="暖陽動物之家是一個用「動物認養」比喻取代滑卡交友的配對平台。提出認養申請，通過三階段審查，才會漸進解鎖更深的聯繫。">
+<meta name="description" content="暖陽動物之家是一個用「動物認養」比喻取代滑卡交友的配對平台。送出認識邀請（站內稱「認養申請」），通過三階段審查，才會漸進解鎖更深的聯繫。">
 <meta property="og:title" content="暖陽動物之家｜認養配對所">
 <meta property="og:description" content="借用嚴謹的認養手續，找一輩子的家人。">
 <meta property="og:type" content="website">
@@ -54,7 +54,11 @@
   .tabbtn.on{background:var(--brand-tint);color:var(--brand-dk);border-color:var(--brand)}
   .pane{display:none} .pane.on{display:block}
 
-  fieldset{border:1px solid var(--rule);border-radius:6px;background:transparent;padding:18px 20px 22px;margin:0 0 20px}
+  /* min-inline-size 一定要歸零：fieldset 預設是 min-content，裡面只要有一個
+     設了 min-width 的表格（例如名詞對照表），整個 fieldset 就會被撐寬——
+     即使表格自己已經包在 overflow-x:auto 裡也一樣，手機上整頁就跟著橫向溢出。 */
+  fieldset{border:1px solid var(--rule);border-radius:6px;background:transparent;
+        padding:18px 20px 22px;margin:0 0 20px;min-inline-size:0}
   legend{font-family:var(--font-heading);font-weight:600;font-size:11px;letter-spacing:.16em;
          text-transform:uppercase;color:var(--brand);padding:0 8px}
   label{display:block;font-size:12px;color:var(--ink-soft);margin:14px 0 5px}
@@ -91,6 +95,94 @@
   details{border:1px dashed var(--rule);border-radius:4px;padding:8px 12px;margin-top:8px}
   details summary{cursor:pointer;font-family:var(--font-heading);font-weight:600;font-size:12.5px;color:var(--brand-dk)}
   details[open] summary{margin-bottom:8px}
+
+  /* ── 病歷卡（個人資料卡）視覺重做 ────────────────────────────
+     舊版把四十幾個欄位全部攤平成等寬的點線列，三個上鎖區塊各佔一大格，
+     手機上一張卡片要滑三個螢幕才看得完，而且「已填的資料」跟「還沒解鎖的欄位」
+     長得一模一樣。這裡改成有層次的排版：
+       頭部（病例號＋名字＋身分）→ 照片 → 一行式基本資料 → 自我介紹（限高可展開）
+       → 性格橫條 → 標籤 → 一個收合式的「揭露進度」區塊 → 動作列。
+     顏色仍然只當作線條使用，不做整塊填色。 */
+  .cardHead{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;
+        padding-bottom:9px;border-bottom:1px solid var(--rule)}
+  .caseNo{font-family:var(--font-heading);font-size:10.5px;letter-spacing:.14em;color:var(--ink-soft)}
+  .cardHead h3{margin:2px 0 0}
+  .kindPill{flex:none;border-color:var(--brand);color:var(--brand-dk);cursor:help;margin:0}
+  .cardPhoto{position:relative;margin:11px 0 12px}
+  .cardPhoto img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;
+        border-radius:4px;background:var(--paper-2)}
+  .demoPhoto{display:flex;align-items:center;justify-content:center;aspect-ratio:4/3;
+        border:1px dashed var(--rule);border-radius:4px;background:var(--paper-2);
+        color:var(--ink-soft);font-size:12px}
+  .photoTag{position:absolute;left:8px;bottom:8px;padding:2px 10px;border-radius:999px;
+        font-size:10.5px;line-height:1.7;color:var(--brand-dk);border:1px solid var(--brand);
+        background:color-mix(in srgb, var(--paper) 90%, transparent)}
+  /* 一行式基本資料：物種・性別・年齡・地區・職業，取代原本五列點線表 */
+  .metaLine{font-size:12.5px;color:var(--ink-soft);line-height:1.8}
+  .metaLine .sep{margin:0 6px;color:var(--rule)}
+  .cSec{font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.08em;
+        color:var(--brand-dk);margin:15px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--rule)}
+  .cRow{display:grid;grid-template-columns:82px 1fr;gap:4px 10px;padding:4px 0;
+        font-size:13px;border-bottom:1px dotted var(--rule)}
+  .chipRow{margin-top:2px}
+  .bioClamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .bioMore{background:none;border:none;color:var(--brand);font-family:var(--font-body);
+        font-size:11.5px;font-weight:400;padding:2px 0;cursor:pointer}
+  .bioMore:hover{background:none;text-decoration:underline}
+  /* 性格評估：五排星星改成橫條，高度減半，一眼就能比較五個項目 */
+  .starGrid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;margin:4px 0 2px}
+  .starGrid .sLbl{font-size:11.5px;color:var(--ink-soft);white-space:nowrap}
+  .sMeter{display:flex;gap:3px}
+  .sMeter i{flex:1;height:4px;border-radius:999px;background:var(--rule)}
+  .sMeter i.on{background:var(--brand)}
+  /* 真的填了的敏感資訊用實線框（.note），還沒解鎖的才用虛線鎖頭（.lock），兩者不再長得一樣 */
+  .note{background:var(--paper-2);border:1px solid var(--rule);border-radius:4px;
+        padding:9px 11px;font-size:13px;margin-top:6px}
+  .vetNote{border-left:2px solid var(--brand);padding:4px 0 4px 12px;margin-top:6px;
+        font-size:13.5px;font-family:var(--font-heading);font-style:italic;color:var(--ink)}
+  /* 揭露進度：三層合併成一個區塊，看得到自己走到哪一層 */
+  .discl{margin-top:15px;border:1px solid var(--rule);border-radius:5px;overflow:hidden}
+  .disclHead{display:flex;align-items:center;gap:10px;padding:8px 11px;background:var(--paper-2)}
+  .disclSteps{display:flex;gap:4px;flex:none;width:64px}
+  .disclSteps i{flex:1;height:3px;border-radius:999px;background:var(--rule)}
+  .disclSteps i.on{background:var(--brand)}
+  .disclNow{font-size:11.5px;color:var(--ink-soft);line-height:1.5}
+  .discl details{border:none;border-top:1px dotted var(--rule);border-radius:0;margin:0;padding:8px 11px}
+  .discl details summary{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;
+        font-family:var(--font-body);font-weight:400;font-size:12.5px;color:var(--ink-soft)}
+  .discl details[open] summary{margin-bottom:6px}
+  .discl details.isOpen summary{color:var(--brand-dk);font-weight:600}
+  .disclWhat{font-size:11px;color:var(--ink-soft);font-weight:400}
+  .cardActions{margin-top:14px;padding-top:10px;border-top:1px solid var(--rule)}
+  .cardActions .bar{margin-top:0}
+  .cardActions .sub{margin-top:6px}
+
+  /* ── 手機版 ────────────────────────────────────────────────
+     單欄卡片、觸控目標至少 44px、輸入框 16px（低於 16px 時 iOS Safari
+     會在聚焦時自動放大整頁，之後也不會縮回去）。 */
+  @media(max-width:600px){
+    body{font-size:15px;padding-bottom:40px}
+    .wrap{padding:0 14px}
+    fieldset{padding:15px 14px 18px}
+    .grid{grid-template-columns:1fr;gap:12px}
+    .card{padding:13px 14px;border-radius:8px}
+    .row>div{flex:1 1 100%;min-width:0}
+    input,select,textarea{font-size:16px;padding:11px}
+    button{padding:12px 18px;min-height:44px}
+    button.ghost{padding:9px 13px;font-size:12.5px;min-height:38px}
+    .bar{gap:8px}
+    .bar>button{flex:1 1 auto}
+    .cRow{grid-template-columns:72px 1fr;font-size:12.5px}
+    .starGrid{grid-template-columns:76px 1fr}
+    #gate{padding:14px;align-items:flex-start}
+    #gate .box{margin-top:24px;max-height:calc(100vh - 48px);overflow:auto}
+    .notifMenu{width:min(340px,92vw)}
+    header{padding-top:16px}
+  }
+  @media(max-width:380px){
+    .cardHead{flex-direction:column;gap:4px}
+    .disclSteps{width:48px}
+  }
 
   /* 登入／註冊改成右上角觸發的彈窗，不再擋住整個首頁 */
   #gate{position:fixed;inset:0;background:color-mix(in srgb, var(--ink) 35%, transparent);z-index:9999;
@@ -194,7 +286,7 @@
   <div class="chatHead"><strong id="safetyTitle">🛡️ 交換聯絡方式前，先看一下</strong>
     <button class="ghost" id="safetyClose">取消</button></div>
   <div style="padding:14px 16px">
-    <p class="hint" style="margin-top:0">解鎖之後，對方就會看到你填的日常觀察資訊（IG 等）。這一步沒有辦法收回，請先確認：</p>
+    <p class="hint" style="margin-top:0">解鎖之後，對方就會看到你填的聯絡方式（IG 等，站內稱「日常觀察資訊」）。這一步沒有辦法收回，請先確認：</p>
     <div id="safetyChecks"></div>
     <p class="hint" style="margin-top:12px">
       任何時候覺得不對勁，都可以直接<b>封鎖</b>或<b>檢舉</b>，不需要解釋，也不用擔心失禮。
@@ -243,7 +335,7 @@
   </div>
   <span class="tag">ADOPTION CENTER</span>
   <h1>暖陽動物之家｜認養配對所</h1>
-  <p class="sub" id="mastheadSub">挑一種最像你的動物登記，性別另外選。想認識誰，就提出認養申請，通過三階段審查才會解鎖日常觀察。</p>
+  <p class="sub" id="mastheadSub">挑一種最像你的動物登記，性別另外選。想認識誰，就送出一封認識邀請（站內稱「認養申請」），通過三階段審查才會交換聯絡方式。</p>
 </header>
 
 <div class="notice" id="protoNotice">
@@ -267,7 +359,7 @@
     </p>
     <div class="bar" style="margin-top:24px;justify-content:center">
       <button id="homeToBoard">看看誰在等家</button>
-      <button class="ghost" id="homeToRegister">建立我的病歷卡</button>
+      <button class="ghost" id="homeToRegister">建立我的個人資料卡</button>
     </div>
   </section>
 
@@ -288,8 +380,8 @@
       </div>
       <div class="card">
         <div class="kind">STEP 02</div>
-        <h3>提出認養申請</h3>
-        <p class="bio">回答對方出的題目，對方讀完決定要不要往下走。每 7 天前 3 筆申請免費。</p>
+        <h3>提出認識邀請</h3>
+        <p class="bio">回答對方出的題目，對方讀完決定要不要往下走。每 7 天前 3 筆免費。站內沿用收容所的說法，稱為「認養申請」。</p>
       </div>
       <div class="card">
         <div class="kind">STEP 03</div>
@@ -311,10 +403,11 @@
   <div style="border-top:1px solid var(--rule);margin:26px 0"></div>
 
   <section>
-    <p class="hint" style="text-transform:uppercase;letter-spacing:.08em;color:var(--brand);margin:0 0 6px">病歷卡長這樣</p>
+    <p class="hint" style="text-transform:uppercase;letter-spacing:.08em;color:var(--brand);margin:0 0 6px">個人資料卡長這樣</p>
     <p class="hint" style="margin:0 0 14px">
       下面兩張是<b>示範用的假資料</b>，不是真實會員。內容就是你在佈告欄上會看到的樣子——
-      下面那幾個上鎖的區塊，要真的往下走才會打開。
+      下面那幾個上鎖的區塊，要真的往下走才會打開。<br>
+      站內把個人資料卡稱作「<b>病歷卡</b>」，是這個平台的比喻用語，指的是同一件事。
     </p>
     <div class="grid" id="demoCards"></div>
   </section>
@@ -323,10 +416,10 @@
 
   <section style="text-align:center;padding-bottom:8px">
     <p style="margin:0 0 14px;max-width:52ch;margin-inline:auto">
-      準備好了嗎？建立病歷卡是免費的，通過審核後才會出現在佈告欄上。
+      準備好了嗎？建立個人資料卡是免費的，通過審核後才會出現在佈告欄上。
     </p>
     <div class="bar" style="justify-content:center">
-      <button id="homeToSignup2">免費建立我的病歷卡</button>
+      <button id="homeToSignup2">免費建立我的個人資料卡</button>
     </div>
   </section>
 </div>
@@ -346,8 +439,8 @@
       <div><label>身分</label>
         <select id="fKind">
           <option value="">全部</option>
-          <option value="pet">待認養</option>
-          <option value="keeper">飼主</option>
+          <option value="pet">待認養（想被認識）</option>
+          <option value="keeper">飼主（想主動認識）</option>
         </select></div>
       <div><label>關鍵字</label><input id="fText" placeholder="地區、興趣⋯⋯"></div>
     </div>
@@ -401,12 +494,13 @@
         <input id="mFile" type="file" accept="image/*">
         <p class="hint" style="margin-top:6px">
           必須是<b>本人、單人、看得清楚五官</b>的照片，不得使用明星照、盜圖或多人合照。<br>
-          AI 形象照可送審，但需勾選下方聲明，並以私密真人驗證照由人工確認高度相似。
-          本人照片通常較快；AI 形象照約需 7 個工作天。
+          AI 生成或大幅修飾的照片可以使用，但需勾選下方聲明，卡片上會標示「✨ AI 形象照」，
+          並以私密真人驗證照人工比對。本人實拍照通常較快；AI 形象照約需 7 個工作天。
         </p>
         <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px">
           <input type="checkbox" id="mAiPhoto" style="width:auto;margin:4px 0 0">
-          <span style="font-size:13px">這是 AI 生成／修飾的形象照；我聲明與本人高度相似（自評至少 95%），並同意較長的人工審核。此聲明不是平台的生物辨識結果。</span>
+          <span style="font-size:13px">這是 AI 生成或大幅修飾的照片。我聲明它<b>能合理反映我目前的外貌</b>，
+            見面時對方不會認不出我，並同意較長的人工審核與公開標示。</span>
         </label>
         <p class="hint" id="photoState"></p>
       </div>
@@ -591,7 +685,7 @@
     <label>生活習慣要求（可複選）</label>
     <div class="row" id="mReqHabits" style="flex-wrap:wrap;gap:6px 16px"></div>
 
-    <label>日常觀察資訊（雙方同意解鎖後才會顯示給對方）</label>
+    <label>聯絡方式／日常觀察資訊（雙方同意解鎖後才會顯示給對方）</label>
     <textarea id="mLocked" rows="2" placeholder="例：IG @your_account"></textarea>
     <label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px">
       <input type="checkbox" id="mConsent" style="width:auto;margin:4px 0 0">
@@ -612,7 +706,7 @@
       <span class="msg" id="meMsg"></span>
     </div>
     <p class="hint" style="margin-top:10px">隨時都可以按「儲存登記」，不必等填到最後一步。第一次登記只要填完第 1、2 步就能送審。</p>
-    <p class="hint">待認養身分想自訂第一階段題目、第二階段題庫、罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」設定。</p>
+    <p class="hint">「待認養（想被認識）」身分想自訂第一階段題目、第二階段題庫、罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」設定。</p>
   </fieldset>
 </div>
 
@@ -629,31 +723,31 @@
 <!-- 診療室 -->
 <div class="pane" id="pane-clinic">
   <fieldset>
-    <legend>診療點數</legend>
+    <legend>點數（診療點數）</legend>
     <p style="font-size:26px;font-family:'Noto Serif TC',serif;color:var(--brand);margin:4px 0">
       <span id="balance">0</span> <span style="font-size:14px;color:var(--ink-soft)">點</span></p>
     <p class="hint">
-      <b style="color:var(--ink)">免費的是「建立關係」：</b>建立病歷卡、瀏覽會員、每 7 天內前 <span id="clinicFreeApplyQuota">3</span>
-      筆認養申請、回答問題、聊天、通過三階段審查後解鎖對方的日常觀察資訊，全部不用花點數。<br>
-      <b style="color:var(--ink)">收費的是「效率與 AI」：</b>
+      <b style="color:var(--ink)">免費的是「建立關係」：</b>建立個人資料卡、瀏覽會員、每 7 天內前 <span id="clinicFreeApplyQuota">3</span>
+      筆認識邀請、回答問題、聊天、通過三階段審查後交換聯絡方式，全部不用花點數。<br>
+      <b style="color:var(--ink)">收費的是「效率與 AI」：</b>下面每一項都用日常說法寫，括號裡是站內的收容所用語。
     </p>
     <p class="hint">
-      <b>額外掛號費</b>　超過每 7 天 <span id="clinicFreeApplyQuota2">3</span> 筆免費申請後，多送一筆：<span id="clinicApplyCost">1</span> 點<br>
-      <b>出題費</b>　發出第二階段問卷給一位申請人：<span id="clinicStage2Cost">2</span> 點<br>
-      <b>診療費</b>　請主治獸醫評估一位申請人：<span id="clinicVetCost">1</span> 點<br>
-      <b>進階診斷</b>　請主治獸醫客製第二階段問題：<span id="clinicDeepCost">3</span> 點<br>
-      <b>備註生成</b>　請 AI 生成一句主治獸醫備註：1 點（自己手打免費，不會被覆蓋）<br>
-      <b>優先邀請</b>　讓你的申請在對方收件匣多一個優先標記，附上一封最多 300 字的邀請信：
+      <b>多送一筆邀請</b>（額外掛號費）　超過每 7 天 <span id="clinicFreeApplyQuota2">3</span> 筆免費之後，多送一筆：<span id="clinicApplyCost">1</span> 點<br>
+      <b>發出第二階段問卷</b>（出題費）　請一位申請人回答第二階段問題：<span id="clinicStage2Cost">2</span> 點<br>
+      <b>AI 配對分析</b>（主治獸醫評估）　請 AI 幫你讀一位申請人的回答：<span id="clinicVetCost">1</span> 點<br>
+      <b>AI 幫你客製追問</b>（進階診斷）　請 AI 針對這個人量身出第二階段問題：<span id="clinicDeepCost">3</span> 點<br>
+      <b>AI 生成一句自我介紹結語</b>（主治獸醫備註）　1 點（自己手打免費，不會被覆蓋）<br>
+      <b>優先邀請</b>　讓你的邀請在對方收件匣多一個優先標記，附上一封最多 300 字的邀請信：
       <span id="clinicSkipCost">3</span> 點（<b>不會跳過任何審查階段</b>，點數留在平台，不會轉給對方）<br>
-      <span style="color:var(--ink)">申請人的第一階段完整回答一律免費開放給收件人閱讀——對方既然已經送出申請，就應該被看見；
+      <span style="color:var(--ink)">申請人的第一階段完整回答一律免費開放給收件人閱讀——對方既然已經送出邀請，就應該被看見；
       付費項目只用在額外的分析與服務，不是用來「談戀愛的門票」。</span><br>
-      若你付費送出的申請，對方超過 <span id="clinicRefundDays">14</span> 天未處理，可以在「我送出的申請」退回這筆費用。
+      若你付費送出的邀請，對方超過 <span id="clinicRefundDays">14</span> 天未處理，可以在「我送出的申請」退回這筆費用。
     </p>
     <div class="bar" id="topupBar"></div>
     <p class="hint" id="clinicMsg" style="margin-top:8px"></p>
   </fieldset>
   <fieldset>
-    <legend>診療紀錄</legend>
+    <legend>扣點紀錄（診療紀錄）</legend>
     <div id="ledger"></div>
   </fieldset>
 </div>
@@ -696,14 +790,51 @@
 <!-- 流程說明 -->
 <div class="pane" id="pane-how">
   <fieldset>
-    <legend>認養流程</legend>
-    <p><b>佈告欄</b><br>還沒有任何申請關係時，你只看得到對方的暱稱、<b>年齡區間</b>、地區、職業、興趣、
-    個性、關係期待與病歷卡。精確年齡、身高、學歷、收入這些都還看不到——這是刻意的。</p>
-    <p><b>第一階段　書面審查</b><br>填寫對方的認養申請表。對方會看到你的回答，決定要不要進入下一階段。
-    此階段雙方都不提供聯絡方式。送出申請後，你就能看到對方的<b>精確年齡、身高、學歷、婚姻、孩子、生活習慣</b>。</p>
+    <legend>名詞對照表</legend>
+    <p class="hint" style="margin-top:0">
+      這個站用「動物認養」當作比喻，所以很多功能有一個收容所風格的名字。
+      第一次來可能會不知道那是什麼，下面是對照表——兩種說法在站上會並存，你習慣哪一種都可以。
+    </p>
+    <div style="overflow-x:auto;min-width:0">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:330px">
+        <thead><tr>
+          <th style="text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid var(--rule);color:var(--brand-dk)">站上的說法</th>
+          <th style="text-align:left;padding:6px 0;border-bottom:1px solid var(--rule);color:var(--ink-soft)">實際上是</th>
+        </tr></thead>
+        <tbody>
+          <tr><td style="padding:6px 10px 6px 0;border-bottom:1px dotted var(--rule)">🏥 病歷卡</td>
+              <td style="padding:6px 0;border-bottom:1px dotted var(--rule)">個人資料卡</td></tr>
+          <tr><td style="padding:6px 10px 6px 0;border-bottom:1px dotted var(--rule)">🐾 認養申請</td>
+              <td style="padding:6px 0;border-bottom:1px dotted var(--rule)">認識邀請</td></tr>
+          <tr><td style="padding:6px 10px 6px 0;border-bottom:1px dotted var(--rule)">🩺 主治獸醫評估</td>
+              <td style="padding:6px 0;border-bottom:1px dotted var(--rule)">AI 配對分析</td></tr>
+          <tr><td style="padding:6px 10px 6px 0;border-bottom:1px dotted var(--rule)">🔬 進階診斷</td>
+              <td style="padding:6px 0;border-bottom:1px dotted var(--rule)">AI 幫你客製追問的問題</td></tr>
+          <tr><td style="padding:6px 10px 6px 0;border-bottom:1px dotted var(--rule)">📋 掛號費</td>
+              <td style="padding:6px 0;border-bottom:1px dotted var(--rule)">送出申請的費用（每 7 天前 3 筆免費）</td></tr>
+          <tr><td style="padding:6px 10px 6px 0;border-bottom:1px dotted var(--rule)">💊 診療點數</td>
+              <td style="padding:6px 0;border-bottom:1px dotted var(--rule)">平台點數</td></tr>
+          <tr><td style="padding:6px 10px 6px 0;border-bottom:1px dotted var(--rule)">🐱 待認養／🐶 飼主</td>
+              <td style="padding:6px 0;border-bottom:1px dotted var(--rule)">想被認識的人／想主動認識人的人</td></tr>
+          <tr><td style="padding:6px 10px 6px 0">🌱 日常觀察資訊</td>
+              <td style="padding:6px 0">聯絡方式（IG 等）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">
+      健康告知、負債、生育規劃這些真實人生的資料，站上一律用<b>平常的說法</b>寫，不會套上獸醫比喻——
+      那些欄位是你要拿來做人生決定的，不該讓人覺得自己在被當寵物評鑑。
+    </p>
+  </fieldset>
+  <fieldset>
+    <legend>認養流程（認識的順序）</legend>
+    <p><b>佈告欄</b><br>還沒有任何邀請關係時，你只看得到對方的暱稱、<b>年齡區間</b>、地區、職業、興趣、
+    個性、關係期待與個人資料卡（站內稱病歷卡）。精確年齡、身高、學歷、收入這些都還看不到——這是刻意的。</p>
+    <p><b>第一階段　書面審查</b><br>填寫對方的認識邀請表（站內稱認養申請表）。對方會看到你的回答，決定要不要進入下一階段。
+    此階段雙方都不提供聯絡方式。送出後，你就能看到對方的<b>精確年齡、身高、學歷、婚姻、孩子、生活習慣</b>。</p>
     <p><b>第二階段　價值觀評估</b><br>對方會出幾道情境題。沒有標準答案，誠實與前後一致比漂亮重要。
     進入這個階段後，<b>年收入、居住狀況、生育規劃、工作時數</b>才會開放，同時也開放雙向對話。</p>
-    <p><b>第三階段　日常觀察解鎖</b><br>雙方都同意後，才會互相顯示<b>生日與日常觀察資訊</b>（IG 等）。
+    <p><b>第三階段　日常觀察解鎖（交換聯絡方式）</b><br>雙方都同意後，才會互相顯示<b>生日與聯絡方式</b>（IG 等，站內稱「日常觀察資訊」）。
     解鎖是雙向的，單方同意不會揭露。</p>
     <p class="hint">資料為什麼要分層開放？因為一次把履歷交出去，跟慢慢認識是兩件事。我們希望你在
     安全感增加的時候才逐步認識對方，而不是第一眼就知道別人的收入與生育規劃。</p>
@@ -711,29 +842,34 @@
     <p class="hint">任何階段都可以直接停止，不需要理由。收容所不會追問，也不影響對你的評價。</p>
   </fieldset>
   <fieldset>
-    <legend>關於診療點數</legend>
+    <legend>關於點數（診療點數）</legend>
     <p>新加入贈送 <span id="howFreeCredits">5</span> 點；完成登記並通過照片審核，再贈 5 點。</p>
-    <p><b>免費的是「建立關係」</b>：建立病歷卡、瀏覽會員、每 7 天內前 <span id="howFreeApplyQuota">3</span> 筆
-    認養申請、回答問題、聊天、通過三階段審查後解鎖對方的日常觀察資訊，完全不用花點數。</p>
-    <p><b>收費的是「效率與 AI」</b>：超過每週免費次數後多送一筆申請 <span id="howApplyCost">1</span> 點、
-    發出第二階段問卷 2 點、請主治獸醫評估一位申請人需要 <span id="howVetCost">1</span> 點診療費、
-    請主治獸醫客製第二階段問題（進階診斷）3 點、AI 生成一句主治獸醫備註 1 點、
-    送一封優先邀請信讓申請被優先考慮 3 點（不會跳過任何審查階段）。</p>
-    <p class="hint"><b>申請人的完整回答一律免費開放給收件方閱讀。</b>對方既然已經送出申請，就應該被看見；付費項目只用在額外的分析與服務，不是談戀愛的門票。</p>
+    <p><b>免費的是「建立關係」</b>：建立個人資料卡、瀏覽會員、每 7 天內前 <span id="howFreeApplyQuota">3</span> 筆
+    認識邀請、回答問題、聊天、通過三階段審查後交換聯絡方式，完全不用花點數。</p>
+    <p><b>收費的是「效率與 AI」</b>：超過每週免費次數後多送一筆邀請 <span id="howApplyCost">1</span> 點、
+    發出第二階段問卷 2 點、請 AI 幫你讀一位申請人的回答（站內稱主治獸醫評估）<span id="howVetCost">1</span> 點、
+    請 AI 針對這個人客製第二階段問題（進階診斷）3 點、AI 生成一句自我介紹結語（主治獸醫備註）1 點、
+    送一封優先邀請信讓邀請被優先考慮 3 點（不會跳過任何審查階段）。</p>
+    <p class="hint"><b>申請人的完整回答一律免費開放給收件方閱讀。</b>對方既然已經送出邀請，就應該被看見；付費項目只用在額外的分析與服務，不是談戀愛的門票。</p>
     <p class="hint">不想讓使用者以為要花錢才能開始認識人，所以核心流程盡量免費；點數只用在真的能節省時間、提供額外分析的地方。</p>
     <p class="hint">若你付費送出的申請，對方超過 14 天沒有處理，可以在「我送出的申請」自行退回這筆費用。</p>
   </fieldset>
   <fieldset>
     <legend>照片與身分規則</legend>
-    <p>登記必須上傳一張大頭照，並另外上傳一張<b>驗證照</b>（不公開），兩者都通過審核後，你的病歷卡才會出現在佈告欄。</p>
+    <p>登記必須上傳一張大頭照，並另外上傳一張<b>驗證照</b>（不公開），兩者都通過審核後，你的個人資料卡才會出現在佈告欄。</p>
     <p><b>可以使用的大頭照</b><br>
     ・本人、單人、看得清楚五官的照片<br>
-    ・<b>AI 形象照</b>：可以使用，但必須勾選聲明，表示這張圖與本人高度相似（自評 95% 以上），並同意以私密驗證照進行人工比對確認</p>
+    ・<b>AI 生成或大幅修飾的照片</b>：可以使用，但必須勾選聲明，表示這張圖<b>能合理反映你目前的外貌</b>
+    （見面時對方不會認不出你），並同意以私密驗證照進行人工比對。通過後卡片上會標示
+    「✨ AI 形象照」，讓對方一眼就知道。</p>
+    <p class="hint">為什麼不用「相似度 95%」這種說法？因為那個數字沒有客觀依據——我們沒有、也不打算用
+    生物辨識去量測一張圖跟本人有幾分像。實際的審核標準是人工判斷「這張照片跟驗證照是不是同一個人、
+    見面時認不認得出來」，所以規則就照這個標準寫。</p>
     <p><b>不予通過的情況</b><br>
     ・非人物照片（風景、寵物、動漫、插畫、物品）<br>
     ・多人合照，無法辨識是哪一位<br>
     ・明星、網紅或他人的照片<br>
-    ・與驗證照明顯不是同一個人<br>
+    ・與驗證照明顯不是同一個人，或修飾到見面時認不出來<br>
     ・看不清楚五官（過度遮蔽、過曝、太模糊）</p>
     <p class="hint"><b>審核時間</b>：本人實拍照片通常較快；AI 形象照約 7 個工作天，因為需要人工逐一比對。</p>
     <p class="hint"><b>驗證照怎麼拍</b>：系統會隨機指定一個動作與四位數代碼，請依指示拍攝。這張照片不會出現在佈告欄，也不會給任何申請人看到，審核通過或退回後立即刪除。</p>
@@ -778,8 +914,12 @@
     ・驗證照：<b>審核通過或退回後立即刪除</b>，最長不超過 30 天<br>
     ・公開資料、詳細資料、加碼照片：保存至你自行刪除或取消登記<br>
     ・申請往來與答題紀錄：保存至你自行刪除或取消登記<br>
-    ・交易與點數紀錄：依商業會計法規定保存，不隨帳號刪除而移除，但會與個人身分脫鉤<br>
-    ・檢舉紀錄：處理完成後保存 1 年，供爭議追溯</p>
+    ・點數與扣點紀錄：目前<b>線上儲值尚未開放</b>，帳上只有贈送與人工加值的點數，沒有任何金流交易紀錄，
+    因此<b>會隨帳號刪除一併移除</b>。等到正式開放付費後，發票與交易紀錄依法必須保存，
+    屆時會改為「與個人身分脫鉤後另行保存」，並會在這裡更新說明。<br>
+    ・檢舉紀錄：處理完成後保存 1 年，供爭議追溯。<b>被檢舉方的帳號若已刪除，紀錄僅保留處理結果，
+    不再連結到任何個人資料</b><br>
+    ・封鎖名單：保存至你自行解除，或帳號刪除時一併移除</p>
 
     <p><b>四、第三方處理</b><br>
     ・大頭照的初步檢查、主治獸醫評估與進階診斷，會將相關內容傳送至 AI 服務（Anthropic Claude）進行分析。該服務不會將內容用於訓練模型。<br>
@@ -790,7 +930,9 @@
     <p><b>五、你的權利</b><br>
     你可以隨時查詢、更正或刪除自己的資料。<br>
     ・修改：到「我的登記」直接編輯<br>
-    ・刪除：到「我的登記」按「刪除我的所有資料」，將移除登記、照片、申請紀錄與點數紀錄，且無法復原<br>
+    ・刪除：到「我的登記」按「刪除我的所有資料」。這會一併刪除<b>登入帳號本身</b>、登記資料、
+    大頭照與驗證照、加碼照片、所有申請往來與對話、答題紀錄、點數與扣點紀錄、封鎖名單，
+    <b>無法復原</b>，之後要用同一個 Email 需要重新註冊<br>
     ・其他請求：來信 <a href="mailto:warmsun.shelter@gmail.com">warmsun.shelter@gmail.com</a></p>
 
     <p><b>六、我們不做的事</b><br>
@@ -814,7 +956,7 @@
     <p class="hint">最後更新：2026 年 8 月　｜　⚠️ 本頁為一般實務草稿，不是法律意見，正式收費前請諮詢律師或會計師。</p>
 
     <p><b>一、關於本服務</b><br>
-    暖陽動物之家（以下稱「本平台」）是一個以「動物認養」為比喻的線上交友配對服務，提供會員登記、瀏覽、提出認養申請、
+    暖陽動物之家（以下稱「本平台」）是一個以「動物認養」為比喻的線上交友配對服務，提供會員登記、瀏覽、提出認識邀請（站內稱「認養申請」）、
     分階段互動，以及選用性的付費輔助服務。<b>本平台不提供代為安排見面、不保證配對成功，也不介入會員之間的私下往來。</b></p>
 
     <p><b>二、資格</b><br>
@@ -991,6 +1133,8 @@ const HEALTH_WHEN = [
   {k:'never',  label:'永遠不公開'}
 ];
 const KIND = {pet:'待認養', keeper:'飼主'};
+/* 雙層語言：卡片上顯示收容所用語，滑鼠停留與輔助技術讀到的是日常說法 */
+const KIND_PLAIN = {pet:'想被認識的人', keeper:'想主動認識人的人'};
 
 const DEFAULT_Q1 = [
   '請簡單介紹你自己（生活型態、興趣、平常怎麼過假日）',
@@ -1190,7 +1334,7 @@ const PANES = [
 ];
 const SUBS = [
   {k:'me', t:'我的資料'}, {k:'in', t:'我的收件匣'}, {k:'out', t:'我的申請'},
-  {k:'tpl', t:'我的回覆範本'}, {k:'clinic', t:'診療點數'}
+  {k:'tpl', t:'我的回覆範本'}, {k:'clinic', t:'點數'}
 ];
 let curSub = 'me';
 function gotoTab(k){
@@ -1573,8 +1717,12 @@ $('mDiscard').onclick = async () => {
   catch(e){ flash('meMsg', e.message || '載入失敗'); }
 };
 $('mPurge').onclick = async () => {
-  if(!confirm('這會刪除你的登記、照片、所有申請紀錄與點數紀錄，且無法復原。確定嗎？')) return;
-  if(!confirm('再確認一次：所有資料都會消失，包含已建立的配對進度。')) return;
+  if(!confirm('這會刪除你的「登入帳號本身」與所有資料：\n\n'
+    + '・登記資料、大頭照與驗證照、加碼照片\n'
+    + '・所有申請往來、對話與答題紀錄\n'
+    + '・點數與扣點紀錄、封鎖名單\n\n'
+    + '無法復原。確定嗎？')) return;
+  if(!confirm('再確認一次：帳號會被刪除，之後要用同一個 Email 需要重新註冊。')) return;
   try{
     await DB.deleteMyAccount();
   }catch(e){ flash('meMsg', e.message || '刪除失敗'); }
@@ -1610,7 +1758,7 @@ async function autoScreenPhoto(dataUrl, isAi){
     {type:'text', text:
 `這是交友平台的大頭照初步品質審核。使用者已聲明此圖${isAi ? '是 AI 生成或修飾的形象照' : '是本人照片'}。
 
-不通過的情況：風景、動物、物品、動漫、多人合照無法辨識主角、看不清楚五官、明顯是名人或明星照、明顯是廣告或素材圖。不要判斷是否真的達到 95% 相似；該項由人工搭配私密真人驗證照審核。
+不通過的情況：風景、動物、物品、動漫、多人合照無法辨識主角、看不清楚五官、明顯是名人或明星照、明顯是廣告或素材圖。不要判斷這張圖跟本人像不像；是否為同一個人由人工搭配私密真人驗證照審核。
 
 只輸出一行，用半形直線分隔兩欄，不要其他文字：
 pass 或 reject|一句話說明理由（繁體中文，20 字內）`}
@@ -1655,68 +1803,179 @@ function caseNo(p){
   return 'AM-' + (1000 + n) + '-' + (p.species || 'x').slice(0,1).toUpperCase();
 }
 function chartRow(k, v){
-  return `<div style="display:grid;grid-template-columns:88px 1fr;gap:4px 10px;padding:4px 0;
-    font-size:13px;border-bottom:1px dotted var(--rule)">
-    <span class="hint">${esc(k)}</span><span>${v}</span></div>`;
+  return `<div class="cRow"><span class="hint">${esc(k)}</span><span>${v}</span></div>`;
 }
 function chartSec(t){
-  return `<div style="font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.08em;
-    color:var(--brand-dk);margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--rule)">${esc(t)}</div>`;
+  return `<div class="cSec">${esc(t)}</div>`;
 }
 function chips(str, dashed){
   return String(str||'').split(/[,，、]/).map(x => x.trim()).filter(Boolean)
     .map(x => `<span class="pill"${dashed?' style="border-style:dashed"':''}>${esc(x)}</span>`).join('');
 }
+/* 性格評估：原本一項一列點線表加五顆星，改成橫條，高度大約減半，
+   五項並排也比較容易互相比較。數值語意用 aria-label 補回去。 */
 function starRow(p){
   const s = (p && typeof p.stars === 'object' && p.stars) ? p.stars : {};
-  return STAR_FIELDS.map(f => {
+  return '<div class="starGrid">' + STAR_FIELDS.map(f => {
     const n = Math.max(1, Math.min(5, parseInt(s[f.k], 10) || 3));
-    return chartRow(f.label, `<span style="letter-spacing:1px;color:var(--brand)">${'★'.repeat(n)}${'☆'.repeat(5-n)}</span>`);
-  }).join('');
+    const bars = [0,1,2,3,4].map(i => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
+    return `<span class="sLbl">${esc(f.label)}</span>` +
+      `<span class="sMeter" role="img" aria-label="${esc(f.label)} ${n} / 5">${bars}</span>`;
+  }).join('') + '</div>';
 }
+/* 一行式基本資料，取代原本「物種／年齡／活動範圍／日常」四列點線表 */
+function metaLine(p){
+  const parts = [
+    SPECIES[p.species] || '',
+    GENDER[p.gender || 'f'] || '',
+    p.age ? p.age + (p.age_is_bucket ? '' : ' 歲') : '',
+    p.area || '',
+    p.job || ''
+  ].filter(Boolean);
+  return parts.length ? `<div class="metaLine">${parts.map(esc).join('<span class="sep">·</span>')}</div>` : '';
+}
+/* 自我介紹超過四行先收起來，避免一張卡片被一段長自介撐爆。
+   會不會超過四行取決於卡片寬度（手機一行放得下的字少很多），所以一律先收合，
+   再由 bindBioToggles() 用量到的高度決定要不要留下「展開全文」。 */
+function bioBlock(text){
+  const t = String(text || '').trim();
+  if(!t) return '';
+  return chartSec('行為觀察') +
+    `<div class="bio bioClamp">${esc(t)}</div>` +
+    '<button type="button" class="bioMore" hidden>展開全文</button>';
+}
+function tagRow(title, val, dashed){
+  const c = chips(val, dashed);
+  return c ? chartSec(title) + `<div class="chipRow">${c}</div>` : '';
+}
+/* 揭露進度：三個上鎖區塊合併成一個可收合的區塊，並且畫出「你走到第幾層」。
+   已經解鎖的那一層預設展開，其餘收合——資訊量一樣，但不再三大塊灰底輪流出現。 */
+function disclosureBlock(p, stage, unlocked){
+  const t1 = stage >= 1, t2 = stage >= 2, t3 = !!unlocked;
+  const seg = on => `<i class="${on ? 'on' : ''}"></i>`;
+  const now = t3 ? '已交換聯絡方式'
+    : t2 ? '第二階段：收入與生活規劃已開放'
+    : t1 ? '第一階段：身高學歷等已開放'
+    : '尚未提出邀請，只看得到公開資料';
+  const sec = (open, on, title, what, body) =>
+    `<details class="${on ? 'isOpen' : ''}"${open ? ' open' : ''}>` +
+    `<summary><span>${on ? '🔓' : '🔒'} ${esc(title)}</span>` +
+    `<span class="disclWhat">${esc(what)}</span></summary>${body}</details>`;
+
+  const rows1 = [
+    chartRow('身高', p.height_cm ? esc(p.height_cm) + ' cm' : '（未填）'),
+    (p.show_weight && p.weight_kg) ? chartRow('體重', esc(p.weight_kg) + ' kg') : '',
+    chartRow('學歷', esc(p.education || '（未填）')),
+    chartRow('婚姻', esc(p.marital || '（未填）')),
+    chartRow('孩子', esc(p.has_kids || '（未填）')),
+    chartRow('兵役', esc(p.military || '（未填）')),
+    ((Array.isArray(p.habits) && p.habits.length) || p.habits_other)
+      ? chartRow('生活習慣', esc([...(p.habits || []), p.habits_other].filter(Boolean).join('、'))) : ''
+  ].join('');
+  const rows2 = [
+    chartRow('年收入', esc(p.income || '（未填）')),
+    chartRow('居住', esc(p.living || '（未填）')),
+    chartRow('生育規劃', esc(p.kids_plan || '（未填）')),
+    chartRow('工作時數', esc(p.work_hours || '（未填）'))
+  ].join('');
+  const rows3 = chartRow('生日', esc(p.birth || '（未填）')) +
+    `<div class="lock open">🔓 聯絡方式：${esc(p.locked || '（對方尚未填寫）')}</div>`;
+
+  return `<div class="discl">
+    <div class="disclHead">
+      <span class="disclSteps">${seg(t1)}${seg(t2)}${seg(t3)}</span>
+      <span class="disclNow">${esc(now)}</span>
+    </div>
+    ${sec(t1 && !t2, t1, '第一階段後開放', '身高・學歷・婚姻・孩子・生活習慣',
+      t1 ? rows1 : '<p class="hint" style="margin:0">送出認識邀請（第一階段）之後，這一層就會開放。</p>')}
+    ${sec(t2 && !t3, t2, '第二階段後開放', '年收入・居住・生育規劃・工作時數',
+      t2 ? rows2 : '<p class="hint" style="margin:0">對方讀完你的第一階段回答、願意進入第二階段之後才會開放。</p>')}
+    ${sec(t3, t3, '雙方同意後開放', '生日・聯絡方式',
+      t3 ? rows3 : '<p class="hint" style="margin:0">走到第三階段、而且兩邊都按下同意，才會互相顯示。單方同意不會揭露任何東西。</p>')}
+  </div>`;
+}
+/* 佈告欄卡片與首頁示意卡片共用同一份版型，避免兩邊漸漸長歪 */
+function profileCardHTML(p, opts){
+  const o = opts || {};
+  const hasHealth = (Array.isArray(p.health_tags) && p.health_tags.length) || p.health;
+  const photo = o.demo
+    ? '<div class="cardPhoto"><div class="demoPhoto">（示意大頭照）</div></div>'
+    : `<div class="cardPhoto">
+        <img src="${DB.avatarUrl(p.id, p.updated_at)}" alt="${esc(p.name || '')} 的大頭照" loading="lazy">
+        ${p.avatar_kind === 'ai' ? '<span class="photoTag">✨ AI 形象照</span>' : ''}
+      </div>`;
+  return `<div class="card">
+    <div class="cardHead">
+      <div>
+        <div class="caseNo">病例號碼　${esc(o.caseNo || caseNo(p))}${
+          o.demo ? ' <span style="color:var(--brand)">示意</span>' : ''}</div>
+        <h3>${SPECIES_EMOJI[p.species] || '🐾'} ${esc(p.name || '')}</h3>
+      </div>
+      <span class="pill kindPill" title="${esc(KIND_PLAIN[p.kind] || '')}">${esc(KIND[p.kind] || '')}</span>
+    </div>
+    ${photo}
+    ${metaLine(p)}
+    ${bioBlock(p.bio)}
+    ${chartSec('健康與性格評估')}${starRow(p)}
+    ${tagRow('個性標籤', p.traits)}
+    ${tagRow('最喜歡的事', p.likes)}
+    ${tagRow('禁忌事項', p.taboo, true)}
+    ${p.wants ? chartSec('認養資格（希望遇到的人）') + `<div class="bio">${esc(p.wants)}</div>` : ''}
+    ${p.debt ? chartSec('負債狀況') + `<div class="note">${esc(p.debt)}</div>` : ''}
+    ${hasHealth ? chartSec('健康告知') +
+      ((Array.isArray(p.health_tags) && p.health_tags.length) ? `<div class="chipRow">${chips(p.health_tags.join(','), true)}</div>` : '') +
+      (p.health ? `<div class="note">${esc(p.health)}</div>` : '') : ''}
+    ${p.vet_note ? chartSec('主治獸醫備註（自我介紹結語）') + `<div class="vetNote">${esc(p.vet_note)}</div>` : ''}
+    ${o.demo ? '' : detailBlock(p)}
+    ${disclosureBlock(p, Number(o.stage || 0), !!o.unlocked)}
+    ${o.footer || ''}
+  </div>`;
+}
+/* 自我介紹的展開／收合：卡片是整批 innerHTML 重畫的，所以綁定要在重畫之後做。
+   只有真的被截斷的自介才留下按鈕，短自介直接把收合拿掉。
+   分頁還沒顯示時量到的高度是 0，這時先保留收合狀態，等使用者切到佈告欄
+   （renderBoard 會再跑一次）或轉螢幕時重新量。 */
+function bindBioToggles(root){
+  if(!root) return;
+  root.querySelectorAll('.bioMore').forEach(b => {
+    const box = b.previousElementSibling;
+    if(!box || !box.classList.contains('bio')) return;
+    if(!box.clientHeight){ b.hidden = false; return; }
+    const overflowing = box.scrollHeight - box.clientHeight > 2;
+    b.hidden = !overflowing;
+    if(!overflowing){ box.classList.remove('bioClamp'); return; }
+    b.onclick = () => {
+      const clamped = box.classList.toggle('bioClamp');
+      b.textContent = clamped ? '展開全文' : '收合';
+    };
+  });
+}
+/* 轉螢幕／改變視窗寬度時，原本剛好四行的自介可能變成五行（或反過來），重新量一次 */
+let bioResizeT = null;
+window.addEventListener('resize', () => {
+  clearTimeout(bioResizeT);
+  bioResizeT = setTimeout(() => { bindBioToggles($('board')); bindBioToggles($('demoCards')); }, 150);
+});
 /* 首頁示意病歷卡：訪客還沒登入看不到真正的佈告欄，先用假資料讓人知道長什麼樣子 */
 /* 示意卡片刻意只放「第 0 層」看得到的欄位（年齡是區間、沒有身高學歷收入），
    跟訪客真的登入後在佈告欄看到的內容一致，不要給人錯誤期待。 */
 const DEMO_PROFILES = [
-  {name:'小橘', species:'cat', gender:'f', age:'25～29 歲', area:'台北', job:'插畫工作者',
+  {name:'小橘', kind:'pet', species:'cat', gender:'f', age:'25～29 歲', age_is_bucket:true,
+   area:'台北', job:'插畫工作者',
    traits:'慢熱,理性,喜歡閱讀', likes:'曬太陽,看展覽,手沖咖啡', taboo:'冷暴力,情緒勒索',
    stars:{warm:4,active:2,slow:4,routine:3,indep:4}, vet_note:'需要一個願意慢慢聊、不催促的人。'},
-  {name:'阿明', species:'dog', gender:'m', age:'30～34 歲', area:'新竹', job:'軟體工程師',
+  {name:'阿明', kind:'keeper', species:'dog', gender:'m', age:'30～34 歲', age_is_bucket:true,
+   area:'新竹', job:'軟體工程師',
    traits:'務實,幽默,喜歡運動', likes:'爬山,桌遊,煮飯', taboo:'欺騙,不尊重時間',
    stars:{warm:3,active:5,slow:2,routine:4,indep:3}, vet_note:'活動力旺盛，適合喜歡戶外的人。'}
 ];
 function renderDemoCards(){
   const el = $('demoCards'); if(!el) return;
-  el.innerHTML = DEMO_PROFILES.map((p,i) => `<div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;
-         padding-bottom:8px;border-bottom:1px solid var(--rule)">
-      <div>
-        <div class="hint" style="font-size:11px;letter-spacing:.1em">病例號碼　AM-${1001+i}-${p.species==='cat'?'C':'D'}
-          <span style="color:var(--brand)">示意</span></div>
-        <h3>${SPECIES_EMOJI[p.species] || '🐾'} ${esc(p.name)}</h3>
-      </div>
-      <span class="pill">${p.species === 'cat' ? '待認養' : '飼主'}</span>
-    </div>
-    <div style="width:100%;height:150px;border-radius:4px;margin:10px 0;background:var(--paper-2);
-         display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:12px">（示意大頭照）</div>
-    ${chartSec('基本資料')}
-    ${chartRow('物種', esc(SPECIES[p.species] || '—') + '　' + esc(GENDER[p.gender] || ''))}
-    ${chartRow('年齡', esc(p.age))}
-    ${chartRow('活動範圍', esc(p.area))}
-    ${chartRow('日常', esc(p.job))}
-    ${chartSec('健康與性格評估')}
-    ${starRow(p)}
-    ${chartSec('個性標籤')}<div>${chips(p.traits)}</div>
-    ${chartSec('最喜歡的事')}<div>${chips(p.likes)}</div>
-    ${chartSec('禁忌事項')}<div>${chips(p.taboo, true)}</div>
-    ${chartSec('主治獸醫備註')}<div class="lock">${esc(p.vet_note)}</div>
-    ${chartSec('第一階段後開放')}
-    <div class="lock">🔒 身高、學歷、婚姻、孩子、生活習慣——送出第一階段申請後開放</div>
-    ${chartSec('第二階段後開放')}
-    <div class="lock">🔒 年收入、居住狀況、生育規劃、工作時數——進入第二階段後開放</div>
-    ${chartSec('雙方同意後開放')}
-    <div class="lock">🔒 生日與日常觀察資訊（IG 等）——雙方都同意解鎖後才會顯示</div>
-  </div>`).join('');
+  el.innerHTML = DEMO_PROFILES.map((p, i) => profileCardHTML(p, {
+    demo: true,
+    caseNo: 'AM-' + (1001 + i) + '-' + (p.species === 'cat' ? 'C' : 'D')
+  })).join('');
+  bindBioToggles(el);
 }
 async function renderBoard(){
   const sp = fSpecies.value, gd = fGender.value, kd = fKind.value, q = fText.value.trim().toLowerCase();
@@ -1734,77 +1993,22 @@ async function renderBoard(){
     const app = apps.find(a => a.from_user === me.id && a.to_user === p.id);
     /* 揭露層級一律以伺服器回傳的 rel_stage / rel_unlocked 為準——遮罩本身是在
        get_visible_match_profiles() 裡做掉的，前端只負責把「還沒解鎖」畫成鎖頭提示。 */
-    const stage = Number(p.rel_stage || 0);
-    const unlocked = !!p.rel_unlocked;
-    const hasHealth = (Array.isArray(p.health_tags) && p.health_tags.length) || p.health;
-    return `<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;
-           padding-bottom:8px;border-bottom:1px solid var(--rule)">
-        <div>
-          <div class="hint" style="font-size:11px;letter-spacing:.1em">病例號碼　${esc(caseNo(p))}</div>
-          <h3>${SPECIES_EMOJI[p.species] || '🐾'} ${esc(p.name)}</h3>
-        </div>
-        <span class="pill">${KIND[p.kind] || ''}</span>
-      </div>
-      <img src="${DB.avatarUrl(p.id, p.updated_at)}" alt="" style="width:100%;height:170px;object-fit:cover;
-           border-radius:4px;margin:10px 0;background:var(--paper-2)">
-      ${p.avatar_kind === 'ai' ? '<span class="pill">AI 形象照・本人聲明高度相似</span>' : ''}
-      ${chartSec('基本資料')}
-      ${chartRow('物種', esc(SPECIES[p.species] || '—') + '　' + esc(GENDER[p.gender || 'f'] || ''))}
-      ${chartRow('年齡', p.age ? esc(p.age) + (p.age_is_bucket ? '' : ' 歲') : '—')}
-      ${chartRow('活動範圍', esc(p.area || '—'))}
-      ${chartRow('日常', esc(p.job || '—'))}
-      ${p.bio ? chartSec('行為觀察') + `<div class="bio">${esc(p.bio)}</div>` : ''}
-      ${chartSec('健康與性格評估')}
-      ${starRow(p)}
-      ${p.traits ? chartSec('個性標籤') + `<div>${chips(p.traits)}</div>` : ''}
-      ${p.likes  ? chartSec('最喜歡的事') + `<div>${chips(p.likes)}</div>` : ''}
-      ${p.taboo  ? chartSec('禁忌事項') + `<div>${chips(p.taboo, true)}</div>` : ''}
-      ${p.wants  ? chartSec('認養資格') + `<div class="bio">${esc(p.wants)}</div>` : ''}
-
-      ${chartSec('第一階段後開放')}
-      ${stage >= 1 ? `
-        ${chartRow('身高', p.height_cm ? esc(p.height_cm) + ' cm' : '（未填）')}
-        ${p.show_weight && p.weight_kg ? chartRow('體重', esc(p.weight_kg) + ' kg') : ''}
-        ${chartRow('學歷', esc(p.education || '（未填）'))}
-        ${chartRow('婚姻', esc(p.marital || '（未填）'))}
-        ${chartRow('孩子', esc(p.has_kids || '（未填）'))}
-        ${chartRow('兵役', esc(p.military || '（未填）'))}
-        ${(Array.isArray(p.habits) && p.habits.length) || p.habits_other
-          ? chartRow('生活習慣', esc([...(p.habits||[]), p.habits_other].filter(Boolean).join('、'))) : ''}`
-        : `<div class="lock">🔒 身高、學歷、婚姻、孩子、生活習慣——送出第一階段申請後開放</div>`}
-
-      ${chartSec('第二階段後開放')}
-      ${stage >= 2 ? `
-        ${chartRow('年收入', esc(p.income || '（未填）'))}
-        ${chartRow('居住', esc(p.living || '（未填）'))}
-        ${chartRow('生育規劃', esc(p.kids_plan || '（未填）'))}
-        ${chartRow('工作時數', esc(p.work_hours || '（未填）'))}`
-        : `<div class="lock">🔒 年收入、居住狀況、生育規劃、工作時數——通過第一階段、進入第二階段後開放</div>`}
-
-      ${p.debt ? chartSec('負債狀況') + `<div class="lock">${esc(p.debt)}</div>` : ''}
-      ${hasHealth ? chartSec('健康告知') + `
-        ${(Array.isArray(p.health_tags) && p.health_tags.length) ? `<div>${chips(p.health_tags.join(','), true)}</div>` : ''}
-        ${p.health ? `<div class="lock">${esc(p.health)}</div>` : ''}` : ''}
-      ${p.vet_note ? chartSec('主治獸醫備註') + `<div class="lock">${esc(p.vet_note)}</div>` : ''}
-      ${detailBlock(p)}
-      ${chartSec('雙方同意後開放')}
-      ${chartRow('生日', unlocked ? esc(p.birth || '（未填）') : '🔒 雙方同意解鎖後可見')}
-      <div class="lock ${unlocked?'open':''}">${unlocked
-        ? '🔓 日常觀察：' + esc(p.locked || '（對方尚未填寫）')
-        : '🔒 日常觀察資訊需雙方都同意解鎖後才會顯示'}</div>
+    const footer = `<div class="cardActions">
       <div class="bar">${
         !myProfile || !myProfile.kind ? '<span class="hint">請先完成自己的登記</span>'
         : !isApproved(myProfile) ? '<span class="hint">你的照片尚未通過審核，暫時無法提出申請</span>'
-        : app ? `<span class="stage s${app.status==='rejected'?0:app.stage}">目前：${stageText(app)}</span>`
-        : `<button class="ghost apply" data-id="${p.id}">提出認養申請${freeApplyRemaining() > 0 ? '（免費）' : `（${APPLY_COST} 點）`}</button>`}
+        : app ? `<span class="stage s${app.status === 'rejected' ? 0 : app.stage}">目前：${stageText(app)}</span>`
+        : `<button class="ghost apply" data-id="${p.id}" title="站內稱「提出認養申請」">提出認識邀請${
+            freeApplyRemaining() > 0 ? '（免費）' : `（${APPLY_COST} 點）`}</button>`}
       </div>
-      <div class="bar" style="margin-top:4px">
-        <button class="ghost report" data-id="${p.id}" style="font-size:11px;padding:3px 8px">⚑ 檢舉</button>
-        <button class="ghost blockBtn" data-id="${p.id}" data-name="${esc(p.name)}" style="font-size:11px;padding:3px 8px">🚫 封鎖</button>
+      <div class="bar sub">
+        <button class="ghost report" data-id="${p.id}" style="font-size:11px;padding:3px 8px;min-height:0">⚑ 檢舉</button>
+        <button class="ghost blockBtn" data-id="${p.id}" data-name="${esc(p.name)}" style="font-size:11px;padding:3px 8px;min-height:0">🚫 封鎖</button>
       </div>
     </div>`;
+    return profileCardHTML(p, {stage: Number(p.rel_stage || 0), unlocked: !!p.rel_unlocked, footer});
   }).join('');
+  bindBioToggles($('board'));
   $('board').querySelectorAll('.apply').forEach(b => b.onclick = () => openApply(b.dataset.id));
   $('board').querySelectorAll('.report').forEach(b => b.onclick = () => reportProfile(b.dataset.id));
   $('board').querySelectorAll('.blockBtn').forEach(b => b.onclick = () => blockUserFlow(b.dataset.id, b.dataset.name));
@@ -1898,7 +2102,7 @@ function openApply(toId){
   box.id = 'applyBox';
   /* 先過隱私權同意關卡，勾選後才會出現題目 */
   box.innerHTML = `
-    <fieldset><legend>向 ${esc(to.name)} 提出認養申請</legend>
+    <fieldset><legend>向 ${esc(to.name)} 提出認識邀請（認養申請）</legend>
       <p class="hint">在開始填寫之前，請先閱讀並同意以下事項。</p>
       <div class="lock" style="max-height:220px;overflow:auto">
         <b>申請前的告知事項</b><br>
@@ -1930,11 +2134,11 @@ function openApply(toId){
 /* 同意之後才顯示題目，每題旁邊列出你以前答過的相似題目可以一鍵帶入 */
 function showApplyForm(box, toId, to, q1){
   box.innerHTML = `
-    <fieldset><legend>向 ${esc(to.name)} 提出認養申請</legend>
+    <fieldset><legend>向 ${esc(to.name)} 提出認識邀請（認養申請）</legend>
       <p class="hint">第一階段書面審查。對方會讀到你的回答，決定是否進入第二階段。</p>
       <p class="hint">${freeApplyRemaining() > 0
         ? `這是你這 7 天內第 ${FREE_APPLY_QUOTA - freeApplyRemaining() + 1} 筆申請，<b>免費</b>。`
-        : `你這 7 天內的免費申請次數已經用完，送出需要 <b>${APPLY_COST} 點掛號費</b>，目前餘額 ${myProfile ? myProfile.credits : 0} 點。`}</p>
+        : `你這 7 天內的免費申請次數已經用完，送出需要 <b>${APPLY_COST} 點</b>（站內稱掛號費），目前餘額 ${myProfile ? myProfile.credits : 0} 點。`}</p>
       ${q1.map((q,i) => questionBlock(q, i, 'a1q')).join('')}
       <div class="bar"><button id="sendApply">下一步：領養切結書</button>
         <button class="ghost" id="cancelApply2">取消</button><span class="msg" id="applyMsg"></span></div>
@@ -1945,7 +2149,7 @@ function showApplyForm(box, toId, to, q1){
     const ans = [...box.querySelectorAll('.a1q')].map(t => t.value.trim());
     if(ans.some(a => !a)){ flash('applyMsg','每一題都要回答'); return; }
     if(!isApproved(myProfile)){ flash('applyMsg','你的照片尚未通過審核，無法提出申請'); return; }
-    if(freeApplyRemaining() <= 0 && (myProfile.credits||0) < APPLY_COST){ flash('applyMsg','掛號費不足，請到「診療室」查看加值方式'); return; }
+    if(freeApplyRemaining() <= 0 && (myProfile.credits||0) < APPLY_COST){ flash('applyMsg','點數不足，請到「診療室」查看加值方式'); return; }
     showAdoptionPledge(box, toId, to, q1, ans);
   };
 }
@@ -1954,7 +2158,7 @@ function showApplyForm(box, toId, to, q1){
 function showAdoptionPledge(box, toId, to, q1, ans){
   const p = pronoun(to.gender);
   box.innerHTML = `
-    <fieldset><legend>向 ${esc(to.name)} 提出認養申請 — 領養切結書</legend>
+    <fieldset><legend>向 ${esc(to.name)} 提出認識邀請 — 領養切結書</legend>
       <div class="lock">
         <p style="font-weight:600">📝 領養切結書</p>
         <p>本人已詳閱本病例及健康評估內容。<br>
@@ -1986,7 +2190,7 @@ function showAdoptionPledge(box, toId, to, q1, ans){
   $('sendApplyFinal').onclick = async () => {
     if(!$('pledgeSigner').value.trim()){ flash('applyMsg','請在「認養人」欄位簽下你的暱稱'); return; }
     if(!confirm(freeApplyRemaining() > 0 ? '確定送出這份申請嗎？（這是這 7 天內的免費額度，不會扣點）'
-      : `送出這份申請會扣 ${APPLY_COST} 點掛號費，確定嗎？`)) return;
+      : `送出這份邀請會扣 ${APPLY_COST} 點，確定嗎？`)) return;
     try{
       const app = await DB.applyTo(toId, ans, q1);
       myProfile = await DB.getMyProfile();
@@ -2018,8 +2222,8 @@ async function renderOutbox(){
                + q2.map((q,i) => questionBlock(q, i, 'a2q-' + a.id)).join('')
                + `<div class="bar"><button class="sendQ2" data-app="${a.id}" data-n="${q2.length}">送出回答</button></div></div>` : ''}
       ${a.stage === 3 && !a.unlock_from ? `<div class="notice">
-          🔔 恭喜通過三階段審查！可以免費解鎖 ${esc(to.name)} 的日常觀察資訊。
-          <div class="bar"><button class="ghost unlock" data-app="${a.id}">解鎖對方的日常觀察資訊（免費）</button></div>
+          🔔 恭喜通過三階段審查！可以免費解鎖 ${esc(to.name)} 的聯絡方式。
+          <div class="bar"><button class="ghost unlock" data-app="${a.id}">解鎖對方的聯絡方式（免費）</button></div>
         </div>` : ''}
       ${a.stage === 3 && a.unlock_from && !a.unlock_to ? `<p class="hint">已解鎖你這邊，等待對方同意解鎖。</p>` : ''}
       ${(a.status === 'open' && a.stage < 3) ? `<div class="notice">
@@ -2040,9 +2244,9 @@ async function renderOutbox(){
                border-radius:6px;border:1px solid var(--rule);background:var(--paper-2);display:block">
         </div>` : ''}
       ${canRefund(a) ? `<div class="bar">
-          <button class="ghost refund" data-app="${a.id}">對方逾期未處理，退回掛號費</button>
+          <button class="ghost refund" data-app="${a.id}">對方逾期未處理，退回點數</button>
         </div>` : ''}
-      ${a.refunded ? '<p class="hint">掛號費已退回。</p>' : ''}
+      ${a.refunded ? '<p class="hint">點數已退回。</p>' : ''}
       ${a.stage >= 2 && a.status === 'open' ? `<div class="bar"><button class="ghost openChat" data-app="${a.id}" data-name="${esc(to.name)}" data-uid="${a.to_user}">開啟第二階段對話</button></div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(to.locked || '對方尚未填寫')}</div>` : ''}
     </fieldset>`;
@@ -2150,14 +2354,14 @@ async function renderInbox(){
         ${a.status === 'open' && a.stage === 1 && !a.a1 ? `
           <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
         ${a.stage === 3 && !a.unlock_to ? `
-          <button class="ghost unlockTo" data-app="${a.id}">同意解鎖日常觀察（免費）</button>` : ''}
+          <button class="ghost unlockTo" data-app="${a.id}">同意解鎖聯絡方式（免費）</button>` : ''}
       </div>
-      ${a.stage === 3 && a.unlock_to && !a.unlock_from ? `<p class="hint">已同意解鎖，等待對方付費解鎖。</p>` : ''}
+      ${a.stage === 3 && a.unlock_to && !a.unlock_from ? `<p class="hint">已同意解鎖，等待對方也按下同意。</p>` : ''}
       ${a.a1 ? `<div class="bar">
-          <button class="ghost vet" data-app="${a.id}">${a.vet ? '查看主治獸醫評估' : `請主治獸醫評估（${VET_COST} 點）`}</button>
+          <button class="ghost vet" data-app="${a.id}">${a.vet ? '查看 AI 配對分析' : `🩺 AI 配對分析（主治獸醫評估．${VET_COST} 點）`}</button>
           ${a.stage === 1 && a.status === 'open' ? `<button class="ghost deep" data-app="${a.id}">${
             Array.isArray(a.a2_questions) && a.a2_questions.length
-              ? '已擬好第二階段客製問題' : `進階診斷：客製第二階段問題（${DEEP_COST} 點）`}</button>` : ''}
+              ? '已擬好第二階段客製問題' : `🔬 讓 AI 幫我客製追問（進階診斷．${DEEP_COST} 點）`}</button>` : ''}
         </div><div id="vet-${a.id}">${a.vet ? vetScoreCard(a) : ''}</div>
         <div id="deep-${a.id}">${Array.isArray(a.a2_questions) && a.a2_questions.length
           ? '<div class="qa"><b>第二階段客製問題</b>' + a.a2_questions.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>') + '</div>' : ''}</div>` : ''}
@@ -2667,7 +2871,7 @@ async function renderAudit(){
         </div>
         <div style="flex:1">
           <div class="hint">${KIND[p.kind]||''}　${SPECIES[p.species]||''}　${GENDER[p.gender||'f']||''}　${esc(p.age||'')}　${esc(p.area||'')}　身高 ${esc(p.height_cm||'—')} cm</div>
-          <div class="hint">照片類型：${p.avatar_kind === 'ai' ? 'AI 形象照（本人聲明高度相似，需搭配真人驗證照人工比對）' : '本人照片'}
+          <div class="hint">照片類型：${p.avatar_kind === 'ai' ? '✨ AI 形象照（本人聲明能合理反映目前外貌；請搭配真人驗證照人工確認是否為同一人）' : '本人照片'}
             ${p.photo_review_due_at ? `　預計審核期限：${new Date(p.photo_review_due_at).toLocaleDateString('zh-TW')}` : ''}</div>
           <div class="bio">${esc(p.bio||'')}</div>
           <div class="hint">系統初檢：${p.photo_status === 'rejected' ? '未通過' : '通過'}　${esc(p.photo_reason||'')}</div>
@@ -2869,7 +3073,7 @@ function renderStage3Notice(){
   if(badge) badge.textContent = pending.length ? `我的申請 🔔${pending.length}` : '我的申請';
   if(!pending.length){ $('stage3Notice').innerHTML = ''; return; }
   $('stage3Notice').innerHTML = `<div class="notice">
-    🔔 你有 ${pending.length} 筆申請已經通過三階段審查，可以免費解鎖對方的日常觀察資訊。
+    🔔 你有 ${pending.length} 筆邀請已經通過三階段審查，可以免費解鎖對方的聯絡方式。
     <a href="#" id="stage3NoticeGo">前往「個人中心 → 我的申請」查看</a>
   </div>`;
   $('stage3NoticeGo').onclick = (e) => { e.preventDefault(); gotoTab('center'); showSub('out'); };
