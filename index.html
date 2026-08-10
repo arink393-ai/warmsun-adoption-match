@@ -575,6 +575,11 @@
     <!-- ── 第 1 步：你是誰 ───────────────────────────── -->
     <div class="wizPanel on" data-step="1">
       <p class="hint" style="margin:0 0 12px">先填這一步就好，其他都可以之後再回來補。</p>
+      <div class="notice" style="margin:0 0 14px">
+        📋 已經在別的地方寫過自我介紹了嗎？（Dcard 徵友文、交友軟體的自介⋯⋯）
+        可以直接貼過來，讓主治醫師幫你把欄位先填好，你再逐項確認。
+        <div class="bar"><button class="ghost" id="importOpen">貼上我寫過的自介</button></div>
+      </div>
       <div class="row">
         <div><label>暱稱（必填）</label><input id="mName" placeholder="例：小橘"></div>
         <div><label>身分</label>
@@ -1970,6 +1975,173 @@ async function saveStage2Structured(appId){
   if(Object.keys(patch).length) myProfile = await DB.saveMyProfile(patch);
 }
 
+/* ── 貼上自己寫過的自介，讓 AI 幫忙預填 ────────────────────────
+   三條規則，違反哪一條都會讓這個功能從「省事」變成「幫倒忙」：
+
+   (1) **只處理使用者自己寫的文章。** 不是拿來把別人的徵友文建檔——
+       那是把第三方的個人資料未經同意搬進交友站。送出前要本人明確勾選。
+   (2) **選項字串一律從畫面上的 <select> 現讀**，不在這裡抄第二份。
+       抄一份就會有第二份會走鐘的東西，而且走鐘的方式是「填不進去而且沒人發現」。
+       AI 回了不在選項裡的值，就地丟掉並告訴使用者丟了什麼。
+   (3) **只填進表單，不直接存檔。** 每一欄都要使用者看過、可以逐項取消。
+       AI 讀錯一個欄位很正常，讀錯而且自動存起來就不正常了。
+
+   使用者**自己的** health / health_tags / debt / income 刻意不在可匯入的清單裡：
+   那幾項有自己的分階段揭露設定，而且 AI 讀錯的代價比其他欄位高很多。
+   （req_partner_debt 是「對伴侶負債的接受度」，那是對別人的條件、不是自己的財務狀況，
+     跟 req_kids／req_marital 同一類，可以匯入。） */
+const IMPORT_FIELDS = [
+  {col:'age',   el:'mAge',   label:'年齡', kind:'text'},
+  {col:'area',  el:'mArea',  label:'居住地', kind:'text'},
+  {col:'job',   el:'mJob',   label:'職業', kind:'text'},
+  {col:'bio',   el:'mBio',   label:'自我介紹', kind:'text'},
+  {col:'wants', el:'mWants', label:'希望對方是', kind:'text'},
+  {col:'traits',el:'mTraits',label:'行為觀察（個性描述）', kind:'text'},
+  {col:'likes', el:'mLikes', label:'最喜歡的事', kind:'text'},
+  {col:'taboo', el:'mTaboo', label:'禁忌事項', kind:'text'},
+  {col:'education',        el:'mEducation', label:'學歷', kind:'select'},
+  {col:'marital',          el:'mMarital',   label:'婚姻狀態', kind:'select'},
+  {col:'has_kids',         el:'mHasKids',   label:'有沒有小孩', kind:'select'},
+  {col:'living',           el:'mLiving',    label:'居住狀況', kind:'select'},
+  {col:'relationship_goal',el:'mRelGoal',   label:'關係目標', kind:'select'},
+  {col:'kids_plan',        el:'mKidsPlan',  label:'生育規劃', kind:'select'},
+  {col:'interests',        el:'mInterests',   label:'興趣', kind:'multi'},
+  {col:'personality',      el:'mPersonality', label:'個性標籤', kind:'multi'}
+].concat(EXTRA_FIELDS.map(f => ({col:f.col, el:fieldId(f.col), label:f.label, kind:'select'})));
+
+/* 合法選項一律從畫面上現讀，不在程式裡抄第二份 */
+function importAllowed(f){
+  const el = $(f.el); if(!el) return null;
+  if(f.kind === 'select') return [...el.options].map(o => o.value).filter(Boolean);
+  if(f.kind === 'multi')
+    return [...el.querySelectorAll('input[type=checkbox]')].map(c => c.value);
+  return null;
+}
+function importPrompt(text){
+  const lines = IMPORT_FIELDS.map(f => {
+    const a = importAllowed(f);
+    return a ? `・${f.col}（${f.label}）只能從這些裡面選，要一字不差：${a.join(' / ')}`
+             : `・${f.col}（${f.label}）自由文字`;
+  }).join('\n');
+  return `下面是一位使用者自己寫過的自我介紹（可能來自論壇徵友文或交友軟體）。
+請把它整理成「暖陽動物之家」登記表上的欄位。
+
+【欄位】
+${lines}
+
+【原文】
+${text}
+
+只輸出合法 JSON，不要 markdown，格式是 {"欄位名": 值}。
+interests 與 personality 是字串陣列，其餘是字串。
+
+嚴格規則：
+・**只整理作者在描述自己的內容**。文章裡如果提到別人（前任、朋友、家人），
+  那些是別人的資料，一律不要抽出來。
+・**看不出來的欄位就整個省略**，不要猜、不要用「無」「未提及」之類的字填。
+  少填一欄使用者自己補很快；填錯一欄他可能不會發現。
+・選項型欄位只能用上面列的字串，**一字不差**。原文的講法接近但不完全一樣時，
+  選最接近的那一個；沒有夠接近的就省略那一欄。
+・bio 與 wants 可以整理得通順一些，但**不要加入原文沒有的事實**。
+・不要輸出任何評價、分數或建議。`;
+}
+
+async function runImport(text){
+  const raw = await DB.askClaude(importPrompt(text));
+  let obj = null;
+  try{ obj = JSON.parse(String(raw).replace(/^```(?:json)?\s*|\s*```$/g, '').trim()); }
+  catch(e){ throw new Error('AI 回傳的格式看不懂，請再試一次'); }
+  if(!obj || typeof obj !== 'object') throw new Error('AI 回傳的格式看不懂，請再試一次');
+
+  const picked = [], dropped = [];
+  IMPORT_FIELDS.forEach(f => {
+    let v = obj[f.col];
+    if(v === undefined || v === null) return;
+    const allowed = importAllowed(f);
+    if(f.kind === 'multi'){
+      const arr = (Array.isArray(v) ? v : [v]).map(String);
+      const good = arr.filter(x => allowed.includes(x));
+      arr.filter(x => !allowed.includes(x)).forEach(x => dropped.push(`${f.label}：${x}`));
+      if(good.length) picked.push({f, value: good, show: good.join('、')});
+      return;
+    }
+    v = String(v).trim();
+    if(!v) return;
+    /* 不在選項裡的值就地丟掉——硬塞進 <select> 只會變成一個看不出來的空值 */
+    if(allowed && !allowed.includes(v)){ dropped.push(`${f.label}：${v}`); return; }
+    picked.push({f, value: v, show: v});
+  });
+  return {picked, dropped};
+}
+
+function openImportDialog(){
+  const d = document.createElement('dialog');
+  d.className = 'safetyDialog';
+  d.innerHTML = `<h3 style="margin:0 0 8px;font-size:16px">貼上你寫過的自介</h3>
+    <p class="hint" style="margin:0 0 10px">主治醫師會讀一遍，把看得出來的欄位整理好；
+      <b>整理完只會填進表單，不會直接存檔</b>，每一項你都可以自己取消。</p>
+    <textarea id="impText" rows="8" maxlength="4000"
+      placeholder="把你在 Dcard、交友軟體或其他地方寫過的自我介紹貼進來⋯⋯"></textarea>
+    <label class="s2Chk" style="margin-top:8px">
+      <input type="checkbox" id="impMine"> 這是<b>我自己寫的</b>自我介紹
+    </label>
+    <p class="hint" style="margin:4px 0 0">這個功能只用來整理你自己寫過的東西。
+      請不要貼別人的徵友文——那是別人的個人資料，不是你的。</p>
+    <p class="hint" style="margin:6px 0 0"><b>你自己的</b>健康告知、負債與收入不會被自動填入。
+      那三項有各自的揭露時機設定，而且讀錯的代價比其他欄位高很多，請你自己填。
+      （「對伴侶負債的接受度」是你對別人的條件，不是你的財務狀況，那一項可以匯入。）</p>
+    <div id="impResult"></div>
+    <div class="bar">
+      <button id="impGo">開始整理</button>
+      <button class="ghost" id="impApply" style="display:none">套用勾選的欄位</button>
+      <button class="ghost" id="impClose">關閉</button>
+      <span class="msg" id="impMsg"></span>
+    </div>`;
+  document.body.appendChild(d);
+  d.showModal();
+  const close = () => { d.close(); d.remove(); };
+  $('impClose').onclick = close;
+  d.addEventListener('cancel', () => d.remove());
+
+  let last = null;
+  $('impGo').onclick = async () => {
+    const text = $('impText').value.trim();
+    if(!$('impMine').checked){ $('impMsg').textContent = '請先確認這是你自己寫的'; return; }
+    if(text.length < 20){ $('impMsg').textContent = '文字太短，看不出什麼'; return; }
+    if(!DB.hasClaudeProxy()){ $('impMsg').textContent = '尚未設定 AI 代理網址，這個功能暫時無法使用'; return; }
+    $('impGo').disabled = true; $('impMsg').textContent = '主治醫師閱讀中⋯⋯';
+    try{
+      last = await runImport(text);
+      $('impMsg').textContent = '';
+      $('impResult').innerHTML = last.picked.length ? `
+        <p class="hint" style="margin:12px 0 4px">看得出來的有 ${last.picked.length} 項，
+          取消勾選就不會套用：</p>
+        ${last.picked.map((p, i) => `<label class="s2Chk">
+          <input type="checkbox" class="impPick" data-i="${i}" checked>
+          <span><b>${esc(p.f.label)}</b>：${esc(p.show)}</span></label>`).join('')}
+        ${last.dropped.length ? `<p class="hint" style="margin:8px 0 0">
+          有 ${last.dropped.length} 項的答案不在登記表的選項裡，已經略過（硬塞進去會變成看不出來的空值）：
+          ${esc(last.dropped.join('、'))}</p>` : ''}`
+        : '<p class="hint" style="margin:12px 0 0">這段文字裡看不出可以直接填的欄位，請自己填寫。</p>';
+      $('impApply').style.display = last.picked.length ? '' : 'none';
+    }catch(e){ $('impMsg').textContent = e.message || '整理失敗，請再試一次'; }
+    $('impGo').disabled = false;
+  };
+  $('impApply').onclick = () => {
+    if(!last) return;
+    let n = 0;
+    d.querySelectorAll('.impPick:checked').forEach(c => {
+      const p = last.picked[+c.dataset.i]; if(!p) return;
+      if(p.f.kind === 'multi') setCheckGroup(p.f.el, p.value);
+      else $(p.f.el).value = p.value;
+      n++;
+    });
+    renderCompleteness();
+    close();
+    flash('meMsg', `已填入 ${n} 個欄位，請確認之後再按「儲存登記」`);
+  };
+}
+
 function fieldId(col){ return 'x_' + col; }
 function renderExtraFields(){
   const groups = {};
@@ -2090,6 +2262,7 @@ const REQUIRED_DETAIL_SELECTS = [
   ['mMilitary','兵役狀況'], ['mLiving','居住狀況'], ['mDebt','負債狀況'],
   ['mRelGoal','關係期待'], ['mKidsPlan','生育規劃']
 ];
+$('importOpen').onclick = () => openImportDialog();
 $('mSave').onclick = async () => {
   /* 第一步：基本資料——只有這些是送審的必填項目。第二步的詳細資料全部改成選填，
      可以先送審、之後想到再回來補；用上面的「資料完整度」提醒還缺什麼，不會擋你。 */
