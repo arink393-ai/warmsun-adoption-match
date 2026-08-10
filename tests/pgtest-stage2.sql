@@ -1,6 +1,7 @@
--- 第二階段結構化問診 S2-01～S2-05：先關著，但要證明「翻開關就會動」
--- 這一份的重點不是「它們現在不會亮」，而是「等表單做好、enabled=true 之後，
--- 不用改引擎、不用改條件，它們就是對的」。
+-- 第二階段結構化問診 S2-01～S2-05：表單做好之後六條都已啟用
+-- 這一份證明它們讀得到結構化答案、訊息措辭守得住當初講好的分寸
+-- （不寫「一個太黏一個太冷淡」、不判媽寶、不自行診斷冷暴力），
+-- 而且開關關掉時真的關得掉。
 \set ON_ERROR_STOP on
 \pset pager off
 \t on
@@ -55,7 +56,7 @@ begin
   perform pg_temp.ok(n = 6, 'S2-01～S2-05（含 S2-04B）共 6 條都在庫裡', n::text);
 
   select count(*) into n from public.screening_rules where code like 'S2-%' and enabled;
-  perform pg_temp.ok(n = 0, '六條全部 enabled = false，現在不會影響任何人', n::text);
+  perform pg_temp.ok(n = 6, '六條都已開啟（第二階段結構化表單做好了）', n::text);
 
   /* requires 只能列「兩個方向的分支都會讀」的欄位。對稱的 any 規則
      （A 對上 B 或反過來）如果把單邊才會填的欄位列進去，另一邊沒填時
@@ -93,17 +94,19 @@ begin
       = (select topic from public.screening_rules where code = 'R039'),
     'S2-05 跟 R039 同一個 topic');
 
-  -- 掛著的時候真的不會亮
+  /* 開關本身還是要證明有效：暫時關掉一條，它就該從結果裡消失。
+     這是「規則庫是資料」的前提——不能只有打開時會動，關掉要真的關得掉。 */
   update public.match_profiles set contact_frequency = '希望一天中保持多次聯絡',
     dealbreakers = '{"contact_frequency":"non_negotiable"}'::jsonb where id = a;
   update public.match_profiles set contact_frequency = '不需要固定聯絡，有事情再說',
     dealbreakers = '{"contact_frequency":"non_negotiable"}'::jsonb where id = b;
+  update public.screening_rules set enabled = false where code like 'S2-%';
   ks := pg_temp.hits(a, b);
-  perform pg_temp.ok(not (ks @> array['S2-01']), 'enabled=false 時不會出現在結果裡',
+  perform pg_temp.ok(not (ks @> array['S2-01']), '把開關關掉就真的不會出現在結果裡',
     array_to_string(ks, ','));
 
-  -- ══ 以下把六條暫時打開，證明「翻開關就會動」═══════════════
-  raise notice '=== 翻開開關之後 ===';
+  -- ══ 恢復成正式狀態（六條都開），以下驗證它們真的會動 ═══════
+  raise notice '=== 正式啟用的狀態 ===';
   update public.screening_rules set enabled = true where code like 'S2-%';
 
   -- S2-01 聯絡頻率
@@ -220,10 +223,11 @@ begin
   perform pg_temp.ok(ks @> array['R038'],
     '只是參與程度期待不同 → 🟡（R038），不會升成 🔴', array_to_string(ks, ','));
 
-  -- ══ 收工：一定要關回去 ═════════════════════════════════════
-  update public.screening_rules set enabled = false where code like 'S2-%';
+  /* ══ 收工：這一份中途動過 enabled，收尾要把它還原成 schema 定義的狀態，
+        不然接著跑的其他測試會讀到被這一份改過的規則庫。 ══════════ */
+  update public.screening_rules set enabled = true where code like 'S2-%';
   select count(*) into n from public.screening_rules where code like 'S2-%' and enabled;
-  perform pg_temp.ok(n = 0, '測試結束，六條都關回去了', n::text);
+  perform pg_temp.ok(n = 6, '測試結束，六條還原成正式的啟用狀態', n::text);
 
   raise notice '=== 第二階段問診測試結束 ===';
 end $$;

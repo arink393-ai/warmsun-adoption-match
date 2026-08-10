@@ -71,6 +71,14 @@
   .err{font-size:13px;color:var(--bad)}
   .empty{border:1px dashed var(--rule);border-radius:10px;padding:28px;text-align:center;color:var(--ink-soft)}
   .qa{border-left:2px solid var(--rule);padding:2px 0 2px 10px;margin:8px 0;font-size:14px}
+  /* AI 閱讀申請的三段式輸出（跟配對站的診療紀錄同一套視覺：色彩當線條，不當色塊） */
+  .vetSec{margin-top:10px;padding-top:8px;border-top:1px dotted var(--rule)}
+  .vetSec:first-child{margin-top:0;padding-top:0;border-top:none}
+  .vetSecHead{font-weight:600;color:var(--ink);margin-bottom:2px}
+  .screenItem{border-left:2px solid var(--rule);padding:3px 0 3px 10px;margin:7px 0;line-height:1.75}
+  .screenItem.o-yellow{border-left-color:var(--warn)}
+  .screenItem.o-green{border-left-color:var(--ok)}
+  .screenAsk{margin-top:5px;color:var(--brand-dk)}
   .qa b{display:block;color:var(--ink-soft);font-weight:400;font-size:13px}
   .stage{font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:.06em}
   .s0{color:var(--bad)} .s1{color:var(--warn)} .s2{color:var(--warn)} .s3{color:var(--ok)}
@@ -466,9 +474,9 @@ async function renderRoster(){
           <button class="ghost rej" data-app="${a.id}">婉拒</button>` : ''}
         ${a.stage===3 && !a.unlock_to ? `
           <button class="ghost unlockTo" data-app="${a.id}">同意解鎖聯絡方式（免費）</button>` : ''}
-        ${a.a1 ? `<button class="ghost aiJudge" data-app="${a.id}">AI 建議評分</button>` : ''}
+        ${a.a1 ? `<button class="ghost aiJudge" data-app="${a.id}">AI 閱讀這份申請</button>` : ''}
       </div>
-      ${a.a1 ? `<div class="hint aiOut" data-app="${a.id}" style="margin-top:8px;white-space:pre-wrap"></div>` : ''}
+      ${a.a1 ? `<div class="hint aiOut" data-app="${a.id}" style="margin-top:8px"></div>` : ''}
       ${a.stage===3 && a.unlock_to && !a.unlock_from ? `<p class="hint">已同意解鎖，等待對方付點解鎖。</p>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="hint">🔓 對方已互相解鎖，可在配對站查看聯絡方式</div>` : ''}
       <label style="margin-top:14px">套用罐頭回覆（自動帶入對方名字）</label>
@@ -514,16 +522,16 @@ function bindRoster(){
       const a = roster.find(x => x.id === b.dataset.app);
       const from = rosterFromProfiles[a.from_user] || {};
       const out = $('roster').querySelector(`.aiOut[data-app="${a.id}"]`);
-      b.disabled = true; out.textContent = 'AI 分析中⋯⋯';
+      b.disabled = true; out.textContent = '主治獸醫閱讀中⋯⋯';
       try{
         const q1 = (Array.isArray(myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
         const q2 = (Array.isArray(a.a2_questions) && a.a2_questions.length) ? a.a2_questions : DEFAULT_Q2;
-        const text = await DB.askClaude(buildJudgePrompt(from, a, q1, q2));
-        const m = text.match(/匹配度[:：]\s*(\d{1,3})\s*%/);
-        const pct = m ? Math.max(0, Math.min(100, parseInt(m[1], 10))) : null;
-        const rest = m ? text.replace(m[0], '').trim() : text;
-        out.innerHTML = (pct !== null
-          ? `<b style="font-size:16px;color:var(--brand-dk)">匹配度　${pct}%</b><br>` : '') + esc(rest);
+        /* 免費的規則式初診已經整理過資料上看得出來的差異，先拿來當底稿，
+           AI 就不必重講，可以專心在規則做不到的地方。拿不到也不影響。 */
+        let screening = null;
+        try{ screening = await DB.getScreening(a.from_user); }catch(e){ screening = null; }
+        const text = await DB.askClaude(buildJudgePrompt(from, a, q1, q2, screening));
+        out.innerHTML = judgeReportHTML(text);
       }catch(e){ out.textContent = '分析失敗：' + (e.message||''); }
       b.disabled = false;
     };
@@ -544,9 +552,38 @@ function bindRoster(){
     msg.textContent = '已複製'; setTimeout(()=>msg.textContent='',2000);
   });
 }
-function buildJudgePrompt(from, a, q1, q2){
+/* AI 回的是 {observe, follow_up, ask}；解析不出來就照原樣顯示，不要整個吃掉。
+   不論哪一條路徑都會先把百分比清掉——prompt 裡的禁令是請求，不是保證，
+   而會被畫到畫面上的東西不能只靠請求。 */
+function judgeReportHTML(raw){
+  const strip = t => String(t).replace(/\s*\d{1,3}\s*%/g, '').trim();
+  let r = null;
+  try{ r = JSON.parse(String(raw).replace(/^```(?:json)?\s*|\s*```$/g, '').trim()); }catch(e){ r = null; }
+  if(!r || typeof r !== 'object' || (!Array.isArray(r.observe) && !Array.isArray(r.follow_up)))
+    return `<div style="white-space:pre-wrap">${esc(strip(raw))}</div>`;
+  const clean = arr => (Array.isArray(arr) ? arr : []).map(strip).filter(Boolean);
+  const sec = (icon, title, items, cls) => items.length
+    ? `<div class="vetSec"><div class="vetSecHead">${icon} ${esc(title)}</div>
+        ${items.map(t => `<div class="screenItem ${cls}">${esc(t)}</div>`).join('')}</div>` : '';
+  const ask = clean(r.ask);
+  return `${sec('🟢', '目前觀察', clean(r.observe), 'o-green')}
+    ${sec('🟡', '需要追蹤', clean(r.follow_up), 'o-yellow')}
+    ${ask.length ? `<div class="vetSec"><div class="vetSecHead">💬 建議確認</div>
+      <div class="screenAsk">${ask.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>')}</div></div>` : ''}
+    <p style="margin-top:10px">這是 AI 讀完回答之後的整理，<b>不是分數，也不是成功機率</b>。
+      最後判斷仍然在你身上。</p>`;
+}
+function buildJudgePrompt(from, a, q1, q2, screening){
   const qa = (qs, ans) => qs.map((q,i) => `${i+1}. ${q}\n   回答：${(ans||[])[i]||'（未答）'}`).join('\n');
+  const findings = (screening && Array.isArray(screening.findings) && screening.findings.length)
+    ? screening.findings.map(f => `[${f.outcome}] ${f.title}${f.body ? '：' + f.body : ''}`).join('\n')
+    : '（初診目前沒有整理出項目）';
   return `你是「暖陽動物之家」認養配對站的審查助手，正在協助一位待認養身分的使用者評估申請人。這只是輔助建議，最後決定權在使用者身上，不要幫忙做最終決定，只提供分析。
+
+【規則式初診已經整理出來的項目】
+${findings}
+
+上面那些是系統靠結構化欄位就能看出來的差異，**不要重複講**。你的工作是規則做不到的事：讀懂申請人在自由回答裡真正說了什麼、找出兩段回答之間可能的矛盾、指出值得當面確認但資料上看不出來的事。
 
 【使用者（待認養方）的自我介紹】
 ${myProfile.bio || '（未填寫）'}
@@ -561,10 +598,19 @@ ${myProfile.wants || '（未填寫）'}
 ${a.a1 ? qa(q1, a.a1) : '（尚未進行）'}
 ${a.a2 ? '\n【申請人的第二階段回答】\n' + qa(q2, a.a2) : ''}
 
-請先在第一行寫「匹配度：XX%」（0-100 的整數，根據目前已有的資料估計兩人到這個階段為止合不合適，
-只是輔助判斷用，不是精確數字），空一行後再用大約 150～250 字，依序給出：這位申請人的優點、需要留意
-或進一步確認的地方、以及你觀察到「通過／再觀察／婉拒」哪個方向比較合理並說明一句話理由。
-語氣中性，不要編造回答中沒提到的資訊。`;
+只輸出合法 JSON，不要 markdown：
+{"observe":["..."],"follow_up":["..."],"ask":["..."]}
+
+・observe：目前看起來相容或值得肯定的地方，每則一句話，最多 4 則
+・follow_up：值得追蹤但不代表不適合的地方，每則一句話，最多 4 則
+・ask：建議直接問對方的問題，用第二人稱，最多 3 題
+
+嚴格禁止：
+・**任何百分比、分數、評分、星等或「匹配度」**。那種數字沒有校準基礎，只會被當成結論。
+・替對方貼標籤（例如「這個人很情緒化」「媽寶」「太黏」）。描述行為與差異，不描述人格。
+・編造資料裡沒有的事。資料不足就在 follow_up 說明「這一項資料不足」。
+・重複初診已經講過的項目。
+・替使用者下「通過／婉拒」的結論。決定權在使用者身上。`;
 }
 function applyPlaceholders(t, ctx){
   return (t||'').replace(/\{\{name\}\}/g, ctx.name||'').replace(/\{\{myname\}\}/g, ctx.myname||'');

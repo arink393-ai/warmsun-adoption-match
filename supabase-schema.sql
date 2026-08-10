@@ -384,7 +384,7 @@ alter table public.applications add column if not exists vet text;
 alter table public.applications add column if not exists vet_at timestamptz;
 alter table public.applications add column if not exists paid int not null default 0;
 alter table public.applications add column if not exists refunded boolean not null default false;
-alter table public.applications add column if not exists vet_scores jsonb;
+-- （vet_scores 曾經在這裡建立，已於第 22 節整欄移除，不要再加回來）
 alter table public.applications add column if not exists vet_stage int;
 -- 一鍵通關／快速邀請（舊機制，已停用）留下的欄位：不再由任何函式寫入，純粹保留舊資料，
 -- 避免砍欄位動到既有申請紀錄。新機制見下面的 priority_invite／priority_note。
@@ -3774,3 +3774,23 @@ on conflict (code) do update set
   priority = excluded.priority, min_stage = excluded.min_stage, cond = excluded.cond,
   requires = excluded.requires, reason_code = excluded.reason_code,
   title = excluded.title, body = excluded.body, ask = excluded.ask, enabled = excluded.enabled;
+
+-- ============================================================
+-- 21) 第二階段結構化表單做好了，把六條 S2 規則打開
+-- ============================================================
+-- 表單在「我的申請 → 回答第二階段」裡，五題選擇題各自帶一個重要度。
+-- requires 會照顧還沒填的人：缺欄位就整條跳過，那個題組記成 ⚪ 資料不足，
+-- 不會拿沒填的欄位硬猜。
+update public.screening_rules set enabled = true where code like 'S2-%';
+
+-- ============================================================
+-- 22) 把 vet_scores 那個百分比廢掉（規格第 9 步）
+--
+--     那個數字沒有任何校準基礎——我們沒有「配對成功」的標準答案可以回歸，
+--     62% 跟 58% 的差別是憑空的。而且只要它還在資料庫裡，遲早有人把它
+--     畫回畫面上。所以不是改語意，是整欄拿掉。
+--
+--     AI 分析改成輸出「觀察／需要追蹤／建議確認的問題」，存在原本的 vet 欄位
+--     （JSON 字串）。舊資料是純文字，前端會照原樣顯示並標明是舊版格式。
+-- ============================================================
+alter table public.applications drop column if exists vet_scores;

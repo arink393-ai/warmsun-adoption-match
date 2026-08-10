@@ -51,9 +51,12 @@ begin
   select count(*) into n from public.screening_rules where not enabled and code like 'R%';
   perform pg_temp.ok(n = 5,
     '五條「問不到真話」的先關著（R034/R035/R036/R041/R044）', n::text);
-  select count(*) into n from public.screening_rules where not enabled and code like 'S2-%';
+  /* 第二階段結構化表單做好之後（schema §21），這六條才打開。
+     這裡斷言「全開」而不是「全關」——如果哪天表單被拿掉、欄位卻留著，
+     這六條會拿 null 去比對而永遠不亮燈，那是沉默的失效，不是安全狀態。 */
+  select count(*) into n from public.screening_rules where enabled and code like 'S2-%';
   perform pg_temp.ok(n = 6,
-    '第二階段結構化問診的六條也先關著（等表單做好再開）', n::text);
+    '第二階段結構化問診的六條都已開啟（表單做好了）', n::text);
 
   select count(*) into n from public.screening_rules where outcome = 'never';
   perform pg_temp.ok(n = 15, '禁止規則與「刻意不觸發」共 15 條留在庫裡看得見', n::text);

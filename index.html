@@ -206,6 +206,16 @@
   .codeBox code{font-size:11.5px;color:var(--brand-dk)}
   .codeBox em{font-style:normal;color:var(--ink-soft);font-size:11px}
   .codeBox.stale code{color:var(--bad);text-decoration:line-through}
+  /* 第二階段結構化問診：跟下面的自由回答視覺上分開 */
+  .s2Box{border:1px solid var(--brand);border-radius:6px;padding:14px 16px;margin:12px 0}
+  .s2Head{font-family:var(--font-heading);font-weight:600;font-size:13px;letter-spacing:.06em;
+        color:var(--brand-dk);margin-bottom:6px}
+  .s2Q{border-top:1px dotted var(--rule);padding-top:10px;margin-top:12px}
+  .s2Q:first-of-type{border-top:none;padding-top:0;margin-top:0}
+  .s2QTitle{font-size:13.5px;font-weight:600;line-height:1.7}
+  .vetSec{margin-top:10px}
+  .vetSecHead{font-family:var(--font-heading);font-weight:600;font-size:12px;
+        letter-spacing:.06em;color:var(--ink-soft);margin-bottom:4px}
   .caseBack{margin-bottom:12px}
   .caseSec{margin-top:16px}
   .caseSecHead{font-family:var(--font-heading);font-weight:600;font-size:12.5px;letter-spacing:.06em;
@@ -1727,6 +1737,109 @@ const DEALBREAKER_LEVELS = [
   {v:'non_negotiable', t:'🔴 不可妥協'}
 ];
 
+/* ── 第二階段結構化問診 S2-01～S2-05 ────────────────────────────
+   48 題不用全部結構化——只有真的會餵給規則引擎的題目才需要，
+   其餘繼續保留自由回答，不然認養面談會變成一份超長的人格測驗。
+   這五題就是那些「真的會餵進去」的題目，選項字串必須跟第 20 節的規則逐字相同。 */
+const S2_QUESTIONS = [
+  {code:'S2-01', topic:'contact_frequency',
+   q:'如果進入穩定關係，在沒有特殊忙碌的情況下，你理想中的聯絡頻率是？',
+   fields:[{col:'contact_frequency', label:'理想的聯絡頻率',
+     opts:['不需要固定聯絡，有事情再說','每 2～3 天聯絡一次即可','希望每天至少有簡短聯絡',
+           '希望每天有一段較完整的聊天時間','希望一天中保持多次聯絡','其他']}]},
+
+  {code:'S2-02', topic:'alone_time',
+   q:'進入穩定關係後，你通常需要多少自己的時間？',
+   fields:[
+     {col:'alone_time_need', label:'你需要多少自己的時間',
+      opts:['很少，我喜歡大部分時間一起行動','希望常常在一起，但偶爾需要自己待著',
+            '陪伴與獨處大約各半','我需要不少自己的時間','我非常重視獨立生活與個人空間']},
+     {col:'partner_alone_time_acceptance', label:'如果伴侶需要比你更多的獨處時間，你可以接受嗎',
+      opts:['可以','視情況討論','會比較困難','無法接受']}]},
+
+  {code:'S2-03', topic:'housework',
+   q:'如果未來共同生活，你認為家務比較理想的分配方式是？',
+   fields:[
+     {col:'housework_model', label:'家務分配',
+      opts:['原則上平均分配','按彼此擅長與喜好分配，不一定一人一半','工時較少的人可以多負責一些',
+            '收入較少的人應多負責一些','傾向由其中一方主要負責','可以花錢請人協助',
+            '尚未想過，可以共同討論']},
+     {col:'cleanliness_conflict_style', label:'如果兩個人對「乾淨」的標準不同，你認為該怎麼處理',
+      opts:['以要求較高的一方為主','找兩人都能接受的最低標準','各自負責自己的空間',
+            '誰在意誰處理','其他']}]},
+
+  {code:'S2-04', topic:'conflict_style',
+   q:'發生衝突、情緒很高的時候，你通常最希望怎麼處理？',
+   fields:[
+     {col:'conflict_pause_preference', label:'你需要多久',
+      opts:['當下就談清楚','冷靜 1～3 小時再談','希望當天處理','可以隔天再談',
+            '可能需要 2～3 天','我通常需要等自己準備好，不希望有固定時間']},
+     {col:'conflict_return_commitment', label:'需要暫停時，你願不願意先說「我需要多久、之後會回來談」',
+      opts:['一定會','通常會','視情況','不習慣','不想承諾時間'],
+      hint:'這一題問的是「會不會說一聲」，不是「你需要多久」——先說一聲再暫停，跟消失是兩件事。'}],
+   noRed:true},
+
+  {code:'S2-05', topic:'parents_in_decisions',
+   q:'如果你的父母／家人與伴侶對一件重要事情意見不同，你認為最後應該由誰決定？',
+   fields:[
+     {col:'parents_in_decisions', label:'最後由誰決定',
+      opts:['我和伴侶共同決定','伴侶優先，但會充分考慮家人','視事情性質決定',
+            '希望取得家人的同意再決定','家人的意見通常會是重要決定因素']},
+     {col:'req_family_involvement', label:'你期待伴侶參與自己原生家庭活動的程度',
+      opts:['幾乎不要求','重大節日即可','每月幾次','希望經常參與','希望像自己家人一樣高度參與']}]}
+];
+
+function s2FieldId(appId, col){ return `s2_${appId}_${col}`; }
+function s2ImpId(appId, topic){ return `s2imp_${appId}_${topic}`; }
+
+function stage2StructuredHTML(appId){
+  const p = myProfile || {};
+  const d = (p && typeof p.dealbreakers === 'object' && p.dealbreakers) ? p.dealbreakers : {};
+  return `<div class="s2Box">
+    <div class="s2Head">🩺 結構化問診（5 題）</div>
+    <p class="hint" style="margin:0 0 10px">這五題會直接餵給主治醫師初診，所以做成選擇題；
+      下面其他題目維持自由回答。<b>每題都會再問一次「這件事對你有多重要」</b>——
+      同一個差異是黃燈還是紅燈，取決於它對你們兩個人各有多重要。</p>
+    ${S2_QUESTIONS.map((qq, i) => `
+      <div class="s2Q">
+        <div class="s2QTitle">${i + 1}. ${esc(qq.q)}</div>
+        ${qq.fields.map(f => `
+          <label>${esc(f.label)}</label>
+          <select id="${s2FieldId(appId, f.col)}">
+            <option value="">請選擇</option>
+            ${f.opts.map(o => `<option${(p[f.col] === o) ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+          </select>
+          ${f.hint ? `<p class="hint" style="margin:4px 0 0">${esc(f.hint)}</p>` : ''}`).join('')}
+        <label>這件事對你有多重要</label>
+        <select id="${s2ImpId(appId, qq.topic)}">
+          ${DEALBREAKER_LEVELS.map(l =>
+            `<option value="${l.v}"${(d[qq.topic] || 'none') === l.v ? ' selected' : ''}>${esc(l.t)}</option>`).join('')}
+        </select>
+        ${qq.noRed ? '<p class="hint" style="margin:4px 0 0">衝突節奏不管標多重要都<b>不會變成紅燈</b>——'
+          + '一個想當下談、一個需要冷靜，兩種都沒有錯。</p>' : ''}
+      </div>`).join('')}
+    <p class="hint" style="margin:10px 0 0">這五題的答案會存回你的個人資料卡（分階段揭露照舊），
+      重要度只有你自己看得到，別人只看得到「有幾項不可妥協」。</p>
+  </div>`;
+}
+
+/* 送出第二階段時，先把結構化答案存回個人資料卡，再送自由回答 */
+async function saveStage2Structured(appId){
+  const patch = {};
+  S2_QUESTIONS.forEach(qq => qq.fields.forEach(f => {
+    const el = $(s2FieldId(appId, f.col));
+    if(el && el.value) patch[f.col] = el.value;
+  }));
+  const d = Object.assign({}, (myProfile && myProfile.dealbreakers) || {});
+  S2_QUESTIONS.forEach(qq => {
+    const el = $(s2ImpId(appId, qq.topic));
+    if(!el) return;
+    if(el.value && el.value !== 'none') d[qq.topic] = el.value; else delete d[qq.topic];
+  });
+  patch.dealbreakers = d;
+  if(Object.keys(patch).length) myProfile = await DB.saveMyProfile(patch);
+}
+
 function fieldId(col){ return 'x_' + col; }
 function renderExtraFields(){
   const groups = {};
@@ -2620,6 +2733,7 @@ async function renderOutbox(){
       ${a.note ? `<p class="hint">對方留言：${esc(a.note)}</p>` : ''}
       ${a.skipped ? `<p class="hint">⚡ 雙方已同意快速邀請，略過剩餘問卷並完成解鎖。</p>` : ''}
       ${needQ2 ? `<div class="q2form" data-app="${a.id}">`
+               + stage2StructuredHTML(a.id)
                + q2.map((q,i) => questionBlock(q, i, 'a2q-' + a.id)).join('')
                + `<div class="bar"><button class="sendQ2" data-app="${a.id}" data-n="${q2.length}">送出回答</button></div></div>` : ''}
       ${a.stage === 3 && !a.unlock_from ? `<div class="notice">
@@ -2684,6 +2798,9 @@ function bindOutbox(){
     if(ans.some(x => !x)){ alert('每一題都要回答'); return; }
     const qs = (Array.isArray(a.a2_questions) && a.a2_questions.length) ? a.a2_questions : DEFAULT_Q2;
     try{
+      /* 先存結構化那五題（那是個人資料卡上的事實），再送這一份申請的自由回答。
+         順序不能反：自由回答送出後表單會重畫，選單就讀不到了。 */
+      await saveStage2Structured(a.id);
       await DB.submitStage2(a.id, ans, qs);
       a.a2 = ans;
       myProfile = await DB.getMyProfile();   /* 答題紀錄更新了，重新載入 */
@@ -2941,7 +3058,7 @@ function caseFileHTML(a, from, cs){
           ${a.stage === 1 && a.status === 'open' ? `<button class="ghost deep" data-app="${a.id}">${
             Array.isArray(a.a2_questions) && a.a2_questions.length
               ? '已擬好第二階段客製問題' : `🔬 讓 AI 幫我客製追問（進階診斷．${DEEP_COST} 點）`}</button>` : ''}
-        </div><div id="vet-${a.id}">${a.vet ? vetScoreCard(a) : ''}</div>
+        </div><div id="vet-${a.id}">${a.vet ? vetReportCard(a) : ''}</div>
         <div id="deep-${a.id}">${Array.isArray(a.a2_questions) && a.a2_questions.length
           ? '<div class="qa"><b>第二階段客製問題</b>' + a.a2_questions.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>') + '</div>' : ''}</div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(from.locked || '對方尚未填寫')}</div>` : ''}
@@ -3408,34 +3525,77 @@ $('tplReset').onclick = async () => {
   catch(e){ flash('tplMsg', e.message || '還原失敗'); }
 };
 
-function vetScoreCard(app){
-  const s = app.vet_scores || {};
-  const rows = [1,2,3].map(n => {
-    const value = s['stage' + n];
-    const available = n <= app.stage && Number.isFinite(Number(value));
-    return `<div class="qa"><b>第 ${n} 階段匹配程度</b>${available ? `${Math.max(0,Math.min(100,Number(value)))}%` : '資料尚未解鎖'}</div>`;
-  }).join('');
-  return `<div class="lock"><b>AI 相容度參考（非醫療診斷）</b>${rows}
-    <p class="hint">百分比只整理目前已揭露的回答，不代表成功機率；請搭配實際對話與界線感受判斷。</p>
-    ${app.vet ? `<div style="white-space:pre-wrap">${esc(app.vet)}</div>` : ''}</div>`;
+/* ── AI 配對分析（主治獸醫評估）────────────────────────────────
+   不再輸出百分比。理由：那個數字沒有任何校準基礎——我們沒有「配對成功」的
+   標準答案可以回歸，62% 跟 58% 的差別是憑空的。而且一旦畫在畫面上，
+   人就會拿它當結論，反而不看下面那些真正有內容的觀察。
+   改成輸出「觀察／需要追蹤／建議確認的問題」，並且以免費初診的結果為底稿——
+   免費的規則式初診已經把「資料上看得出來的差異」整理好了，
+   付費的 AI 應該做規則做不到的事：讀懂前後文、看出兩段回答之間的矛盾。 */
+function vetReportCard(app){
+  let r = null;
+  try{ r = JSON.parse(app.vet); }catch(e){ r = null; }
+  /* 舊資料是純文字（而且可能含百分比），照原樣顯示但標明是舊版 */
+  if(!r || typeof r !== 'object'){
+    return `<div class="note"><b>🩺 AI 配對分析</b>
+      <div style="white-space:pre-wrap;margin-top:6px">${esc(app.vet || '')}</div>
+      <p class="hint" style="margin-top:8px">這是舊版格式的分析。新的分析不再輸出百分比——
+        那個數字沒有校準基礎，留著只會讓人拿它當結論。</p></div>`;
+  }
+  const sec = (icon, title, items, cls) => (Array.isArray(items) && items.length)
+    ? `<div class="vetSec"><div class="vetSecHead">${icon} ${esc(title)}</div>
+        ${items.map(t => `<div class="screenItem ${cls}">${esc(t)}</div>`).join('')}</div>` : '';
+  return `<div class="note">
+    <b>🩺 主治醫師診療紀錄</b>
+    ${sec('🟢', '目前觀察', r.observe, 'o-green')}
+    ${sec('🟡', '需要追蹤', r.follow_up, 'o-yellow')}
+    ${(Array.isArray(r.ask) && r.ask.length) ? `<div class="vetSec">
+      <div class="vetSecHead">💬 建議確認</div>
+      <div class="screenAsk">${r.ask.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>')}</div>
+    </div>` : ''}
+    <p class="hint" style="margin-top:10px">這是 AI 讀完雙方回答之後的整理，
+      <b>不是分數，也不是成功機率</b>。免費的初診已經整理過資料上看得出來的差異，
+      這一份補的是規則看不出來的部分（前後文、兩段回答之間的落差）。
+      最後判斷仍然在你身上。</p>
+  </div>`;
 }
+
 async function vetReview(app, from){
   const box = $('vet-' + app.id);
-  if(app.vet){ box.innerHTML = vetScoreCard(app); return; }
+  if(app.vet){ box.innerHTML = vetReportCard(app); return; }
   if(!DB.hasClaudeProxy()){
     box.innerHTML = '<p class="hint">尚未設定 AI 代理網址，暫時無法使用（不影響其他功能）。</p>';
     return;
   }
   if((myProfile.credits||0) < VET_COST){
-    box.innerHTML = '<p class="hint">診療點數不足，請到「診療室」查看加值方式。</p>';
+    box.innerHTML = '<p class="hint">點數不足，請到「診療室」查看加值方式。</p>';
     return;
   }
-  if(!confirm(`這次評估會消耗 ${VET_COST} 點診療費，要繼續嗎？`)) return;
+  if(!confirm(`這次分析會消耗 ${VET_COST} 點，要繼續嗎？（免費的初診已經整理過資料上看得出來的差異，這一份是請 AI 讀懂回答本身）`)) return;
   box.innerHTML = '<p class="hint">主治獸醫閱讀中⋯⋯</p>';
+
+  /* 先拿免費初診的結果當底稿：AI 不必重講規則已經講過的事，
+     可以專心在規則做不到的地方。拿不到也不影響，只是少一段脈絡。 */
+  let screening = null;
+  try{ screening = await DB.getScreening(from.id); }catch(e){ screening = null; }
+  const findingsText = (screening && Array.isArray(screening.findings) && screening.findings.length)
+    ? screening.findings.map(f => `[${f.outcome}] ${f.title}${f.body ? '：' + f.body : ''}`).join('\n')
+    : '（初診目前沒有整理出項目）';
+
   const q1 = (Array.isArray(myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
   const q2 = (Array.isArray(app.a2_questions) && app.a2_questions.length) ? app.a2_questions : DEFAULT_Q2;
   const qa = (qs, ans) => qs.map((q,i) => `${q}\n→ ${(ans||[])[i]||'（未答）'}`).join('\n\n');
-  const prompt = `你是「暖陽動物之家」的主治獸醫，正在替一位待認養者評估申請人是否適合進入下一階段。語氣溫和專業，帶一點收容所的世界觀，但務必誠實。
+  const prompt = `你是「暖陽動物之家」的主治獸醫，正在替一位待認養者讀一份認養申請。
+語氣溫和專業，帶一點收容所的世界觀，但務必誠實。
+
+【規則式初診已經整理出來的項目】
+${findingsText}
+
+上面那些是系統靠結構化欄位就能看出來的差異，**不要重複講**。
+你的工作是規則做不到的事：
+・讀懂申請人在自由回答裡真正說了什麼
+・找出兩段回答之間可能的矛盾（例如第一階段說很尊重個人空間，第二階段卻說希望隨時知道對方在哪）
+・指出值得當面確認、但資料上看不出來的事
 
 【待認養者（我方）】
 ${myProfile.name}／${myProfile.age||'年齡未填'}／${myProfile.area||''}
@@ -3452,20 +3612,36 @@ ${qa(q1, app.a1)}
 ${app.a2 ? '【第二階段回答】\n' + qa(q2, app.a2) : ''}
 
 只輸出合法 JSON，不要 markdown：
-{"stage1":0到100,"stage2":數字或null,"stage3":數字或null,"confidence":"低|中|高","summary":"繁體中文約250字，包含相容處、待確認問題、紅旗與下一步建議"}
-只能替目前已有資料的階段評分，未進入的階段必須是 null。百分比是資訊整理，不是醫療診斷或成功機率。不要編造；資料不足要明說。`;
+{"observe":["..."],"follow_up":["..."],"ask":["..."]}
+
+・observe：目前看起來相容或值得肯定的地方，每則一句話，最多 4 則
+・follow_up：值得追蹤但不代表不適合的地方，每則一句話，最多 4 則
+・ask：建議直接問對方的問題，用第二人稱，最多 3 題
+
+嚴格禁止：
+・**任何百分比、分數、評分、星等或「匹配度」**。那種數字沒有校準基礎，只會被當成結論。
+・替對方貼標籤（例如「這個人很情緒化」「媽寶」「太黏」）。描述行為與差異，不描述人格。
+・編造資料裡沒有的事。資料不足就在 follow_up 說明「這一項資料不足」。
+・重複初診已經講過的項目。`;
+
   try{
     const text = await DB.askClaude(prompt);
     const parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim());
-    if(!Number.isFinite(Number(parsed.stage1)) || typeof parsed.summary !== 'string') throw new Error('AI 回傳格式不完整');
-    const scores = {stage1:Number(parsed.stage1), stage2:parsed.stage2===null?null:Number(parsed.stage2), stage3:parsed.stage3===null?null:Number(parsed.stage3), confidence:parsed.confidence||'低'};
+    if(!parsed || (!Array.isArray(parsed.observe) && !Array.isArray(parsed.follow_up)))
+      throw new Error('AI 回傳格式不完整');
+    /* 保險起見再擋一次：萬一 AI 還是吐了百分比，就地拿掉，不要畫到畫面上 */
+    const clean = arr => (Array.isArray(arr) ? arr : [])
+      .map(t => String(t).replace(/\s*\d{1,3}\s*%/g, '').trim()).filter(Boolean);
+    const report = {observe: clean(parsed.observe), follow_up: clean(parsed.follow_up),
+                    ask: clean(parsed.ask)};
     const spent = await DB.spendCreditFor('vet_review', from.name);
     if(spent.ok) myProfile = spent.profile;
-    const updated = await DB.updateApplication(app.id, {vet: parsed.summary, vet_scores: scores, vet_stage: app.stage, vet_at: new Date().toISOString()});
+    const updated = await DB.updateApplication(app.id,
+      {vet: JSON.stringify(report), vet_stage: app.stage, vet_at: new Date().toISOString()});
     Object.assign(app, updated);
-    box.innerHTML = vetScoreCard(app);
+    box.innerHTML = vetReportCard(app);
   }catch(e){
-    box.innerHTML = `<p class="hint" style="color:var(--bad)">評估失敗：${esc(e.message)}（未扣點）</p>`;
+    box.innerHTML = `<p class="hint" style="color:var(--bad)">分析失敗：${esc(e.message)}（未扣點）</p>`;
   }
 }
 
