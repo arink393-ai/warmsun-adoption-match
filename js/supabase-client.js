@@ -38,6 +38,31 @@
     const { error } = await sb.auth.signOut();
     if (error) throw error;
   }
+  // 忘記密碼：寄一封重設信。redirectTo 一定要在 Supabase 的 Redirect URLs 白名單裡，
+  // 不然使用者點了信裡的連結會被導到 Site URL 而不是這一頁。
+  //
+  // 不論這個 email 有沒有註冊過，都當成成功——回報「查無此帳號」等於送給任何人
+  // 一支帳號存在與否的查詢工具。Supabase 本身也是這個行為。
+  async function resetPassword(email) {
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if (error) throw error;
+  }
+  // 使用者點了重設信之後，Supabase 會把這一頁登入成一個 recovery session，
+  // 這時候才有權限改自己的密碼。
+  async function updatePassword(newPassword) {
+    const { error } = await sb.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+  }
+  // 重寄一次驗證信（註冊完沒收到、或信箱被擋掉的情況）
+  async function resendConfirmation(email) {
+    const { error } = await sb.auth.resend({
+      type: 'signup', email,
+      options: { emailRedirectTo: window.location.origin + window.location.pathname }
+    });
+    if (error) throw error;
+  }
   async function deleteMyAccount() {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) throw new Error('尚未登入');
@@ -541,6 +566,7 @@
   window.DB = {
     sb,
     signUpEmail, signInEmail, signInGoogle, signOut, deleteMyAccount, getUser, onAuthChange,
+    resetPassword, updatePassword, resendConfirmation,
     ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles, getScreening,
     listApplicationEvents, markApplicationsOpened,
     getCrmBoard, getApplicationCase, saveCaseNote,

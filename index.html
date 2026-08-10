@@ -213,6 +213,11 @@
   .s2Q{border-top:1px dotted var(--rule);padding-top:10px;margin-top:12px}
   .s2Q:first-of-type{border-top:none;padding-top:0;margin-top:0}
   .s2QTitle{font-size:13.5px;font-weight:600;line-height:1.7}
+  /* 檢舉時效：逾期用紅色的線，不是紅色的塊 */
+  .slaBar{font-size:13px;border-bottom:1px dotted var(--rule);padding-bottom:8px;margin-bottom:10px}
+  .slaTag{display:inline-block;font-size:12px;border:1px solid var(--rule);border-radius:999px;
+        padding:0 9px;margin-left:6px;color:var(--ink-soft)}
+  .slaTag.over{border-color:var(--bad);color:var(--bad)}
   /* 題號下面那一行小字：告訴人這一題在問哪個生活場景，不是在測人格 */
   .s2Scene{font-family:var(--font-heading);font-size:11.5px;letter-spacing:.08em;
         color:var(--brand);margin:2px 0 0}
@@ -356,6 +361,7 @@
       <div class="bar"><button type="button" id="gGo" style="width:100%">登入</button></div>
       <div class="switcher">
         <span>還沒有帳號？</span><button type="button" id="gToSignup">註冊一個</button>
+        <span id="gForgotWrap">・<button type="button" id="gForgot">忘記密碼</button></span>
       </div>
       <p class="err" id="gMsg" style="min-height:16px;margin-top:10px"></p>
     </fieldset>
@@ -1379,18 +1385,43 @@ function rememberPendingTab(k){
 /* ── 登入 gate（右上角觸發的彈窗，不再擋住整個首頁） ── */
 let gateMode = 'login';
 let gateTrigger = null;
+const GATE_MODES = {
+  login:  {legend:'登入',       go:'登入',       toggle:'註冊一個', ac:'current-password'},
+  signup: {legend:'註冊',       go:'建立帳號',   toggle:'改成登入', ac:'new-password'},
+  forgot: {legend:'重設密碼',   go:'寄出重設信', toggle:'回到登入', ac:'current-password'},
+  /* 使用者點了重設信裡的連結回到站上，這時候 Supabase 已經給了一個
+     recovery session，畫面要變成「設定新密碼」而不是「登入」。 */
+  recover:{legend:'設定新密碼', go:'儲存新密碼', toggle:'取消',     ac:'new-password'}
+};
 function setGateMode(m){
   gateMode = m;
-  $('gateLegend').textContent = m === 'login' ? '登入' : '註冊';
-  $('gGo').textContent = m === 'login' ? '登入' : '建立帳號';
-  $('gToSignup').textContent = m === 'login' ? '註冊一個' : '改成登入';
-  $('gPass').autocomplete = m === 'login' ? 'current-password' : 'new-password';
+  const c = GATE_MODES[m] || GATE_MODES.login;
+  $('gateLegend').textContent = c.legend;
+  $('gGo').textContent = c.go;
+  $('gToSignup').textContent = c.toggle;
+  $('gPass').autocomplete = c.ac;
+  /* 忘記密碼只要 email；設定新密碼只要新密碼。多留一個欄位在畫面上，
+     使用者會不確定該填哪一個。 */
+  const emailRow = $('gEmail').previousElementSibling, passRow = $('gPass').previousElementSibling;
+  const show = (el, on) => { el.style.display = on ? '' : 'none'; };
+  show($('gEmail'), m !== 'recover'); show(emailRow, m !== 'recover');
+  show($('gPass'), m !== 'forgot');   show(passRow, m !== 'forgot');
+  passRow.textContent = m === 'recover' ? '新密碼（至少 6 個字）' : '密碼';
+  /* 重設信是寄到 email 的，Google 帳號沒有密碼可以重設；這兩個模式下藏起來 */
+  show($('gGoogle'), m === 'login' || m === 'signup');
+  show(document.querySelector('#gateForm .or'), m === 'login' || m === 'signup');
+  show($('gateForm').querySelector('.switcher span'), m === 'login' || m === 'signup');
+  show($('gForgotWrap'), m === 'login');
+  $('gateSub').textContent =
+    m === 'forgot'  ? '輸入註冊時用的 Email，我們會寄一封重設連結給你' :
+    m === 'recover' ? '請設定一組新密碼，設定完會直接登入' :
+    (pendingTab ? '登入才能繼續' : '登入才能瀏覽佈告欄與登記');
   $('gMsg').textContent = '';
+  $('gMsg').style.color = '';
 }
 function openGate(m){
   gateTrigger = document.activeElement;
   setGateMode(m || 'login');
-  $('gateSub').textContent = pendingTab ? '登入才能繼續' : '登入才能瀏覽佈告欄與登記';
   $('gate').classList.add('show');
   $('gate').setAttribute('aria-hidden', 'false');
   setTimeout(() => $('gEmail').focus(), 0);
@@ -1408,19 +1439,45 @@ document.addEventListener('keydown', (e) => {
   if(e.key === 'Escape' && $('gate').classList.contains('show')) closeGate();
 });
 $('gToSignup').onclick = () => setGateMode(gateMode === 'login' ? 'signup' : 'login');
+$('gForgot').onclick = () => setGateMode('forgot');
 $('gGoogle').onclick = async () => {
   try{ await DB.signInGoogle(); }
   catch(e){ $('gMsg').textContent = e.message || '尚未開通 Google 登入'; }
 };
+function gateOk(msg){ $('gMsg').style.color = 'var(--ok)'; $('gMsg').textContent = msg; }
 $('gGo').onclick = async () => {
   const email = $('gEmail').value.trim(), pass = $('gPass').value;
+  $('gMsg').style.color = '';
+  if(gateMode === 'forgot'){
+    if(!email){ $('gMsg').textContent = '請輸入 Email'; return; }
+    $('gGo').disabled = true;
+    try{
+      await DB.resetPassword(email);
+      /* 不論這個 email 有沒有註冊過都講同一句話——回報「查無此帳號」
+         等於送給任何人一支「這個信箱有沒有在這個站註冊」的查詢工具。 */
+      gateOk('如果這個 Email 有註冊過，重設信已經寄出了，請去收信（記得看看垃圾郵件匣）。');
+    }catch(e){ $('gMsg').textContent = e.message || '寄送失敗，請稍後再試'; }
+    $('gGo').disabled = false;
+    return;
+  }
+  if(gateMode === 'recover'){
+    if(pass.length < 6){ $('gMsg').textContent = '新密碼至少要 6 個字'; return; }
+    $('gGo').disabled = true;
+    try{
+      await DB.updatePassword(pass);
+      gateOk('密碼已更新，你現在是登入狀態了。');
+      setTimeout(closeGate, 1200);
+    }catch(e){ $('gMsg').textContent = e.message || '更新失敗，重設連結可能已經過期，請再寄一次'; }
+    $('gGo').disabled = false;
+    return;
+  }
   if(!email || !pass){ $('gMsg').textContent = '請輸入 Email 與密碼'; return; }
   $('gGo').disabled = true;
   try{
     if(gateMode === 'login') await DB.signInEmail(email, pass);
     else{
       await DB.signUpEmail(email, pass);
-      $('gMsg').textContent = '註冊成功，若專案要求信箱驗證，請先去收信再登入';
+      gateOk('註冊成功。如果專案要求信箱驗證，請先去收信點確認連結，再回來登入。');
     }
   }catch(e){ $('gMsg').textContent = e.message || '失敗了，請再試一次'; }
   $('gGo').disabled = false;
@@ -1448,11 +1505,22 @@ DB.onAuthChange(async (user, authEvent) => {
     return;
   }
   me = user;
+  /* 使用者是點了重設信裡的連結回來的：Supabase 給的是 recovery session，
+     這時候不該直接放行進站，而是要讓他先設定新密碼。 */
+  if(authEvent === 'PASSWORD_RECOVERY'){
+    $('topbarGuest').style.display = 'none'; $('topbarUser').style.display = 'flex';
+    $('whoami').textContent = user.email || '';
+    openGate('recover');
+    await boot();
+    renderVerifyNotice();
+    return;
+  }
   $('gate').classList.remove('show');
   $('gate').setAttribute('aria-hidden', 'true');
   $('topbarGuest').style.display = 'none'; $('topbarUser').style.display = 'flex';
   $('whoami').textContent = user.email || '';
   await boot();
+  renderVerifyNotice();
   startNotificationSubscription();
   if(pendingTab){ const k = pendingTab; rememberPendingTab(null); gotoTab(k); }
   else if(authEvent === 'SIGNED_IN' || authEvent === 'INITIAL_SESSION'){
@@ -1460,6 +1528,58 @@ DB.onAuthChange(async (user, authEvent) => {
     if(activeBtn && activeBtn.dataset.k === 'home') gotoTab('board');
   }
 });
+
+/* 條款承諾「檢舉後 3 個工作日內回覆」。這裡算的是「已經過了幾個工作日」，
+   六日不算。跨國時區與國定假日不處理——多算或少算半天不影響它的用途，
+   它要回答的只有一個問題：這件有沒有拖太久。 */
+function workingDaysSince(iso){
+  const from = new Date(iso), now = new Date();
+  if(isNaN(from) || now <= from) return 0;
+  let n = 0;
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  while(d < today){
+    d.setDate(d.getDate() + 1);
+    const w = d.getDay();
+    if(w !== 0 && w !== 6) n++;
+  }
+  return n;
+}
+function reportSla(iso){
+  const days = workingDaysSince(iso);
+  return {days, over: days > 3};
+}
+
+/* ── Email 還沒驗證的提示 ────────────────────────────────────
+   Supabase 專案如果開了「Confirm email」，沒驗證的帳號有些操作會被擋，
+   但預設畫面上完全沒有任何說明——使用者只會看到操作失敗。
+   這裡把狀態講出來，並給一顆重寄的按鈕（沒收到、被丟到垃圾郵件是常態）。
+   專案沒開驗證的話 email_confirmed_at 一開始就有值，這條橫幅不會出現。 */
+function renderVerifyNotice(){
+  let box = $('verifyNotice');
+  const need = me && !me.email_confirmed_at;
+  if(!need){ if(box) box.remove(); return; }
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'verifyNotice';
+    box.className = 'notice';
+    box.style.margin = '0 0 14px';
+    document.getElementById('app').prepend(box);
+  }
+  box.innerHTML = `✉️ 你的 Email（${esc(me.email || '')}）還沒完成驗證。
+    有些功能會因此被擋下來。請到信箱點一下確認連結——
+    沒收到的話記得看看垃圾郵件匣。
+    <div class="bar"><button class="ghost" id="resendVerify">重寄驗證信</button>
+      <span class="msg" id="resendMsg"></span></div>`;
+  $('resendVerify').onclick = async () => {
+    $('resendVerify').disabled = true;
+    try{
+      await DB.resendConfirmation(me.email);
+      $('resendMsg').textContent = '已重寄，請去收信';
+    }catch(e){ $('resendMsg').textContent = e.message || '寄送失敗，請稍後再試'; }
+    $('resendVerify').disabled = false;
+  };
+}
 
 /* ── 分頁 ── */
 const PANES = [
@@ -3946,7 +4066,9 @@ async function renderAdminHome(){
           被標記的人也不會知道自己被標記。🚨 的意思是「提高人工審查順序」，不是系統判定有罪。</p>
         <div id="safetyQueue"><p class="hint">讀取中⋯⋯</p></div>
       </fieldset>
-      <fieldset><legend>檢舉處理</legend><div id="reportList"><p class="hint">讀取中⋯⋯</p></div></fieldset>
+      <fieldset><legend>檢舉處理</legend>
+        <div id="reportSla" class="slaBar"></div>
+        <div id="reportList"><p class="hint">讀取中⋯⋯</p></div></fieldset>
       <fieldset><legend>會員管理</legend>
         <p class="hint">限制發文只會禁止送申請、聊天與 AI 功能；停用登入會封鎖帳號；永久刪除會連同驗證帳號與相關資料移除。</p>
         <div id="memberList"><p class="hint">讀取中⋯⋯</p></div>
@@ -4001,9 +4123,32 @@ async function renderAdminHome(){
   if([...$('grantWho').options].some(o => o.value === keepWho)) $('grantWho').value = keepWho;
 
   const nameOf = id => { const p = allProfiles.find(x => x.id === id); return p ? p.name : '（已刪除）'; };
-  $('reportList').innerHTML = reports.length ? reports.map(r => `
+
+  /* 服務條款與安全中心都寫著「檢舉後 3 個工作日內回覆」。目前沒有任何排程在盯
+     這個時效，所以至少要讓它在畫面上看得見——把承諾寫在條款裡、卻要靠人記得
+     去後台看，那個承諾遲早會跳票，而且跳票的時候沒有人會發現。
+     排序也改成最舊的排最前面：待處理清單的正確順序是「誰等最久」。 */
+  const pending = reports.filter(r => !r.done).slice()
+    .sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+  const doneList = reports.filter(r => r.done);
+  const overdue = pending.filter(r => reportSla(r.created_at).over);
+  $('reportSla').innerHTML = !pending.length
+    ? '<span class="hint">目前沒有待處理的檢舉。</span>'
+    : `待處理 <b>${pending.length}</b> 件，其中
+       <b style="color:${overdue.length ? 'var(--bad)' : 'var(--ok)'}">${overdue.length}</b>
+       件已經超過條款承諾的 3 個工作日。
+       <span class="hint">（目前沒有排程或 email 通知在盯這個時效，這一行就是唯一的提醒。）</span>`;
+
+  const slaTag = r => {
+    const s = reportSla(r.created_at);
+    return s.over
+      ? `<span class="slaTag over">⚠️ 逾期 ${s.days - 3} 個工作日</span>`
+      : `<span class="slaTag">還剩 ${3 - s.days} 個工作日</span>`;
+  };
+  $('reportList').innerHTML = reports.length ? pending.concat(doneList).map(r => `
     <div class="qa">
       <b>${new Date(r.created_at).toLocaleString('zh-TW')}　${r.done ? '✅ 已處理' : '⏳ 待處理'}</b>
+      ${r.done ? '' : slaTag(r)}<br>
       被檢舉：${esc(nameOf(r.target_id))}　檢舉人：${esc(nameOf(r.by_id))}<br>
       原因：${esc(r.why)}
       ${!r.done ? `<div class="bar">
