@@ -876,6 +876,44 @@
 </div>
 
 <!-- 診療室 -->
+<div class="pane" id="pane-fb">
+  <fieldset>
+    <legend>意見回饋</legend>
+    <p class="hint" style="margin-top:0">遇到怪怪的地方、看不懂的說明、或是想要什麼功能，都可以寫在這裡。
+      寫得越具體越好——「第 3 步的照片上傳按了沒反應」比「網站怪怪的」好修很多。</p>
+    <div class="notice" style="margin:0 0 14px">
+      ⚠️ <b>如果是關於某個人的行為</b>（騷擾、恐嚇、資料造假、金錢索求），
+      請改用<b>檢舉</b>，不要寫在這裡。檢舉會排進人工安全審查，這裡不會。
+      <div class="bar"><button class="ghost" id="fbToReport">我要檢舉某個人</button></div>
+    </div>
+    <label>這是哪一種</label>
+    <select id="fbCat">
+      <option value="bug">壞掉了（按了沒反應、畫面跑版、存不起來）</option>
+      <option value="confusing">看不懂（說明不清楚、不知道下一步該做什麼）</option>
+      <option value="suggestion">希望有什麼功能</option>
+      <option value="content">文案或內容有問題（用字、錯字、讓人不舒服的說法）</option>
+      <option value="other">其他</option>
+    </select>
+    <label>發生了什麼事</label>
+    <textarea id="fbBody" rows="5" maxlength="2000"
+      placeholder="例：在「我的資料」第 2 步按「上傳大頭照」之後，選了照片但畫面沒有變化，重整之後照片也不見了。"></textarea>
+    <label class="s2Chk" style="margin-top:8px">
+      <input type="checkbox" id="fbEnv"> 附上我的瀏覽器與畫面寬度
+      <span class="hint" id="fbEnvPreview"></span>
+    </label>
+    <p class="hint" style="margin:4px 0 0">版面跑版類的問題，沒有這個幾乎修不了；
+      但那是你的資訊，要不要附上由你決定。預設不附。</p>
+    <p class="hint" style="margin:6px 0 0">我們會看每一則，但<b>不保證每一則都會回覆</b>。
+      需要一定要有回覆的事情（帳號、退費、檢舉進度），請直接來信
+      <a href="mailto:warmsun.shelter@gmail.com">warmsun.shelter@gmail.com</a>。</p>
+    <div class="bar"><button id="fbSend">送出</button><span class="msg" id="fbMsg"></span></div>
+  </fieldset>
+  <fieldset>
+    <legend>我送出過的</legend>
+    <div id="fbMine"><p class="hint">讀取中⋯⋯</p></div>
+  </fieldset>
+</div>
+
 <div class="pane" id="pane-clinic">
   <fieldset>
     <legend>點數（診療點數）</legend>
@@ -1608,7 +1646,7 @@ const PANES = [
 ];
 const SUBS = [
   {k:'me', t:'我的資料'}, {k:'in', t:'我的收件匣'}, {k:'out', t:'我的申請'},
-  {k:'tpl', t:'我的回覆範本'}, {k:'clinic', t:'點數'}
+  {k:'tpl', t:'我的回覆範本'}, {k:'clinic', t:'點數'}, {k:'fb', t:'意見回饋'}
 ];
 let curSub = 'me';
 function gotoTab(k){
@@ -1683,6 +1721,7 @@ function showSub(k){
   if(k === 'out') renderOutbox();
   if(k === 'tpl') renderTpl();
   if(k === 'clinic') renderClinic();
+  if(k === 'fb') renderFeedback();
 }
 /* 私人工具連結：只有站長本人（js/config.js 的 OWNER_EMAIL）看得到 */
 function showMyLinks(){
@@ -3651,6 +3690,117 @@ $('chatBlockUser').onclick = async () => {
   if(done){ $('chatDialog').close(); activeChat = null; if(stopChatSubscription) stopChatSubscription(); }
 };
 
+/* 管理端的意見回饋清單 */
+async function renderFeedbackAdmin(){
+  let rows = [];
+  try{ rows = await DB.adminFeedbackList(); }
+  catch(e){ $('fbAdminList').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; return; }
+  const open = rows.filter(f => f.status !== 'done');
+  $('fbAdminBar').innerHTML = rows.length
+    ? `未處理 <b>${open.length}</b> 則，總共 ${rows.length} 則。`
+    : '<span class="hint">目前沒有意見回饋。</span>';
+  /* 未處理的排前面，同一組裡最舊的排前面——跟檢舉一樣，
+     待處理清單的正確順序是「誰等最久」。 */
+  const order = f => (f.status === 'done' ? 1 : 0);
+  const sorted = rows.slice().sort((a, b) =>
+    order(a) - order(b) || new Date(a.created_at) - new Date(b.created_at));
+  $('fbAdminList').innerHTML = sorted.length ? sorted.map(f => `
+    <div class="qa">
+      <b>${new Date(f.created_at).toLocaleString('zh-TW')}　${FB_STATUS[f.status] || f.status}
+        <span class="slaTag">${esc(FB_CATS[f.category] || f.category)}</span>
+        ${f.page ? `<span class="slaTag">在「${esc(f.page)}」分頁</span>` : ''}</b>
+      ${esc(f.name)}<br>
+      <div style="white-space:pre-wrap">${esc(f.body)}</div>
+      ${f.env ? `<p class="hint" style="margin:4px 0 0">環境：${esc(f.env)}</p>` : ''}
+      ${f.admin_note ? `<div class="lock" style="margin-top:6px">已回：${esc(f.admin_note)}</div>` : ''}
+      <div class="bar">
+        ${f.status !== 'done' ? `<button class="ghost fbSeen" data-id="${f.id}">標記已看到</button>
+        <button class="ghost fbDone" data-id="${f.id}">標記已處理</button>` : ''}
+        <button class="ghost fbReply" data-id="${f.id}">寫一句回覆給對方</button>
+      </div>
+    </div>`).join('') : '<div class="empty">目前沒有意見回饋。</div>';
+
+  const act = async (id, status, note) => {
+    try{ await DB.adminSetFeedbackStatus(id, status, note); renderFeedbackAdmin(); }
+    catch(e){ alert(e.message || '操作失敗'); }
+  };
+  $('fbAdminList').querySelectorAll('.fbSeen').forEach(b =>
+    b.onclick = () => act(b.dataset.id, 'seen'));
+  $('fbAdminList').querySelectorAll('.fbDone').forEach(b =>
+    b.onclick = () => act(b.dataset.id, 'done'));
+  $('fbAdminList').querySelectorAll('.fbReply').forEach(b => b.onclick = () => {
+    const f = rows.find(x => x.id === b.dataset.id);
+    const note = prompt('寫一句回覆（送出者在「意見回饋」看得到）', (f && f.admin_note) || '');
+    if(note === null || !note.trim()) return;
+    act(b.dataset.id, (f && f.status) === 'done' ? 'done' : 'seen', note.trim());
+  });
+}
+
+/* ── 意見回饋 ────────────────────────────────────────────────
+   跟檢舉刻意分開。混在一起最糟的後果不是雜亂，是一則
+   「有人一直傳很噁心的訊息給我」掉進一個沒有時效、沒有人每天看的
+   產品意見清單裡。所以送出前會就地問一次，但不擋——
+   使用者說「這件事我就是想當成產品問題講」也是他的權利。 */
+const FB_CATS = {
+  bug:'壞掉了', confusing:'看不懂', suggestion:'希望有的功能',
+  content:'文案或內容', other:'其他'
+};
+const FB_STATUS = {new:'⏳ 尚未處理', seen:'👀 已經看到了', done:'✅ 已處理'};
+
+/* 只取瀏覽器家族與畫面寬度，不取完整 UA、不取任何識別碼。
+   目的是「版面在什麼環境下壞掉」，不是認出這是誰。 */
+function fbEnvString(){
+  const ua = navigator.userAgent || '';
+  const fam = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera'
+            : /Firefox\//.test(ua) ? 'Firefox'
+            : /Chrome\//.test(ua) ? 'Chrome'
+            : /Safari\//.test(ua) ? 'Safari' : '其他瀏覽器';
+  const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS'
+           : /Mac OS/.test(ua) ? 'macOS' : /Windows/.test(ua) ? 'Windows' : '其他系統';
+  return `${fam}／${os}／畫面寬 ${window.innerWidth}px`;
+}
+function currentPaneKey(){
+  const b = $('tabbar').querySelector('.tabbtn.on');
+  return b ? b.dataset.k : '';
+}
+
+async function renderFeedback(){
+  $('fbEnvPreview').textContent = '（' + fbEnvString() + '）';
+  let rows = [];
+  try{ rows = await DB.listMyFeedback(); }
+  catch(e){ $('fbMine').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; return; }
+  $('fbMine').innerHTML = rows.length ? rows.map(f => `
+    <div class="qa">
+      <b>${new Date(f.created_at).toLocaleString('zh-TW')}　${FB_STATUS[f.status] || f.status}
+        <span class="slaTag">${esc(FB_CATS[f.category] || f.category)}</span></b>
+      <div style="white-space:pre-wrap">${esc(f.body)}</div>
+      ${f.admin_note ? `<div class="lock" style="margin-top:6px">站方回覆：${esc(f.admin_note)}</div>` : ''}
+    </div>`).join('')
+    : '<div class="empty">還沒有送出過意見。</div>';
+}
+
+$('fbToReport').onclick = () => { gotoTab('board'); flash('boardMsg','在對方的卡片上按「檢舉」'); };
+$('fbSend').onclick = async () => {
+  const body = $('fbBody').value.trim();
+  if(body.length < 5){ flash('fbMsg','請多寫一點，至少 5 個字'); return; }
+  /* 看起來像在講某個人就先問一次。提醒壞掉不該讓人送不出意見，所以失敗就當作沒事。 */
+  let personal = false;
+  try{ personal = await DB.feedbackLooksPersonal(body); }catch(e){ personal = false; }
+  if(personal && !confirm(
+      '這段內容看起來可能是在講某個人的行為。\n\n'
+    + '如果是的話，用「檢舉」會比較快——檢舉會排進人工安全審查，意見回饋不會。\n\n'
+    + '還是要用意見回饋送出嗎？')) return;
+  $('fbSend').disabled = true;
+  try{
+    await DB.submitFeedback($('fbCat').value, body, currentPaneKey(),
+      $('fbEnv').checked ? fbEnvString() : '');
+    $('fbBody').value = ''; $('fbEnv').checked = false;
+    flash('fbMsg','已送出，謝謝你告訴我們');
+    await renderFeedback();
+  }catch(e){ flash('fbMsg', e.message || '送出失敗'); }
+  $('fbSend').disabled = false;
+};
+
 /* ── 安全中心 ───────────────────────────────────────── */
 /* 封鎖：雙向從佈告欄消失、關掉既有對話、對方不能再申請；對方不會收到通知 */
 async function blockUserFlow(targetId, name){
@@ -4329,6 +4479,11 @@ async function renderAdminHome(){
       <fieldset><legend>檢舉處理</legend>
         <div id="reportSla" class="slaBar"></div>
         <div id="reportList"><p class="hint">讀取中⋯⋯</p></div></fieldset>
+      <fieldset><legend>意見回饋</legend>
+        <p class="hint" style="margin-top:0">產品問題，不是檢舉。這裡沒有時效承諾——
+          我們對使用者說的是「會看，但不保證每一則都回覆」。</p>
+        <div id="fbAdminBar" class="slaBar"></div>
+        <div id="fbAdminList"><p class="hint">讀取中⋯⋯</p></div></fieldset>
       <fieldset><legend>會員管理</legend>
         <p class="hint">限制發文只會禁止送申請、聊天與 AI 功能；停用登入會封鎖帳號；永久刪除會連同驗證帳號與相關資料移除。</p>
         <div id="memberList"><p class="hint">讀取中⋯⋯</p></div>
@@ -4420,6 +4575,7 @@ async function renderAdminHome(){
 
   renderSafetyQueue();
   renderTplMaster();
+  renderFeedbackAdmin();
 
   $('reportList').querySelectorAll('.mark').forEach(b => b.onclick = async () => {
     try{ await DB.adminMarkReportDone(b.dataset.id); renderAdminHome(); }catch(e){ alert(e.message || '操作失敗'); }

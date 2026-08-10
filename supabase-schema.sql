@@ -4108,7 +4108,7 @@ create table if not exists public.chat_safety_signals (
   code    text primary key,
   class   text not null check (class in
             ('sexual','body_topic','threat','threat_harm','coercion',
-             'intimate_image','request','selfref','refusal')),
+             'intimate_image','request','selfref','refusal','reported')),
   pattern text not null,
   note    text not null default '',
   enabled boolean not null default true
@@ -4143,7 +4143,12 @@ insert into public.chat_safety_signals (code, class, pattern, note) values
   ('X_SELF','selfref','(我不喜歡|我不想|我討厭|我不願意|不要問我|別問我|我覺得不舒服)','在講自己的界線'),
   ('X_QUOTE','selfref','(他問我|她問我|對方問我|有人問我|之前有人)','在引述別人說過的話'),
   -- 對方已經表達拒絕：後續再送性內容，性質完全不同
-  ('X_STOP','refusal','(不要|停止|別再|我不想談|請停下|不舒服|拒絕)','表達拒絕')
+  ('X_STOP','refusal','(不要|停止|別再|我不想談|請停下|不舒服|拒絕)','表達拒絕'),
+  /* 「別人對我做了什麼」的第一人稱轉述。對話室**不用**這一類——
+     在對話室裡命中的會是受害者自己那則訊息，替受害者的訊息標紅燈是最糟的結果。
+     只有第 25 節的意見回饋在用：那裡的語境本來就是「我來說一件發生在我身上的事」，
+     講到這種話通常代表他要找的是檢舉，不是產品意見。 */
+  ('P_TOME','reported','(讓我好看|恐嚇我|威脅我|騷擾我|逼我|跟蹤我|傳.{0,8}給我)','轉述別人對自己做的事')
 on conflict (code) do update set
   class = excluded.class, pattern = excluded.pattern,
   note = excluded.note, enabled = excluded.enabled;
@@ -4355,3 +4360,150 @@ begin
 end $$;
 revoke all on function public.admin_chat_danger_counts() from public, anon;
 grant execute on function public.admin_chat_danger_counts() to authenticated;
+
+-- ============================================================
+-- 25) 意見回饋：使用者回報遇到的問題
+--
+--     跟「檢舉」刻意分開，不是為了整齊，是因為兩件事的後果完全不同：
+--       ・檢舉 → 關於**某個人**的行為，有安全含意，進安全佇列，有時效承諾。
+--       ・意見回饋 → 關於**產品**（壞掉了、看不懂、想要什麼），沒有安全含意。
+--     混在一起最糟的後果不是雜亂，是**一則「有人一直傳很噁心的訊息給我」
+--     掉進一個沒有時效、沒有人每天看的產品意見清單裡**。
+--     所以送出前會就地檢查，看起來像在講某個人的話就先問一次要不要改用檢舉。
+--
+--     另外刻意**不承諾一定回覆**。檢舉那個「3 個工作日內回覆」目前已經沒有任何
+--     排程在盯了（見 README 第 36 節），不該再多一個做不到的承諾。
+--     這裡寫的是「我們會看，但不保證每一則都回覆」——做得到的才寫。
+-- ============================================================
+
+create table if not exists public.feedback (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  category   text not null default 'other'
+               check (category in ('bug','confusing','suggestion','content','other')),
+  body       text not null check (char_length(btrim(body)) between 5 and 2000),
+  -- 在哪一頁遇到的。純粹是為了重現問題，不是行為追蹤：
+  -- 只存分頁代號（例如 'board'），不存瀏覽紀錄、不存停留時間。
+  page       text not null default '',
+  -- 瀏覽器與畫面寬度，由使用者自己勾選要不要附上（預設不附）。
+  -- 版面壞掉的回報沒有這個幾乎修不了，但那是使用者的資訊，要他自己決定。
+  env        text not null default '',
+  status     text not null default 'new' check (status in ('new','seen','done')),
+  admin_note text not null default '',
+  created_at timestamptz not null default now(),
+  handled_at timestamptz
+);
+create index if not exists feedback_status_created_idx on public.feedback(status, created_at desc);
+create index if not exists feedback_user_idx on public.feedback(user_id, created_at desc);
+
+alter table public.feedback enable row level security;
+
+-- 自己看得到自己送出的（不然送出去就是個黑洞，沒有人會想送第二次）
+drop policy if exists "feedback_read_own_or_admin" on public.feedback;
+create policy "feedback_read_own_or_admin" on public.feedback
+  for select to authenticated
+  using (user_id = auth.uid() or public.match_is_admin(auth.uid()));
+
+-- 只有管理員能改狀態；使用者送出後不能自己改內容或狀態
+drop policy if exists "feedback_update_admin" on public.feedback;
+create policy "feedback_update_admin" on public.feedback
+  for update to authenticated
+  using (public.match_is_admin(auth.uid())) with check (public.match_is_admin(auth.uid()));
+
+grant select on public.feedback to authenticated;
+grant update on public.feedback to authenticated;
+
+-- 送出走安全函式：欄位由伺服器決定，前端不能自己塞 status／user_id
+create or replace function public.submit_feedback(
+  p_category text, p_body text, p_page text default '', p_env text default ''
+) returns public.feedback
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_row public.feedback; v_profile public.match_profiles;
+begin
+  if auth.uid() is null then raise exception '請先登入'; end if;
+  select * into v_profile from public.match_profiles where id = auth.uid();
+  if v_profile.account_status <> 'active' then raise exception '你的帳號目前無法使用這個功能'; end if;
+  if p_category not in ('bug','confusing','suggestion','content','other') then
+    raise exception '不支援的類別';
+  end if;
+  if char_length(btrim(coalesce(p_body,''))) not between 5 and 2000 then
+    raise exception '請寫 5 到 2000 字';
+  end if;
+  -- 同一個人短時間內只能送幾則。不是防使用者，是防「按鈕連點兩下送出兩則」
+  -- 以及被盜的帳號拿來洗版。
+  if (select count(*) from public.feedback
+       where user_id = auth.uid() and created_at > now() - interval '10 minutes') >= 5 then
+    raise exception '你剛剛已經送出好幾則了，休息一下再送';
+  end if;
+  insert into public.feedback(user_id, category, body, page, env)
+    values (auth.uid(), p_category, btrim(p_body), left(coalesce(p_page,''), 40),
+            left(coalesce(p_env,''), 200))
+    returning * into v_row;
+  return v_row;
+end $$;
+revoke all on function public.submit_feedback(text,text,text,text) from public, anon;
+grant execute on function public.submit_feedback(text,text,text,text) to authenticated;
+
+-- 送出前的提醒：這段文字看起來像在講某個人嗎？
+--
+-- 直接沿用第 24 節對話室的訊號類別，不另外抄一份詞庫——
+-- 抄一份就會有第二份會走鐘的東西。這裡只回傳「要不要提醒」，
+-- 不做任何判定、不擋下送出：使用者說「這件事我就是想當成產品問題講」也可以。
+--
+-- 直接用第 24 節的 chat_safety_level()，不是只拿它的訊號類別。
+-- 第一版只比對類別，結果「我不喜歡別人問我會不會口交，希望站上能講清楚界線」
+-- 也被判成在講某個人——那正是第 24 節的反向訊號（selfref）要擋掉的誤判，
+-- 只抄一半等於把那條防線丟掉。用整支函式就自動帶著它。
+create or replace function public.feedback_looks_personal(p_body text)
+returns boolean language sql stable set search_path = public, pg_temp as $$
+  select (public.chat_safety_level(coalesce(p_body,''), false, false)->>'level') is not null
+      or ('reported' = any(public.chat_signal_classes(coalesce(p_body,'')))
+          and not ('selfref' = any(public.chat_signal_classes(coalesce(p_body,'')))));
+$$;
+
+-- 管理端清單
+create or replace function public.admin_feedback_list(p_status text default null)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare out_rows jsonb;
+begin
+  if auth.uid() is null or not public.match_is_admin(auth.uid()) then
+    raise exception '只有管理員可以查看意見回饋';
+  end if;
+  select coalesce(jsonb_agg(x order by x->>'created_at' desc), '[]'::jsonb) into out_rows
+    from (
+      select jsonb_build_object(
+        'id', f.id, 'category', f.category, 'body', f.body, 'page', f.page,
+        'env', f.env, 'status', f.status, 'admin_note', f.admin_note,
+        'created_at', f.created_at, 'handled_at', f.handled_at,
+        'name', coalesce(nullif(p.name,''), '（未命名）'),
+        'user_id', f.user_id
+      ) as x
+      from public.feedback f
+      left join public.match_profiles p on p.id = f.user_id
+      where p_status is null or f.status = p_status
+    ) t;
+  return out_rows;
+end $$;
+revoke all on function public.admin_feedback_list(text) from public, anon;
+grant execute on function public.admin_feedback_list(text) to authenticated;
+
+create or replace function public.admin_set_feedback_status(
+  p_id uuid, p_status text, p_note text default ''
+) returns public.feedback
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_row public.feedback;
+begin
+  if auth.uid() is null or not public.match_is_admin(auth.uid()) then
+    raise exception '只有管理員可以處理意見回饋';
+  end if;
+  if p_status not in ('new','seen','done') then raise exception '不支援的狀態'; end if;
+  update public.feedback
+     set status = p_status,
+         admin_note = left(coalesce(p_note, admin_note), 1000),
+         handled_at = case when p_status = 'done' then now() else handled_at end
+   where id = p_id returning * into v_row;
+  if v_row.id is null then raise exception '找不到這一則'; end if;
+  return v_row;
+end $$;
+revoke all on function public.admin_set_feedback_status(uuid,text,text) from public, anon;
+grant execute on function public.admin_set_feedback_status(uuid,text,text) to authenticated;

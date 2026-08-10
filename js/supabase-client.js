@@ -421,6 +421,42 @@
     return data || [];
   }
 
+  // ── 意見回饋（見 schema 第 25 節）──────────────────────
+  // 跟檢舉刻意分開：檢舉是關於某個人、有安全含意；意見回饋是關於產品。
+  async function submitFeedback(category, body, page, env) {
+    const { data, error } = await sb.rpc('submit_feedback', {
+      p_category: category, p_body: body, p_page: page || '', p_env: env || ''
+    });
+    if (error) throw error;
+    return data;
+  }
+  async function listMyFeedback() {
+    const user = await getUser();
+    if (!user) return [];
+    const { data, error } = await sb.from('feedback').select('*')
+      .eq('user_id', user.id).order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+  // 「這段文字看起來像在講某個人嗎」——只是提醒，不擋下送出
+  async function feedbackLooksPersonal(body) {
+    const { data, error } = await sb.rpc('feedback_looks_personal', { p_body: body });
+    if (error) return false;   // 提醒壞掉不該讓人送不出意見
+    return !!data;
+  }
+  async function adminFeedbackList(status) {
+    const { data, error } = await sb.rpc('admin_feedback_list', { p_status: status || null });
+    if (error) throw error;
+    return data || [];
+  }
+  async function adminSetFeedbackStatus(id, status, note) {
+    const { data, error } = await sb.rpc('admin_set_feedback_status', {
+      p_id: id, p_status: status, p_note: note || ''
+    });
+    if (error) throw error;
+    return data;
+  }
+
   async function settleBonusCredits() {
     try { await sb.rpc('settle_bonus_credits'); } catch (e) { /* 沒有的話就算了，不影響登入 */ }
   }
@@ -593,6 +629,8 @@
     listOutbox, listInbox, findApplicationTo, updateApplication,
     listMessages, sendMessage, closeChat, subscribeMessages,
     chatConsentState, setChatConsent, adminChatDangerCounts,
+    submitFeedback, listMyFeedback, feedbackLooksPersonal,
+    adminFeedbackList, adminSetFeedbackStatus,
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
     applyTo, refundApplication, adminAddCredits,
     sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
