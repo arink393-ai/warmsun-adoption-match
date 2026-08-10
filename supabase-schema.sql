@@ -2854,3 +2854,38 @@ revoke all on function public.get_application_case(uuid) from public, anon;
 grant execute on function public.get_application_case(uuid) to authenticated;
 revoke all on function public.save_case_note(uuid,text) from public, anon;
 grant execute on function public.save_case_note(uuid,text) to authenticated;
+
+-- ============================================================
+-- 16) 罐頭中心：理由碼對應改成管理後台可編輯
+-- ============================================================
+
+-- 16.1 補上一直漏掉的 GRANT ------------------------------------
+-- template_master 從第 10 節建表以來只有 RLS policy、沒有任何 GRANT，
+-- 所以 authenticated 連這張表都碰不到——「範本主檔管理」其實從來沒有運作過，
+-- 而前端的 getTemplateMaster() 被 try/catch 包著，所以畫面只是靜靜地空白。
+-- （這跟第 14 節 application_events 是同一個坑：RLS 決定「哪些列」，
+--   GRANT 決定「能不能碰這張表」，兩個都要給。）
+grant select on table public.template_master to authenticated;
+grant insert, update, delete on table public.template_master to authenticated;
+
+-- 16.2 理由碼要用「選的」，不能自由輸入 --------------------------
+-- 打錯一個字，這封罐頭就永遠不會被推薦，而且畫面上完全看不出來。
+-- 這支函式把規則庫裡真的存在的理由碼、以及每個理由碼底下有哪些規則，
+-- 一次交給後台當作勾選清單。
+create or replace function public.list_reason_codes()
+returns jsonb language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(jsonb_agg(x order by x->>'code'), '[]'::jsonb) from (
+    select jsonb_build_object(
+      'code',    r.reason_code,
+      'outcome', min(r.outcome),
+      'rules',   jsonb_agg(jsonb_build_object('code', r.code, 'title', r.title) order by r.code),
+      'enabled', bool_or(r.enabled)
+    ) as x
+    from public.screening_rules r
+    where r.reason_code is not null and r.reason_code <> ''
+    group by r.reason_code
+  ) t;
+$$;
+
+revoke all on function public.list_reason_codes() from public, anon;
+grant execute on function public.list_reason_codes() to authenticated;

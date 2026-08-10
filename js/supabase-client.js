@@ -237,6 +237,14 @@
     return data || 0;
   }
 
+  // 罐頭中心：規則庫裡真的存在的理由碼。後台要用勾的，不能讓人自由輸入——
+  // 打錯一個字，那封罐頭就永遠不會被推薦，而且畫面上完全看不出來。
+  async function listReasonCodes() {
+    const { data, error } = await sb.rpc('list_reason_codes');
+    if (error) throw error;
+    return data || [];
+  }
+
   // ── 認養看板（收件方視角）────────────────────────────
   // 整個看板只打這一次：初診燈號存在 screening_results，而那張表刻意不開放
   // 給前端直接查，所以一封一封問的話，124 封申請就是 124 次往返。
@@ -489,8 +497,10 @@
     if (error) throw error;
     return data || [];
   }
-  async function adminSaveTemplateMaster(id, text) {
-    const { error } = await sb.from('template_master').update({ text }).eq('id', id);
+  // 舊呼叫傳字串（只改內文），新呼叫傳物件（內文＋理由碼＋階段），兩種都收
+  async function adminSaveTemplateMaster(id, patch) {
+    const body = (typeof patch === 'string') ? { text: patch } : patch;
+    const { error } = await sb.from('template_master').update(body).eq('id', id);
     if (error) throw error;
   }
 
@@ -537,7 +547,7 @@
     avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto,
     uploadStagePhoto, getStagePhotoSignedUrl,
     submitReport, adminListReports, adminMarkReportDone,
-    getTemplateMaster, adminSaveTemplateMaster,
+    getTemplateMaster, adminSaveTemplateMaster, listReasonCodes,
     ownerKvGet, ownerKvSet, ownerKvDelete
   };
 })();

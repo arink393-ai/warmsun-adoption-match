@@ -193,6 +193,19 @@
   .crmFlag{font-size:11px;border:1px solid var(--rule);border-radius:999px;padding:1px 7px;color:var(--ink-soft)}
   .crmFlag.hot{border-color:var(--bad);color:var(--bad)}
   .crmFlag.warn{border-color:var(--warn);color:var(--warn)}
+  /* 罐頭中心：理由碼用勾的，一格一個，附上是哪幾條規則會亮 */
+  .tplCard{border:1px solid var(--rule);border-radius:6px;padding:12px 14px;margin-bottom:12px}
+  .tplCardHead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
+  .tplCardHead b{font-family:var(--font-heading);font-size:14px}
+  .codeGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 12px;margin-top:4px}
+  .codeBox{display:flex;align-items:baseline;gap:7px;margin:0;padding:4px 0;font-size:12px;
+        color:var(--ink);cursor:pointer;line-height:1.6}
+  .codeBox input{width:auto;flex:none;margin:0}
+  /* 理由碼本身不換行（「R_XXX（已失效）」被拆成兩行會看不懂），規則說明才換 */
+  .codeBox>span{white-space:nowrap}
+  .codeBox code{font-size:11.5px;color:var(--brand-dk)}
+  .codeBox em{font-style:normal;color:var(--ink-soft);font-size:11px}
+  .codeBox.stale code{color:var(--bad);text-decoration:line-through}
   .caseBack{margin-bottom:12px}
   .caseSec{margin-top:16px}
   .caseSecHead{font-family:var(--font-heading);font-weight:600;font-size:12.5px;letter-spacing:.06em;
@@ -3394,6 +3407,101 @@ async function renderAudit(){
   });
 }
 
+/* ── 罐頭中心 ────────────────────────────────────────────────
+   「黃燈 → 理由碼 → 罐頭」這條鏈上最容易壞掉的地方是理由碼打錯字：
+   打錯的罐頭永遠不會被推薦，而且畫面上完全看不出來——不會有人發現。
+   所以理由碼一律用勾的，清單來自規則庫本身（list_reason_codes），
+   而且把兩種缺口直接寫在最上面：
+     ・有理由碼但沒有任何罐頭 → 亮燈時收件方會拿不到建議
+     ・罐頭指向不存在的理由碼 → 這封永遠不會被推薦（通常是規則改過了） */
+let reasonCodes = [];
+
+function tplCoverageHTML(){
+  const known = new Set(reasonCodes.map(r => r.code));
+  const used = new Set();
+  templateMaster.forEach(t => (t.reason_codes || []).forEach(c => used.add(c)));
+  const uncovered = reasonCodes.filter(r => !used.has(r.code));
+  const dangling = [...used].filter(c => !known.has(c));
+  if(!reasonCodes.length)
+    return '<p class="hint">規則庫裡目前沒有任何理由碼。（是不是還沒貼上第 13 節的 schema？）</p>';
+  const bits = [`<span class="crmFlag">共 ${reasonCodes.length} 個理由碼</span>`];
+  bits.push(uncovered.length
+    ? `<span class="crmFlag hot">⚠️ ${uncovered.length} 個沒有對應的罐頭</span>`
+    : '<span class="crmFlag">✅ 每個理由碼都有罐頭</span>');
+  if(dangling.length)
+    bits.push(`<span class="crmFlag warn">⚠️ ${dangling.length} 個罐頭指向不存在的理由碼</span>`);
+  return `<div class="bar" style="margin:0 0 10px">${bits.join('')}</div>
+    ${uncovered.length ? `<p class="hint" style="margin:0 0 8px">
+      還沒有罐頭的理由碼：${uncovered.map(r => `<code>${esc(r.code)}</code>`).join('、')}
+      ——初診亮到這些燈時，收件方不會拿到任何回覆建議。</p>` : ''}
+    ${dangling.length ? `<p class="hint" style="margin:0 0 8px">
+      指向不存在理由碼的：${dangling.map(c => `<code>${esc(c)}</code>`).join('、')}
+      ——通常是規則改過了，下面會標成「已失效」，取消勾選就好。</p>` : ''}`;
+}
+
+function renderTplMaster(){
+  $('tplCoverage').innerHTML = tplCoverageHTML();
+  if(!templateMaster.length){
+    $('tplMasterList').innerHTML = '<div class="empty">讀不到範本主檔。'
+      + '<br>如果你剛貼上新的 schema，重新整理一次看看。</div>';
+    return;
+  }
+  const known = new Set(reasonCodes.map(r => r.code));
+  $('tplMasterList').innerHTML = templateMaster.map(t => {
+    const mine = new Set(t.reason_codes || []);
+    const stale = [...mine].filter(c => !known.has(c));
+    const box = (code, label, checked, isStale) => `
+      <label class="codeBox${isStale ? ' stale' : ''}">
+        <input type="checkbox" class="tplCode" data-id="${esc(t.id)}" value="${esc(code)}"${checked ? ' checked' : ''}>
+        <span><code>${esc(code)}</code>${isStale ? '（已失效）' : ''}</span>
+        ${label ? `<em>${esc(label)}</em>` : ''}
+      </label>`;
+    return `<div class="tplCard">
+      <div class="tplCardHead"><b>${esc(t.name)}</b><span class="hint">${esc(t.id)}</span></div>
+      <textarea rows="4" class="tplMasterText" data-id="${esc(t.id)}">${esc(t.text)}</textarea>
+      <div class="hint" style="margin-top:8px">初診亮出下列哪些理由碼時，推薦這一封：</div>
+      <div class="codeGrid">
+        ${reasonCodes.map(r => box(r.code,
+            r.rules.map(x => x.code).join('、') + '　' + (r.rules[0] ? r.rules[0].title : ''),
+            mine.has(r.code), false)).join('')}
+        ${stale.map(c => box(c, '規則庫裡已經沒有這個理由碼', true, true)).join('')}
+      </div>
+      ${mine.size === 0 ? '<p class="hint" style="margin:6px 0 0">目前沒有勾任何理由碼，'
+        + '這一封不會被自動推薦（會員仍然可以在「我的回覆範本」自己用）。</p>' : ''}
+    </div>`;
+  }).join('')
+    + `<div class="bar"><button class="ghost" id="tplMasterSave">儲存罐頭中心</button>
+       <span class="msg" id="tplMasterMsg"></span></div>`;
+
+  /* 勾選當下就重算覆蓋率，不用等按儲存——不然改到一半看不出還缺什麼 */
+  $('tplMasterList').querySelectorAll('.tplCode').forEach(cb => cb.onchange = () => {
+    const t = templateMaster.find(x => x.id === cb.dataset.id); if(!t) return;
+    const set = new Set(t.reason_codes || []);
+    if(cb.checked) set.add(cb.value); else set.delete(cb.value);
+    t.reason_codes = [...set];
+    $('tplCoverage').innerHTML = tplCoverageHTML();
+  });
+
+  $('tplMasterSave').onclick = async () => {
+    const btn = $('tplMasterSave');
+    btn.disabled = true;
+    try{
+      for(const area of [...document.querySelectorAll('.tplMasterText')]){
+        const t = templateMaster.find(x => x.id === area.dataset.id);
+        await DB.adminSaveTemplateMaster(area.dataset.id, {
+          text: area.value,
+          reason_codes: (t && t.reason_codes) || []
+        });
+      }
+      templateMaster = await DB.getTemplateMaster();
+      renderTplMaster();
+      flash('tplMasterMsg', '已儲存');
+    }catch(e){
+      flash('tplMasterMsg', e.message || '儲存失敗');
+    }finally{ btn.disabled = false; }
+  };
+}
+
 /* ── 管理後台：全站統計、檢舉處理、範本主檔管理（重新掛載審核台） ── */
 async function renderAdminHome(){
   const body = $('adminBody');
@@ -3418,7 +3526,12 @@ async function renderAdminHome(){
         <p class="hint">限制發文只會禁止送申請、聊天與 AI 功能；停用登入會封鎖帳號；永久刪除會連同驗證帳號與相關資料移除。</p>
         <div id="memberList"><p class="hint">讀取中⋯⋯</p></div>
       </fieldset>
-      <fieldset><legend>範本主檔管理</legend><div id="tplMasterList"></div></fieldset>
+      <fieldset><legend>罐頭中心（範本主檔 × 理由碼）</legend>
+        <p class="hint" style="margin-top:0">初診亮燈時，系統會拿燈號的<b>理由碼</b>去對罐頭，
+          直接推薦給收件方，不用 AI、不扣點數。這裡設定哪一封罐頭對應哪些理由碼。</p>
+        <div id="tplCoverage"></div>
+        <div id="tplMasterList"><p class="hint">讀取中⋯⋯</p></div>
+      </fieldset>
       <div id="auditMount"></div>`;
     $('auditMount').appendChild($('pane-audit'));
     $('pane-audit').classList.add('on');
@@ -3475,10 +3588,7 @@ async function renderAdminHome(){
         </div>` : ''}
     </div>`).join('') : '<div class="empty">目前沒有檢舉。</div>';
 
-  $('tplMasterList').innerHTML = templateMaster.map(t => `
-      <label>${esc(t.name)}（${esc(t.id)}）</label>
-      <textarea rows="3" class="tplMasterText" data-id="${t.id}">${esc(t.text)}</textarea>`).join('')
-    + '<div class="bar"><button class="ghost" id="tplMasterSave">儲存所有範本</button><span class="msg" id="tplMasterMsg"></span></div>';
+  renderTplMaster();
 
   $('reportList').querySelectorAll('.mark').forEach(b => b.onclick = async () => {
     try{ await DB.adminMarkReportDone(b.dataset.id); renderAdminHome(); }catch(e){ alert(e.message || '操作失敗'); }
@@ -3511,15 +3621,6 @@ async function renderAdminHome(){
     try{ await DB.adminUserAction(action, b.dataset.id, (why || '').trim()); renderAdminHome(); renderBoard(); }
     catch(e){ alert(e.message || '操作失敗（如果剛設定好管理後台，請確認已部署 admin-users 這支 Edge Function）'); }
   });
-  $('tplMasterSave').onclick = async () => {
-    const areas = [...document.querySelectorAll('.tplMasterText')];
-    try{
-      for(const t of areas) await DB.adminSaveTemplateMaster(t.dataset.id, t.value);
-      templateMaster = await DB.getTemplateMaster();
-      flash('tplMasterMsg', '已儲存');
-    }catch(e){ flash('tplMasterMsg', e.message || '儲存失敗'); }
-  };
-
   renderAudit();
 }
 
@@ -3539,6 +3640,7 @@ async function boot(){
   try{ profiles = await DB.listProfiles(); }catch(e){ profiles = []; }
   try{ apps = (await DB.listOutbox()).concat(await DB.listInbox()); }catch(e){ apps = []; }
   if(!templateMaster.length){ try{ templateMaster = await DB.getTemplateMaster(); }catch(e){} }
+  if(!reasonCodes.length){ try{ reasonCodes = await DB.listReasonCodes(); }catch(e){ reasonCodes = []; } }
   await fillMe(); renderBoard(); showMyLinks(); renderStage3Notice();
 }
 
