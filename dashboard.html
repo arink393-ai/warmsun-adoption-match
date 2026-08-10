@@ -243,6 +243,9 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/config.js"></script>
 <script src="js/supabase-client.js"></script>
+<!-- 八個生活場景：第二階段問卷、初診規則庫與 AI 診療室的共同資料來源。
+     產生自 data/relationship-topics.json，不要手改 js/relationship-topics.js。 -->
+<script src="js/relationship-topics.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = t => (t==null?'':String(t)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -575,6 +578,9 @@ function judgeReportHTML(raw){
 }
 function buildJudgePrompt(from, a, q1, q2, screening){
   const qa = (qs, ans) => qs.map((q,i) => `${i+1}. ${q}\n   回答：${(ans||[])[i]||'（未答）'}`).join('\n');
+  /* 八個生活場景跟配對站讀的是同一份 js/relationship-topics.js */
+  const TOPIC_LABELS = ((window.RELATIONSHIP_TOPICS || {}).topics || [])
+    .map(t => t.label + '（' + t.scene + '）').join('、') || '（無）';
   const findings = (screening && Array.isArray(screening.findings) && screening.findings.length)
     ? screening.findings.map(f => `[${f.outcome}] ${f.title}${f.body ? '：' + f.body : ''}`).join('\n')
     : '（初診目前沒有整理出項目）';
@@ -583,7 +589,9 @@ function buildJudgePrompt(from, a, q1, q2, screening){
 【規則式初診已經整理出來的項目】
 ${findings}
 
-上面那些是系統靠結構化欄位就能看出來的差異，**不要重複講**。你的工作是規則做不到的事：讀懂申請人在自由回答裡真正說了什麼、找出兩段回答之間可能的矛盾、指出值得當面確認但資料上看不出來的事。
+上面那些是系統靠結構化欄位就能看出來的差異，**不要重複講**。
+這幾個生活場景已經有結構化答案、初診也已經逐條比對過，不要再拿來當建議確認的題目：${TOPIC_LABELS}
+你的工作是規則做不到的事：讀懂申請人在自由回答裡真正說了什麼、找出兩段回答之間可能的矛盾、指出值得當面確認但資料上看不出來的事。
 
 【使用者（待認養方）的自我介紹】
 ${myProfile.bio || '（未填寫）'}

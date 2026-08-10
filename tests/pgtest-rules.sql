@@ -48,9 +48,13 @@ begin
    where code ~ '^R0[0-5][0-9]$' and code between 'R001' and 'R058';
   perform pg_temp.ok(n = 58, 'R001–R058 全部 58 條都在規則庫裡', n::text);
 
+  /* R034／R035／R036／R041／R044 原本是「放在表單上問不到真話」而關著的五條。
+     第 23 節先決定「問什麼才問得到真話」，再把規則重寫到那些欄位上，五條都開了。
+     這裡斷言「一條都沒關著」——關著的規則等於一個沒人在看的洞：
+     欄位還在、表單還在問，燈卻永遠不會亮。 */
   select count(*) into n from public.screening_rules where not enabled and code like 'R%';
-  perform pg_temp.ok(n = 5,
-    '五條「問不到真話」的先關著（R034/R035/R036/R041/R044）', n::text);
+  perform pg_temp.ok(n = 0,
+    '規則庫裡沒有停用中的規則（原本關著的五條已在第 23 節重寫並開啟）', n::text);
   /* 第二階段結構化表單做好之後（schema §21），這六條才打開。
      這裡斷言「全開」而不是「全關」——如果哪天表單被拿掉、欄位卻留著，
      這六條會拿 null 去比對而永遠不亮燈，那是沉默的失效，不是安全狀態。 */

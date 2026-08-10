@@ -142,7 +142,9 @@ create table if not exists public.screening_rules (
 | `answers.` | 第一／二階段的回答（`application_answers`） |
 
 `<op>`：`eq` `ne` `in` `not_in` `between` `gt` `gte` `lt` `lte` `is_null` `not_null`
-`contains`（jsonb 陣列含某值）`same` `differs`（跟另一個 ref 比）。
+`contains`（jsonb 陣列含某值）`same` `differs`（跟另一個 ref 比）
+`diff_count_gte`（兩份清單的**對稱差集**有幾項，`value` 是另一個 ref、`n` 是門檻；
+複選的界線題用這個——比的是兩個人的清單差多少，不是誰勾得多）。
 
 R002 長這樣：
 
@@ -795,11 +797,53 @@ priority 最小的）。
 
 至此第 7 節的九步全部完成。
 
+## 6.13 八個生活場景：共同的資料來源，與最後五條規則
+
+原則不變：**只有會改變初診結果、AI 問診方向或審核流程的資料，才值得結構化。**
+所以最後五條 `enabled=false` 不是直接打開——舊條件式讀的是 `guests_at_home`、
+`housework_split`、`req_conversion`、`ex_contact_freq` 這些**從來沒有問過**的欄位，
+直接開只會得到一條永遠不命中的規則。先決定「問什麼才問得到真話」，再把規則重寫過去。
+
+| 原規則 | 處理 | 判什麼 |
+|---|---|---|
+| R034 | 重寫並開啟（＋R034B 🔴） | 不是外向／內向，是共同生活時私人空間的界線 |
+| R035 | 重寫並開啟（＋R035B） | 不是「你願不願意做家事」，是「你對公平的定義」 |
+| R036 | 併為 R035 的子規則 | 單獨問會變成立場問卷，社會期許會讓答案失真 |
+| R041 | 重寫並開啟（＋R041B、R041C ⚪） | 不問信仰內容，只問要求與界線 |
+| R044 | 重寫並開啟（＋R044B、R044C） | 不問能不能接受前任，問哪些行為需要先講一聲 |
+
+**跟規劃的一處出入：R035 的前兩題已經存在。** `housework_model` 與
+`cleanliness_conflict_style` 是 S2-03 就在用的欄位，選項字串幾乎逐字相同。
+新增 `cleanliness_negotiation` 會讓同一個問題有兩個來源，所以只新增
+`housework_fairness`，前兩題沿用——跟 6.11（b）同一個判斷。
+
+**三條規則的分寸**：信仰不同永遠不亮燈（資料庫裡根本沒有「信仰是什麼」這個欄位），
+有異性朋友永遠不亮燈，R036 不點名任何性別。三件事都有測試盯著文案。
+
+### 共同的資料來源
+
+```
+data/relationship-topics.json     ← 唯一的來源
+  ├─ js/relationship-topics.js    ← 產生物：index.html／dashboard.html
+  └─ data/topic-options.sql       ← 產生物：tests/pgtest-topics.sql
+```
+
+純靜態站不能 `fetch` 那份 JSON（測試用 `file://` 開，會被 CORS 擋），所以產生一支
+`<script src>` 就能載入的 `.js`。檢查分兩邊：`gen-topics.mjs --check` 驗產生物與
+欄位宣告、揭露決定；`pgtest-topics.sql` 驗規則庫**最終狀態**比對的字串。
+後者一定要在資料庫上跑——schema 是可重跑的檔案，靜態讀檔看到的是所有歷史版本。
+
+### 兩個「安靜失效」的坑
+
+`get_visible_match_profiles()` 的黑名單漏一個 → 欄位預設公開。
+`screening_subject()` 的白名單漏一個 → 規則永遠讀到 null，那個題組從此不亮燈。
+方向相反，但都不會報錯。現在兩邊都由測試逐欄盯著，而且每個欄位都必須有一個
+**明確的揭露決定**：要嘛在黑名單裡，要嘛在 JSON 裡標 `public:true` 並寫出理由。
+
 ### 還沒做
 
-五條先關著的規則（R034/R035/R036/R041/R044）——它們的題組還沒有結構化答案。
-要開它們，得先決定那四個 topic 值不值得再多問幾題；照這一輪的原則，
-只有真的會餵給規則引擎的才結構化。
+規則庫已經沒有停用中的規則。下一輪是第 59 條以後的新規則，
+或把八個場景的答案接進 CRM 快篩。
 
 ## 7. 建議的實作順序
 

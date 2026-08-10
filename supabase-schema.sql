@@ -262,6 +262,19 @@ alter table public.match_profiles add column if not exists cleanliness_conflict_
 alter table public.match_profiles add column if not exists conflict_pause_preference     text default '';
 alter table public.match_profiles add column if not exists conflict_return_commitment    text default '';
 
+-- 第 23 節：八個生活場景剩下的三個題組。欄位與選項的唯一來源是
+-- data/relationship-topics.json，`node tools/gen-topics.mjs --check` 會盯著它們一致。
+alter table public.match_profiles add column if not exists housework_fairness            text default '';
+alter table public.match_profiles add column if not exists home_social_frequency         text default '';
+alter table public.match_profiles add column if not exists home_guest_boundary           text default '';
+alter table public.match_profiles add column if not exists religion_importance           text default '';
+alter table public.match_profiles add column if not exists religion_partner_expectation  text default '';
+alter table public.match_profiles add column if not exists religion_child_plan           text default '';
+alter table public.match_profiles add column if not exists ex_contact_acceptance         text default '';
+alter table public.match_profiles add column if not exists opposite_friend_boundary      text default '';
+-- 複選題：存陣列。規則比的是兩份清單差多少，不是勾得多或少。
+alter table public.match_profiles add column if not exists relationship_boundary_actions jsonb not null default '[]'::jsonb;
+
 -- 一次性搬移舊版暖陽欄位。只複製兩張表共有的欄位，避免碰到同專案其他產品新增的欄位。
 do $$
 declare v_cols text;
@@ -529,6 +542,11 @@ language sql security definer stable set search_path = '' as $$
       'parents_in_decisions','marriage_intent','relationship_structure','finance_style',
       'partner_alone_time_acceptance','housework_model','cleanliness_conflict_style',
       'conflict_pause_preference','conflict_return_commitment',
+      -- 第 23 節：居家社交／宗教界線／前任與異性界線。
+      -- 宗教與感情史屬於敏感資訊，一律只到第 2 層，而且永遠不做為佈告欄的篩選條件。
+      'housework_fairness','home_social_frequency','home_guest_boundary',
+      'religion_importance','religion_partner_expectation','religion_child_plan',
+      'ex_contact_acceptance','opposite_friend_boundary','relationship_boundary_actions',
       -- Dealbreaker 嚴重度整個不外流：只給「有幾項」。細項是很強的識別資訊，
       -- 而且初診本來就在伺服器端讀得到，前端沒有任何理由需要拿到值。
       'dealbreakers'
@@ -577,7 +595,25 @@ language sql security definer stable set search_path = '' as $$
       'housework_model',            case when rel.stage >= 2 then p.housework_model else null end,
       'cleanliness_conflict_style', case when rel.stage >= 2 then p.cleanliness_conflict_style else null end,
       'conflict_pause_preference',  case when rel.stage >= 2 then p.conflict_pause_preference else null end,
-      'conflict_return_commitment', case when rel.stage >= 2 then p.conflict_return_commitment else null end,
+      'conflict_return_commitment', case when rel.stage >= 2 then p.conflict_return_commitment else null end
+    )
+    /* jsonb_build_object 最多只吃 100 個參數（50 組 key/value），第 23 節的九個欄位
+       正好把上面那一組頂爆。所以拆成第二組再串起來——兩組沒有重複的 key，
+       語意跟寫在同一組裡完全一樣。 */
+    || jsonb_build_object(
+      -- 第 23 節的三個題組：一樣是第二階段才會問到的。
+      -- 宗教與感情史敏感度更高，但揭露層級跟其他第二階段資料一致就夠了——
+      -- 再往後推會變成「初診看得到、當事人卻要更晚才知道對方怎麼想」。
+      'housework_fairness',           case when rel.stage >= 2 then p.housework_fairness else null end,
+      'home_social_frequency',        case when rel.stage >= 2 then p.home_social_frequency else null end,
+      'home_guest_boundary',          case when rel.stage >= 2 then p.home_guest_boundary else null end,
+      'religion_importance',          case when rel.stage >= 2 then p.religion_importance else null end,
+      'religion_partner_expectation', case when rel.stage >= 2 then p.religion_partner_expectation else null end,
+      'religion_child_plan',          case when rel.stage >= 2 then p.religion_child_plan else null end,
+      'ex_contact_acceptance',        case when rel.stage >= 2 then p.ex_contact_acceptance else null end,
+      'opposite_friend_boundary',     case when rel.stage >= 2 then p.opposite_friend_boundary else null end,
+      'relationship_boundary_actions',
+        case when rel.stage >= 2 then p.relationship_boundary_actions else '[]'::jsonb end,
       'dealbreaker_count', (select count(*) from jsonb_each_text(coalesce(p.dealbreakers,'{}'::jsonb)) d
                              where d.value = 'non_negotiable'),
       -- 第 3 層：要雙方都同意解鎖
@@ -2075,6 +2111,26 @@ returns jsonb language sql stable security definer set search_path = public, pg_
     'area',                   nullif(p.area, ''),
     'dealbreakers',      coalesce(p.dealbreakers, '{}'::jsonb)
   )
+  /* 一樣是 jsonb_build_object 100 個參數的上限，拆成第二組串起來。
+     第 23 節：居家社交／家務公平／宗教界線／前任與異性界線。
+     白名單漏一個的後果跟遮罩黑名單漏一個相反，但一樣安靜——
+     規則讀到的永遠是 null，那條規則從此不會命中，畫面上完全看不出來。
+     tests/pgtest-topics.sql 會逐欄確認這裡讀得到。 */
+  || jsonb_build_object(
+    'housework_fairness',            nullif(p.housework_fairness, ''),
+    'home_social_frequency',         nullif(p.home_social_frequency, ''),
+    'home_guest_boundary',           nullif(p.home_guest_boundary, ''),
+    'religion_importance',           nullif(p.religion_importance, ''),
+    'religion_partner_expectation',  nullif(p.religion_partner_expectation, ''),
+    'religion_child_plan',           nullif(p.religion_child_plan, ''),
+    'ex_contact_acceptance',         nullif(p.ex_contact_acceptance, ''),
+    'opposite_friend_boundary',      nullif(p.opposite_friend_boundary, ''),
+    -- 空陣列當作「還沒填」，不是「一項都不需要討論」——
+    -- 兩者在 R044C 裡是完全不同的意思。
+    'relationship_boundary_actions',
+      case when jsonb_array_length(coalesce(p.relationship_boundary_actions,'[]'::jsonb)) = 0
+           then null else p.relationship_boundary_actions end
+  )
   from public.match_profiles p where p.id = p_uid;
 $$;
 
@@ -2156,6 +2212,26 @@ begin
     w := public.screening_ref(p_cond->>'value', p_a, p_b, p_ans);
     if w is null then return false; end if;
     if op = 'same' then return v = w; else return v <> w; end if;
+  end if;
+  -- 兩份清單的「對稱差集」有幾項。複選的界線題用這個：
+  -- 比的是兩個人對「哪些行為需要先講一聲」的認知差多少，
+  -- 不是誰勾得多——勾得多不代表比較保守，勾得少也不代表比較隨便。
+  -- value 是另一個 ref（跟 same/differs 一樣），n 是門檻。
+  if op = 'diff_count_gte' then
+    w := public.screening_ref(p_cond->>'value', p_a, p_b, p_ans);
+    if w is null then return false; end if;
+    if jsonb_typeof(v) <> 'array' or jsonb_typeof(w) <> 'array' then return false; end if;
+    -- 兩邊都空白代表兩個人都還沒想過，不是「完全一致」，交給 requires 之外的規則處理
+    if jsonb_array_length(v) = 0 and jsonb_array_length(w) = 0 then return false; end if;
+    return (
+      select count(*) from (
+        (select e from jsonb_array_elements(v) e
+          except select e from jsonb_array_elements(w) e)
+        union all
+        (select e from jsonb_array_elements(w) e
+          except select e from jsonb_array_elements(v) e)
+      ) d
+    ) >= coalesce((p_cond->>'n')::int, 1);
   end if;
 
   -- 數值比較
@@ -3794,3 +3870,205 @@ update public.screening_rules set enabled = true where code like 'S2-%';
 --     （JSON 字串）。舊資料是純文字，前端會照原樣顯示並標明是舊版格式。
 -- ============================================================
 alter table public.applications drop column if exists vet_scores;
+
+-- ============================================================
+-- 23) 剩下三個生活場景：居家社交／宗教界線／前任與異性界線
+--
+--     R034／R035／R036／R041／R044 原本是「不是做不出來，是放在表單上問不到
+--     真話」而先關著的五條。這一節不是直接把它們打開——舊的條件式讀的是
+--     guests_at_home、housework_split、req_conversion、ex_contact_freq 這些
+--     從來沒有問過的欄位，直接開只會得到一條永遠不命中的規則。
+--
+--     所以是先決定「問什麼才問得到真話」，再把規則重寫到那些欄位上：
+--
+--     ・R034 居家社交：問的不是外向／內向，是共同生活時私人空間的界線。
+--     ・R035 家務：問的不是「你願不願意做家事」（沒有辨識力，人人都選平均分攤），
+--       是「你對公平的定義是什麼」。兩個人對公平的定義不同，比誰多做一點更容易
+--       累積怨氣。
+--     ・R036 不獨立成題。單獨問「你是否認為某個性別應該負責家務」會變成立場問卷，
+--       而且社會期許會讓答案失真。改成 R035 的子規則，讀同一個 housework_fairness。
+--     ・R041 宗教：不問信仰內容，只問「要求與界線」。信仰不同本身永遠不亮燈，
+--       會亮的是「要求對方改變信仰」與「子女教育的期待落差」。
+--     ・R044 界線：不問「你能不能接受前任」，問「哪些行為需要先講一聲」。
+--       有異性朋友永遠不亮燈，會亮的是兩個人的界線清單差太多。
+--
+--     欄位與選項的唯一來源是 data/relationship-topics.json，
+--     `node tools/gen-topics.mjs --check` 會確認這裡比對的字串真的存在於選項裡——
+--     選項改一個字而規則沒跟著改，那條規則會從此永遠不命中，畫面上看不出來。
+-- ============================================================
+
+insert into public.screening_rules
+  (code, topic, category, outcome, priority, min_stage, cond, escalate, requires,
+   reason_code, title, body, ask, enabled) values
+
+  -- ── 居家社交界線 ────────────────────────────────────────
+  ('R034','home_social_boundary','social','yellow',34,2,
+   '{"any":[
+      {"all":[{"field":"applicant.home_social_frequency","op":"eq","value":"喜歡常邀請朋友來家裡"},
+              {"field":"recipient.home_social_frequency","op":"in","value":["希望家是高度私人的空間","比較喜歡在外面聚會"]}]},
+      {"all":[{"field":"recipient.home_social_frequency","op":"eq","value":"喜歡常邀請朋友來家裡"},
+              {"field":"applicant.home_social_frequency","op":"in","value":["希望家是高度私人的空間","比較喜歡在外面聚會"]}]}
+    ]}'::jsonb,
+   null,
+   '{applicant.home_social_frequency,recipient.home_social_frequency}',
+   'R_HOME_SOCIAL','居家社交的期待不同',
+   '一方希望家裡常有朋友來，另一方希望家是比較私人的空間。這不是外向或內向的問題，是共同生活時空間怎麼用。',
+   '["如果住在一起，你希望多久有一次朋友來家裡？有沒有哪些時候你會希望家裡只有你們兩個人？"]'::jsonb, true),
+
+  ('R034B','home_social_boundary','social','red',13,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.home_social_frequency","op":"eq","value":"喜歡常邀請朋友來家裡"},
+                {"field":"recipient.home_guest_boundary","op":"eq","value":"不希望朋友進入私人空間"}]},
+        {"all":[{"field":"recipient.home_social_frequency","op":"eq","value":"喜歡常邀請朋友來家裡"},
+                {"field":"applicant.home_guest_boundary","op":"eq","value":"不希望朋友進入私人空間"}]}]},
+      {"field":"applicant.dealbreakers.home_social_boundary","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.home_social_boundary","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   null,
+   /* requires 只能列「兩個方向的分支都會讀」的欄位。這條是對稱的 any，
+      單邊才會填的欄位列進去，另一邊沒填時整條會被跳過——而那正是它要抓的情況。 */
+   '{}',
+   'H_HOME_SOCIAL','共同生活空間的使用方式存在核心衝突',
+   '一方希望家裡常有朋友來，另一方不希望朋友進入私人空間，而且雙方都標為不可妥協。',
+   '[]'::jsonb, true),
+
+  -- ── 家務責任：判的是「公平的定義」，不是誰做得多 ──────────
+  ('R035','housework','home','yellow',35,2,
+   '{"all":[
+      {"field":"applicant.housework_fairness","op":"differs","value":"recipient.housework_fairness"},
+      {"field":"applicant.housework_fairness","op":"not_in","value":["尚未想過"]},
+      {"field":"recipient.housework_fairness","op":"not_in","value":["尚未想過"]}
+    ]}'::jsonb,
+   null,
+   '{applicant.housework_fairness,recipient.housework_fairness}',
+   'R_HOUSEWORK','對「家務公平」的定義不同',
+   '兩個人對公平的定義不一樣（例如一方認為要做一樣多，另一方認為整體貢獻平衡就好）。這不代表誰不願意做，但長期不談清楚容易累積怨氣。',
+   '["你們各自覺得「公平」是做一樣多，還是整體加起來平衡就好？"]'::jsonb, true),
+
+  /* R036 不是獨立的題目，是 R035 的子規則——讀同一個 housework_fairness。
+     單獨問「你是否認為某個性別應該負責家務」會變成立場問卷，而且社會期許
+     會讓答案失真。這裡也不判誰對誰錯，只指出兩邊的前提不一樣。 */
+  ('R036','housework','home','red',11,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.housework_fairness","op":"eq","value":"依傳統性別角色分工"},
+                {"field":"recipient.housework_fairness","op":"eq","value":"兩個人做一樣多"}]},
+        {"all":[{"field":"recipient.housework_fairness","op":"eq","value":"依傳統性別角色分工"},
+                {"field":"applicant.housework_fairness","op":"eq","value":"兩個人做一樣多"}]}]},
+      {"field":"applicant.dealbreakers.housework","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.housework","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   null,
+   '{applicant.housework_fairness,recipient.housework_fairness}',
+   'H_HOUSEWORK','家務分工的前提不同，而且雙方都不可妥協',
+   '一方以傳統性別角色為分工前提，另一方要求平均分擔，而且雙方都標為不可妥協。系統不判斷哪一種比較好，只指出這件事需要在同居之前談清楚。',
+   '[]'::jsonb, true),
+
+  ('R035B','housework','home','yellow',36,2,
+   '{"any":[
+      {"all":[{"field":"applicant.cleanliness_conflict_style","op":"eq","value":"以要求較高的一方為主"},
+              {"field":"recipient.cleanliness_conflict_style","op":"in","value":["各自負責自己的空間","誰在意誰處理"]}]},
+      {"all":[{"field":"recipient.cleanliness_conflict_style","op":"eq","value":"以要求較高的一方為主"},
+              {"field":"applicant.cleanliness_conflict_style","op":"in","value":["各自負責自己的空間","誰在意誰處理"]}]}
+    ]}'::jsonb,
+   null,
+   '{applicant.cleanliness_conflict_style,recipient.cleanliness_conflict_style}',
+   'R_HOUSEWORK','整潔標準不同時的處理方式不一致',
+   '一方認為應該向標準較高的人看齊，另一方認為各自管好自己的區域就好。這件事本身很小，但它決定了每一次「你怎麼又沒收」要怎麼收場。',
+   '["如果你們對乾淨的標準不一樣，你希望是往高的那邊靠，還是各自管各自的？"]'::jsonb, true),
+
+  -- ── 宗教界線：只問要求與界線，不問信仰內容 ────────────────
+  /* 信仰不同本身永遠不亮燈。這裡沒有任何一條規則會去比
+     religion_importance 或雙方的信仰內容——那不是暖陽要判斷的事。 */
+  ('R041','religion_boundary','values','red',11,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.religion_partner_expectation","op":"eq","value":"希望伴侶跟隨自己的信仰"},
+                {"field":"recipient.religion_partner_expectation","op":"in","value":["可以互相尊重，不需要改變","無法接受信仰不同"]}]},
+        {"all":[{"field":"recipient.religion_partner_expectation","op":"eq","value":"希望伴侶跟隨自己的信仰"},
+                {"field":"applicant.religion_partner_expectation","op":"in","value":["可以互相尊重，不需要改變","無法接受信仰不同"]}]}]},
+      {"field":"applicant.dealbreakers.religion_boundary","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.religion_boundary","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   null, '{}',
+   'H_RELIGION','對信仰的期待存在核心衝突',
+   '一方希望伴侶跟隨自己的信仰，另一方希望維持各自的信仰，而且雙方都標為不可妥協。這一條看的是「要求」，不是信仰本身。',
+   '[]'::jsonb, true),
+
+  ('R041B','religion_boundary','values','yellow',37,2,
+   '{"all":[
+      {"field":"applicant.religion_child_plan","op":"differs","value":"recipient.religion_child_plan"},
+      {"any":[{"field":"applicant.religion_child_plan","op":"in","value":["希望依照我的信仰","希望孩子在共同的信仰下長大"]},
+              {"field":"recipient.religion_child_plan","op":"in","value":["希望依照我的信仰","希望孩子在共同的信仰下長大"]}]}
+    ]}'::jsonb,
+   null,
+   '{applicant.religion_child_plan,recipient.religion_child_plan}',
+   'R_RELIGION_CHILD','對子女宗教教育的期待不同',
+   '有一方對孩子的宗教教育已經有明確期待，另一方的想法不同或還沒想過。這通常不是現在要解決的事，但值得先知道彼此的想法。',
+   '["如果未來有孩子，你希望在信仰上怎麼安排？這件事你已經想得很清楚了嗎？"]'::jsonb, true),
+
+  /* religion_importance 只用在這一條，而且刻意是 ⚪（中性提示）不是黃燈。
+     信仰不同不是問題、信仰虔誠更不是問題——這條唯一的作用是讓兩個人知道
+     彼此的生活節奏可能不一樣，不帶任何「需要處理」的暗示。
+     它也不看是什麼信仰，只看「在生活中佔多重」。 */
+  ('R041C','religion_boundary','values','unknown',40,2,
+   '{"any":[
+      {"all":[{"field":"applicant.religion_importance","op":"eq","value":"是生活的核心"},
+              {"field":"recipient.religion_importance","op":"in","value":["沒有宗教信仰","尊重但不特別實踐"]}]},
+      {"all":[{"field":"recipient.religion_importance","op":"eq","value":"是生活的核心"},
+              {"field":"applicant.religion_importance","op":"in","value":["沒有宗教信仰","尊重但不特別實踐"]}]}
+    ]}'::jsonb,
+   null,
+   '{applicant.religion_importance,recipient.religion_importance}',
+   'R_RELIGION_LIFE','信仰在兩個人生活中的份量不同',
+   '一方的信仰是生活的核心，另一方沒有特別的信仰實踐。**這不是問題，也不是警示**——只是作息、節慶與週末安排可能不太一樣，先知道會比較好聊。',
+   '["你的信仰在日常生活裡通常會怎麼呈現？有哪些是你希望對方一起參與的？"]'::jsonb, true),
+
+  -- ── 前任與異性界線：問界線，不問禁忌 ──────────────────────
+  /* 「有異性朋友」永遠不會亮燈。會亮的是兩個人對界線的定義差太多。 */
+  ('R044','relationship_boundary','boundaries','red',12,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.ex_contact_acceptance","op":"eq","value":"完全不能接受"},
+                {"field":"recipient.ex_contact_acceptance","op":"eq","value":"沒有問題"}]},
+        {"all":[{"field":"recipient.ex_contact_acceptance","op":"eq","value":"完全不能接受"},
+                {"field":"applicant.ex_contact_acceptance","op":"eq","value":"沒有問題"}]}]},
+      {"field":"applicant.dealbreakers.relationship_boundary","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.relationship_boundary","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   null,
+   '{applicant.ex_contact_acceptance,recipient.ex_contact_acceptance}',
+   'H_BOUNDARY','對前任聯絡的界線存在核心衝突',
+   '一方完全不能接受伴侶與前任聯絡，另一方認為沒有問題，而且雙方都標為不可妥協。',
+   '[]'::jsonb, true),
+
+  ('R044B','relationship_boundary','boundaries','yellow',38,2,
+   '{"any":[
+      {"all":[{"field":"applicant.opposite_friend_boundary","op":"eq","value":"完全沒問題"},
+              {"field":"recipient.opposite_friend_boundary","op":"in","value":["很難接受","需要提前告知"]}]},
+      {"all":[{"field":"recipient.opposite_friend_boundary","op":"eq","value":"完全沒問題"},
+              {"field":"applicant.opposite_friend_boundary","op":"in","value":["很難接受","需要提前告知"]}]}
+    ]}'::jsonb,
+   null,
+   '{applicant.opposite_friend_boundary,recipient.opposite_friend_boundary}',
+   'R_BOUNDARY','對異性朋友往來的界線期待不同',
+   '一方認為完全沒問題，另一方希望先講一聲或覺得比較難接受。有異性朋友本身不是問題，需要對齊的是「哪些事情要先說」。',
+   '["有哪些事情你會希望對方先跟你說一聲？不是限制，是想知道你的界線在哪裡。"]'::jsonb, true),
+
+  /* 複選的界線清單：比的是兩份清單差幾項，不是誰勾得多。
+     勾得多不代表比較保守，勾得少也不代表比較隨便——差太多才需要談。 */
+  ('R044C','relationship_boundary','boundaries','yellow',39,2,
+   '{"all":[{"field":"applicant.relationship_boundary_actions","op":"diff_count_gte",
+             "value":"recipient.relationship_boundary_actions","n":3}]}'::jsonb,
+   null,
+   '{applicant.relationship_boundary_actions,recipient.relationship_boundary_actions}',
+   'R_BOUNDARY','對「哪些行為需要先講一聲」的認知落差較大',
+   '兩個人勾選的界線清單有三項以上不一樣。這不代表誰比較嚴格或比較隨便，而是同一個行為在兩個人心裡的份量不同——多數的「我以為你知道」都是從這裡開始的。',
+   '["有沒有哪一件事，你覺得本來就該先說，但其實對方可能不這麼想？"]'::jsonb, true)
+
+on conflict (code) do update set
+  topic = excluded.topic, category = excluded.category, outcome = excluded.outcome,
+  priority = excluded.priority, min_stage = excluded.min_stage, cond = excluded.cond,
+  escalate = excluded.escalate, requires = excluded.requires, reason_code = excluded.reason_code,
+  title = excluded.title, body = excluded.body, ask = excluded.ask, enabled = excluded.enabled;
