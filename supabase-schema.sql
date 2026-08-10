@@ -2662,3 +2662,195 @@ revoke all on function public.log_application_event(uuid,text,uuid,jsonb,text) f
 grant execute on function public.log_application_event(uuid,text,uuid,jsonb,text) to postgres, service_role;
 revoke all on function public.mark_applications_opened(uuid[]) from public, anon;
 grant execute on function public.mark_applications_opened(uuid[]) to authenticated;
+
+-- ============================================================
+-- 15) 申請者 CRM：認養看板與《認養申請病例》
+--
+--     規格見 docs/screening-crm-spec.md 第 4 節與 Ⅴ，這一節實作第 4 步。
+--
+--     設計重點：整個看板只打「一次」RPC。
+--     每位申請人的初診燈號存在 screening_results，而那張表是刻意不開放給
+--     前端直接查的（直接查得到就等於繞過 min_stage 分層），所以如果讓前端
+--     一封一封去問，124 封申請就是 124 次往返。get_crm_board() 一次把
+--     整個收件匣連同燈號、未讀數、逾期天數全部算好帶回來，
+--     九個分格與五個快篩則是前端拿這份資料自己算——那些純粹是分類，
+--     不需要再問伺服器。
+-- ============================================================
+
+-- 15.1 罐頭回覆接上理由碼 --------------------------------------
+-- 「黃燈 → reason_code → 推薦罐頭」是一個 array 交集查詢，不用 AI。
+alter table public.template_master add column if not exists reason_codes text[] not null default '{}';
+alter table public.template_master add column if not exists stage smallint;
+
+insert into public.template_master (id, name, text, reason_codes, stage) values
+  ('FOLLOWUP_WORK_HOURS', '工作與陪伴時間補件',
+   E'謝謝你花時間填寫申請。我看到你填的工作時數比較長，想先了解一下：\n\n'
+   '這是長期的工作型態，還是最近特別忙？裡面有包含待命或通勤的時間嗎？\n\n'
+   '問這個不是要評價你的工作，只是想知道我們之後可以怎麼安排相處的時間。',
+   array['R_WORK_HOURS_HIGH','R_WORK_HOURS_VERY_HIGH','R_WORK_HOURS_EXTREME'], 1),
+
+  ('FOLLOWUP_WORK_HOURS_CHECK', '工作時數資料確認',
+   E'謝謝你的申請。你填的一週工作時數看起來可能是筆誤（超過一週的總時數），\n'
+   '方便的話再確認一下數字嗎？我想正確理解你的生活步調。',
+   array['R_WORK_HOURS_INVALID'], 1),
+
+  ('FOLLOWUP_KIDS', '孩子條件確認',
+   E'謝謝你的申請。我還沒有在自己的登記表上填「孩子條件」這一欄，\n'
+   '所以想先誠實說明我目前的想法，也想聽聽你的。',
+   array['R_KIDS_ACCEPT_UNKNOWN'], 1),
+
+  ('DECLINE_CORE_DIFF', '核心條件差異婉拒',
+   E'謝謝你願意花時間寫這份申請，我很認真讀過了。\n\n'
+   '我在登記表上寫的條件跟你目前的狀況有一項對不上，那是我沒有辦法改變想法的部分，\n'
+   '所以這次就先到這裡。這不是你的問題，只是我們要的東西不一樣。\n\n'
+   '祝你早點遇到合適的人。',
+   array['H_CHILD_EXISTING'], 1),
+
+  ('FOLLOWUP_SELF_DISCLOSURE', '對方想主動說明的事',
+   E'謝謝你的申請。我看到你有一項希望在適當階段主動說明的事——\n'
+   '你想什麼時候說都可以，我不會追問。',
+   array['R_SELF_DISCLOSURE'], 2)
+on conflict (id) do update set
+  name = excluded.name, text = excluded.text,
+  reason_codes = excluded.reason_codes, stage = excluded.stage;
+
+-- 15.2 認養看板：一次把整個收件匣算好 --------------------------
+create or replace function public.get_crm_board()
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare me uuid := auth.uid(); rows jsonb;
+begin
+  if me is null then raise exception '請先登入'; end if;
+
+  select coalesce(jsonb_agg(r order by r->>'last_activity_at' desc), '[]'::jsonb) into rows
+  from (
+    select jsonb_build_object(
+      'app_id',        a.id,
+      'from_user',     a.from_user,
+      'name',          coalesce(nullif(p.name, ''), '（已取消登記）'),
+      'species',       p.species,
+      'kind',          p.kind,
+      'area',          p.area,
+      'stage',         a.stage,
+      'status',        a.status,
+      'opened_at',     a.opened_at,
+      'created_at',    a.created_at,
+      'last_activity_at', coalesce(a.last_activity_at, a.updated_at, a.created_at),
+      'days_open',     greatest(0, extract(day from now() - a.created_at)::int),
+      'idle_days',     greatest(0, extract(day from
+                         now() - coalesce(a.last_activity_at, a.updated_at, a.created_at))::int),
+      'priority_invite', a.priority_invite,
+      'stage2_paid',   a.stage2_paid,
+      'unlock_from',   a.unlock_from,
+      'unlock_to',     a.unlock_to,
+      'closed_reason', a.closed_reason,
+      'crm_tags',      coalesce(a.crm_tags, '[]'::jsonb),
+      'has_a1',        (ans.a1 is not null),
+      'has_a2',        (ans.a2 is not null),
+      'has_vet',       (a.vet is not null),
+      'unread',        coalesce(nt.n, 0),
+      -- 初診燈號：screening_results 前端查不到，所以在這裡一起帶回去。
+      -- 這是「數量」，不是細節——細節仍然只能透過 get_screening_for() 拿，
+      -- 而且依 min_stage 分層。
+      'screened',      (sr.id is not null),
+      'green',         coalesce(sr.green, 0),
+      'yellow',        coalesce(sr.yellow, 0),
+      'red',           coalesce(sr.red, 0),
+      'unknown',       coalesce(sr.unknown, 0)
+    ) as r
+    from public.applications a
+    left join public.match_profiles p on p.id = a.from_user
+    left join public.application_answers ans on ans.application_id = a.id
+    left join public.screening_results sr
+           on sr.from_user = a.from_user and sr.to_user = me and sr.audience = 'member'
+    left join lateral (
+      select count(*) as n from public.match_notifications n
+       where n.user_id = me and n.kind = 'message'
+         and n.link_app_id = a.id and n.read_at is null
+    ) nt on true
+    where a.to_user = me
+  ) t;
+
+  return rows;
+end $$;
+
+-- 15.3 《認養申請病例》：點進一封時，把散在各處的東西一次收齊 ----
+-- 七個區塊裡，③申請問卷、④對話、⑦時間軸前端本來就拿得到，
+-- 這裡補的是前端拿不到或需要跨表組合的：初診細節、罐頭建議、
+-- 自己送出過的檢舉與封鎖狀態、志工私人筆記。
+create or replace function public.get_application_case(p_app_id uuid)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  me uuid := auth.uid(); a public.applications%rowtype;
+  scr jsonb; codes text[]; tpls jsonb; my_reports jsonb; blocked boolean; note text;
+begin
+  if me is null then raise exception '請先登入'; end if;
+  select * into a from public.applications where id = p_app_id;
+  if not found or a.to_user <> me then raise exception '找不到這筆申請'; end if;
+
+  -- ② 初診結果（分層由 get_screening_for 自己處理）
+  begin
+    scr := public.get_screening_for(a.from_user);
+  exception when others then
+    scr := null;   -- 對方可能已經停用或封鎖了你，這一區塊就留白
+  end;
+
+  -- ⑤ 回覆建議：拿初診的理由碼去對罐頭，不用 AI
+  select coalesce(array_agg(distinct f->>'reason_code'), '{}'::text[]) into codes
+    from jsonb_array_elements(coalesce(scr->'findings', '[]'::jsonb)) f
+   where f->>'reason_code' is not null;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', t.id, 'name', t.name, 'text', t.text, 'reason_codes', t.reason_codes)), '[]'::jsonb)
+    into tpls
+    from public.template_master t
+   where cardinality(codes) > 0 and t.reason_codes && codes;
+
+  -- ⑥ 安全：只給「你自己」送出過的檢舉與封鎖狀態。
+  -- 別人的檢舉不會出現在這裡——那是管理員的事，而且讓收件方看得到
+  -- 等於洩漏其他會員的行為。
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'why', r.why, 'done', r.done, 'created_at', r.created_at) order by r.created_at desc), '[]'::jsonb)
+    into my_reports
+    from public.reports r
+   where r.by_id = me and r.target_id = a.from_user;
+
+  select exists (select 1 from public.match_user_blocks b
+                  where b.blocker_id = me and b.blocked_id = a.from_user) into blocked;
+
+  select n.note into note from public.application_private_notes n
+   where n.application_id = p_app_id and n.owner_id = me;
+
+  return jsonb_build_object(
+    'app_id', a.id,
+    'screening', scr,
+    'templates', tpls,
+    'my_reports', my_reports,
+    'blocked', blocked,
+    'note', note
+  );
+end $$;
+
+-- 15.4 志工私人筆記 -------------------------------------------
+create or replace function public.save_case_note(p_app_id uuid, p_note text)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception '請先登入'; end if;
+  if not exists (select 1 from public.applications where id = p_app_id and to_user = me) then
+    raise exception '找不到這筆申請';
+  end if;
+  insert into public.application_private_notes(application_id, owner_id, note, updated_at)
+  values (p_app_id, me, p_note, now())
+  on conflict (application_id) do update
+    set note = excluded.note, updated_at = now()
+    where public.application_private_notes.owner_id = me;
+  perform public.log_application_event(p_app_id, 'noted', me, '{}'::jsonb, 'recipient');
+end $$;
+
+-- 15.5 權限 ---------------------------------------------------
+revoke all on function public.get_crm_board() from public, anon;
+grant execute on function public.get_crm_board() to authenticated;
+revoke all on function public.get_application_case(uuid) from public, anon;
+grant execute on function public.get_application_case(uuid) to authenticated;
+revoke all on function public.save_case_note(uuid,text) from public, anon;
+grant execute on function public.save_case_note(uuid,text) to authenticated;

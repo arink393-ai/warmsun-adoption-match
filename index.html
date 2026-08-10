@@ -168,6 +168,44 @@
   .screenItem.o-unknown{border-left-style:dashed}
   .screenItem b{font-weight:600}
   .screenAsk{margin-top:5px;color:var(--brand-dk);font-size:12px}
+  /* 認養看板：九個分格與五個快篩都是膠囊，選中的用棕色線框 */
+  .crmBoard{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .crmFilters{display:flex;flex-wrap:wrap;gap:6px;padding-top:10px;border-top:1px dotted var(--rule)}
+  .crmChip{background:transparent;border:1px solid var(--rule);border-radius:999px;
+        padding:5px 12px;font-family:var(--font-body);font-size:12.5px;color:var(--ink-soft);
+        cursor:pointer;white-space:nowrap;min-height:0}
+  .crmChip:hover{background:var(--paper-2)}
+  .crmChip.on{border-color:var(--brand);color:var(--brand-dk);background:var(--brand-tint)}
+  .crmChip .n{font-family:var(--font-heading);font-weight:600;margin-left:5px;color:var(--ink)}
+  .crmChip.zero{opacity:.45}
+  .crmFilters .crmChip{font-size:12px;padding:4px 11px}
+  /* 候診名單：一列一個病例，點一下才展開成完整病例 */
+  .crmRow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;text-align:left;
+        background:transparent;border:none;border-bottom:1px solid var(--rule);
+        padding:11px 4px;cursor:pointer;font-family:var(--font-body);color:var(--ink);
+        font-size:13px;min-height:0;border-radius:0}
+  .crmRow:hover{background:var(--paper-2)}
+  .crmRow.unopened{border-left:2px solid var(--brand);padding-left:8px}
+  .crmName{font-family:var(--font-heading);font-weight:600;font-size:14.5px;flex:none}
+  .crmMeta{color:var(--ink-soft);font-size:11.5px}
+  .crmLamps{margin-left:auto;display:flex;gap:7px;font-size:11.5px;white-space:nowrap}
+  .crmLamps span.off{opacity:.28}
+  .crmFlag{font-size:11px;border:1px solid var(--rule);border-radius:999px;padding:1px 7px;color:var(--ink-soft)}
+  .crmFlag.hot{border-color:var(--bad);color:var(--bad)}
+  .crmFlag.warn{border-color:var(--warn);color:var(--warn)}
+  .caseBack{margin-bottom:12px}
+  .caseSec{margin-top:16px}
+  .caseSecHead{font-family:var(--font-heading);font-weight:600;font-size:12.5px;letter-spacing:.06em;
+        color:var(--brand-dk);padding-bottom:5px;border-bottom:1px solid var(--rule);margin-bottom:8px}
+  .tplItem{border:1px dashed var(--rule);border-radius:5px;padding:9px 11px;margin-top:8px;font-size:12.5px}
+  .tplItem b{display:block;font-size:13px;margin-bottom:4px}
+  .tplItem pre{white-space:pre-wrap;font-family:var(--font-body);font-size:12.5px;
+        color:var(--ink-soft);margin:6px 0 0}
+  @media(max-width:600px){
+    .crmLamps{margin-left:0;width:100%}
+    .crmRow{padding:12px 4px}
+  }
+
   /* 病例時間軸：左側一條線加圓點，時間與事件分兩欄 */
   .timeline{list-style:none;margin:6px 0 0;padding:0 0 0 14px;border-left:1px solid var(--rule)}
   .timeline li{position:relative;display:flex;gap:10px;align-items:baseline;
@@ -746,6 +784,14 @@
 
 <!-- 我收到的申請 -->
 <div class="pane" id="pane-in">
+  <!-- 認養看板：不要讓志工看到「124 封申請」，而是看到「124 個病例分別在哪一站」 -->
+  <div id="crmView">
+    <div class="crmBoard" id="crmBoard"></div>
+    <div class="crmFilters" id="crmFilters"></div>
+    <p class="hint" id="crmSummary" style="margin:10px 0 0"></p>
+    <div id="crmList"></div>
+  </div>
+  <!-- 點進一封申請之後顯示的《認養申請病例》 -->
   <div id="inbox"></div>
 </div>
 
@@ -2493,23 +2539,169 @@ function bindOutbox(){
 
 /* ── 我收到的申請 ── */
 let inboxFromProfiles = {};
+/* ── 認養看板 ────────────────────────────────────────────────
+   九個分格「刻意會重疊」——一筆送出三週沒人理的新申請，同時屬於
+   📨 新申請 與 💤 逾期。分格是鏡頭，不是互斥的抽屜；志工要問的是
+   「有沒有卡住的」，不是「這封歸在哪一格」。 */
+const CRM_BUCKETS = [
+  {k:'new',      t:'📨 新申請',        f:r => r.status==='open' && r.stage===1 && !r.opened_at},
+  {k:'toscreen', t:'🩺 待初診',        f:r => r.status==='open' && !r.screened},
+  {k:'s1',       t:'📋 第一階段待審',   f:r => r.status==='open' && r.stage===1 && !!r.opened_at},
+  {k:'s2',       t:'💬 第二階段',      f:r => r.status==='open' && r.stage===2},
+  {k:'s3',       t:'👀 日常觀察',      f:r => r.status==='open' && r.stage===3 && !r.unlock_from && !r.unlock_to},
+  {k:'waiting',  t:'❤️ 等待雙向解鎖',  f:r => r.stage===3 && (!!r.unlock_from !== !!r.unlock_to)},
+  {k:'done',     t:'🌱 完成認養手續',   f:r => r.stage===3 && r.unlock_from && r.unlock_to},
+  {k:'idle',     t:'💤 逾期',          f:r => r.status==='open' && r.idle_days >= REFUND_DAYS_IDLE},
+  {k:'closed',   t:'🏠 已婉拒／結案',   f:r => r.status==='rejected'}
+];
+const REFUND_DAYS_IDLE = 7;
+/* 「需要補件」＝初診有 ⚪（資料不足）。不是對方偷懶，是有欄位沒填到，
+   所以還判斷不出來——這種最適合用一封罐頭去問。 */
+const CRM_FILTERS = [
+  {k:'red',      t:'只看有紅燈',          f:r => r.red > 0},
+  {k:'stale',    t:'只看超過 7 天沒處理',  f:r => r.status==='open' && r.idle_days >= REFUND_DAYS_IDLE},
+  {k:'priority', t:'只看優先邀請',        f:r => !!r.priority_invite},
+  {k:'unread',   t:'只看未讀訊息',        f:r => r.unread > 0},
+  {k:'docs',     t:'只看需要補件',        f:r => r.unknown > 0}
+];
+let crmRows = [];
+let crmBucket = null;          /* null = 所有進行中的（結案要自己點開） */
+let crmOn = new Set();         /* 目前開著的快篩 */
+let caseOpen = null;           /* 目前打開的病例 app_id */
+
+function crmVisible(){
+  let list = crmRows.slice();
+  const b = CRM_BUCKETS.find(x => x.k === crmBucket);
+  list = b ? list.filter(b.f) : list.filter(r => r.status !== 'rejected');
+  CRM_FILTERS.forEach(f => { if(crmOn.has(f.k)) list = list.filter(f.f); });
+  return list;
+}
+function crmLampsHTML(r){
+  if(!r.screened) return '<span class="crmMeta">尚未初診</span>';
+  const cell = (icon, n) => `<span class="${n ? '' : 'off'}">${icon} ${n}</span>`;
+  return cell('🔴', r.red) + cell('🟡', r.yellow) + cell('⚪', r.unknown) + cell('🟢', r.green);
+}
+function crmRowHTML(r){
+  const flags = [];
+  if(r.priority_invite) flags.push('<span class="crmFlag">⭐ 優先邀請</span>');
+  if(r.unread) flags.push(`<span class="crmFlag warn">💬 ${r.unread} 則未讀</span>`);
+  if(r.status === 'open' && r.idle_days >= REFUND_DAYS_IDLE)
+    flags.push(`<span class="crmFlag hot">💤 ${r.idle_days} 天沒動靜</span>`);
+  (r.crm_tags || []).forEach(t => flags.push(`<span class="crmFlag">🏷️ ${esc(t)}</span>`));
+  /* 狀態要寫成「現在卡在誰身上」，不是「走到第幾階段」——
+     志工要的是「哪幾封在等我」，第三階段本身不是待辦事項。 */
+  const state = r.status === 'rejected' ? '已結案'
+    : r.stage === 1 ? (r.opened_at ? '第一階段待審' : '新申請')
+    : r.stage === 2 ? (r.stage2_paid ? (r.has_a2 ? '第二階段待審' : '等對方作答') : '待出題')
+    : (r.unlock_from && r.unlock_to) ? '已完成'
+    : r.unlock_from ? '等你同意解鎖'
+    : r.unlock_to ? '等對方同意解鎖'
+    : '第三階段';
+  return `<button class="crmRow${r.opened_at ? '' : ' unopened'}" data-app="${esc(r.app_id)}">
+    <span class="crmName">${esc(r.name)}</span>
+    <span class="crmMeta">${esc(state)}・第 ${r.days_open} 天${
+      r.area ? '・' + esc(r.area) : ''}</span>
+    ${flags.join('')}
+    <span class="crmLamps">${crmLampsHTML(r)}</span>
+  </button>`;
+}
+function renderCrmBoard(){
+  $('crmBoard').innerHTML = CRM_BUCKETS.map(b => {
+    const n = crmRows.filter(b.f).length;
+    return `<button class="crmChip${crmBucket === b.k ? ' on' : ''}${n ? '' : ' zero'}"
+      data-bucket="${b.k}">${b.t}<span class="n">${n}</span></button>`;
+  }).join('');
+  $('crmFilters').innerHTML = CRM_FILTERS.map(f =>
+    `<button class="crmChip${crmOn.has(f.k) ? ' on' : ''}" data-filter="${f.k}">${f.t}</button>`).join('');
+
+  const list = crmVisible();
+  const b = CRM_BUCKETS.find(x => x.k === crmBucket);
+  $('crmSummary').textContent = crmRows.length
+    ? `${b ? b.t.replace(/^\S+\s*/, '') : '進行中'}：${list.length} 筆${
+        crmOn.size ? '（已套用 ' + crmOn.size + ' 個快篩）' : ''}`
+    : '';
+  $('crmList').innerHTML = crmRows.length
+    ? (list.length ? list.map(crmRowHTML).join('')
+       : '<div class="empty">這個分格目前沒有東西——這是好事。</div>')
+    : '<div class="empty">目前沒有收到申請。</div>';
+
+  $('crmBoard').querySelectorAll('.crmChip').forEach(el => el.onclick = () => {
+    crmBucket = crmBucket === el.dataset.bucket ? null : el.dataset.bucket;
+    renderCrmBoard();
+  });
+  $('crmFilters').querySelectorAll('.crmChip').forEach(el => el.onclick = () => {
+    const k = el.dataset.filter;
+    if(crmOn.has(k)) crmOn.delete(k); else crmOn.add(k);
+    renderCrmBoard();
+  });
+  $('crmList').querySelectorAll('.crmRow').forEach(el => el.onclick = () => openCase(el.dataset.app));
+}
+function showCrmList(){
+  caseOpen = null;
+  $('crmView').style.display = '';
+  $('inbox').innerHTML = '';
+}
 async function renderInbox(){
   apps = apps.filter(a => a.to_user !== me.id).concat(await DB.listInbox());
-  const list = apps.filter(a => a.to_user === me.id);
-  if(!list.length){ $('inbox').innerHTML = '<div class="empty">目前沒有收到申請。</div>'; return; }
-  const fromProfiles = {};
-  for(const a of list){ if(!fromProfiles[a.from_user]) fromProfiles[a.from_user] = await DB.getProfile(a.from_user); }
-  inboxFromProfiles = fromProfiles;
-  $('inbox').innerHTML = list.map(a => {
-    const from = fromProfiles[a.from_user] || {name:'（已取消登記）'};
+  try{
+    crmRows = await DB.getCrmBoard();
+  }catch(e){
+    crmRows = [];
+    $('crmSummary').innerHTML = `<span class="err">看板讀不到：${esc(e.message || '未知錯誤')}</span>`;
+  }
+  if(caseOpen && crmRows.some(r => r.app_id === caseOpen)) { await openCase(caseOpen, true); return; }
+  showCrmList();
+  renderCrmBoard();
+}
+
+/* 《認養申請病例》：七個區塊。點進來才標記已讀——這是 opened_at 真正的語意，
+   志工「打開了這封」，而不是「收件匣渲染過了」。 */
+async function openCase(appId, keepScroll){
+  const a = apps.find(x => x.id === appId);
+  if(!a) return;
+  caseOpen = appId;
+  $('crmView').style.display = 'none';
+  $('inbox').innerHTML = '<p class="hint">整理病例中⋯⋯</p>';
+
+  let from = inboxFromProfiles[a.from_user];
+  if(!from){
+    try{ from = await DB.getProfile(a.from_user); inboxFromProfiles[a.from_user] = from; }
+    catch(e){ from = {name:'（已取消登記）'}; }
+  }
+  let cs = null;
+  try{ cs = await DB.getApplicationCase(appId); }catch(e){ cs = null; }
+
+  $('inbox').innerHTML = caseFileHTML(a, from || {name:'（已取消登記）'}, cs);
+  bindInbox();
+  bindCase(a, cs);
+  if(!keepScroll) window.scrollTo({top:0, behavior:'smooth'});
+
+  if(!a.opened_at){
+    DB.markApplicationsOpened([appId])
+      .then(() => {
+        a.opened_at = new Date().toISOString();
+        const row = crmRows.find(r => r.app_id === appId);
+        if(row) row.opened_at = a.opened_at;
+      })
+      .catch(() => {});   /* 標記已讀失敗不該擋住病例本身 */
+  }
+}
+
+function caseSec(icon, title, body){
+  if(!body) return '';
+  return `<div class="caseSec"><div class="caseSecHead">${icon} ${esc(title)}</div>${body}</div>`;
+}
+function caseFileHTML(a, from, cs){
+  const row = crmRows.find(r => r.app_id === a.id) || {};
+  const tpls = (cs && Array.isArray(cs.templates)) ? cs.templates : [];
+  const reports = (cs && Array.isArray(cs.my_reports)) ? cs.my_reports : [];
+
+  /* ③ 申請問卷 ＋ 動作列 ＋ AI ＋ 第三階段解鎖：沿用原本收件匣那一整塊 */
+  const body34 = (() => {
     const q1 = (Array.isArray(myProfile && myProfile.q1) && myProfile.q1.length) ? myProfile.q1 : DEFAULT_Q1;
     const q2 = (Array.isArray(a.a2_questions) && a.a2_questions.length) ? a.a2_questions : DEFAULT_Q2;
     const qa = (qs, ans) => qs.map((q,i) => `<div class="qa"><b>${esc(q)}</b>${esc((ans||[])[i]||'')}</div>`).join('');
-    return `<fieldset><legend>${esc(from.name)}　${KIND[from.kind]||''}</legend>
-      <div class="stage s${a.status==='rejected'?0:a.stage}">${stageText(a)}</div>
-      <div>${[from.age && from.age+' 歲', from.area, from.job].filter(Boolean)
-             .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
-      ${a.skipped ? `<div class="notice" style="margin-top:12px">
+    return `      ${a.skipped ? `<div class="notice" style="margin-top:12px">
           ⚡ 你們雙方已同意快速邀請，略過剩餘問卷並完成解鎖。
         </div>` : a.a1
         ? '<h4 style="margin:12px 0 4px;font-size:13px">第一階段回答</h4>' + qa(q1, a.a1)
@@ -2542,29 +2734,114 @@ async function renderInbox(){
         <div id="deep-${a.id}">${Array.isArray(a.a2_questions) && a.a2_questions.length
           ? '<div class="qa"><b>第二階段客製問題</b>' + a.a2_questions.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>') + '</div>' : ''}</div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(from.locked || '對方尚未填寫')}</div>` : ''}
-      <details class="tlBox" data-app="${a.id}">
-        <summary>🕐 病例時間軸</summary>
-        <div class="tlHost" data-app="${a.id}"></div>
-      </details>
-      <p class="hint" style="margin-top:8px">想自訂第二階段題目、使用罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」。</p>
+      `;
+  })();
+
+  return `<button class="ghost caseBack" id="caseBack">← 回到認養看板</button>
+    <fieldset>
+      <legend>${esc(from.name)}　${KIND[from.kind]||''}</legend>
+
+      ${caseSec('📋', '病例摘要', `
+        <div class="stage s${a.status==='rejected'?0:a.stage}">${stageText(a)}</div>
+        <div class="crmMeta" style="margin:4px 0 8px">病例編號 ${esc(caseNo(from))}・
+          第 ${row.days_open || 0} 天・最後動靜 ${row.idle_days || 0} 天前</div>
+        <div>${[from.age && from.age + ' 歲', from.area, from.job].filter(Boolean)
+               .map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>
+        <div class="crmLamps" style="margin:8px 0 0">${crmLampsHTML(row)}</div>
+        <label style="margin-top:12px">標籤（只有你看得到，用逗號分隔）</label>
+        <input id="caseTags" value="${esc((a.crm_tags || []).join('，'))}" placeholder="例：需補件，已電話確認">
+        <div class="bar"><button class="ghost" id="caseSaveTags">儲存標籤</button>
+          <span class="msg" id="caseTagsMsg"></span></div>`)}
+
+      ${caseSec('🩺', '初診結果', cs && cs.screening
+        ? screenReportHTML(cs.screening)
+        : '<p class="hint" style="margin:0">目前讀不到初診結果。</p>')}
+
+      ${caseSec('📝', '申請問卷與處理', body34)}
+
+      ${caseSec('💬', '面談紀錄', `
+        <label>志工備註（只有你看得到）</label>
+        <textarea id="caseNote" rows="3" placeholder="例：8/10 詢問未來是否願意回北部，對方說可以討論">${
+          esc((cs && cs.note) || '')}</textarea>
+        <div class="bar"><button class="ghost" id="caseSaveNote">儲存備註</button>
+          <span class="msg" id="caseNoteMsg"></span></div>`)}
+
+      ${caseSec('📨', '回覆建議', tpls.length ? `
+        <p class="hint" style="margin:0 0 4px">依這份初診的理由碼推薦，不用 AI、不扣點數。</p>
+        ${tpls.map(t => `<div class="tplItem">
+          <b>${esc(t.name)}</b>
+          <pre>${esc(t.text)}</pre>
+          <div class="bar"><button class="ghost tplUse" data-id="${esc(t.id)}">帶入下一則回覆</button></div>
+        </div>`).join('')}`
+        : '<p class="hint" style="margin:0">目前沒有對得上的罐頭回覆。你也可以到「我的回覆範本」自己寫一封。</p>')}
+
+      ${caseSec('🚨', '安全與檢舉紀錄', `
+        <p class="hint" style="margin:0">這裡只顯示<b>你自己</b>送出過的檢舉與封鎖狀態。
+          其他會員的檢舉屬於管理員的處理範圍，不會顯示在這裡。</p>
+        ${reports.length ? reports.map(r => `<div class="note" style="font-size:12.5px">
+            ${esc(new Date(r.created_at).toLocaleDateString('zh-TW'))}　${esc(r.why)}
+            <span class="crmFlag">${r.done ? '已處理' : '處理中'}</span></div>`).join('')
+          : '<p class="hint" style="margin:6px 0 0">你沒有檢舉過這個人。</p>'}
+        ${(cs && cs.blocked) ? '<div class="note">🚫 你已經封鎖了這個人。</div>' : ''}
+        <div class="bar">
+          <button class="ghost caseReport" data-id="${a.from_user}" style="font-size:11px;padding:3px 8px;min-height:0">⚑ 檢舉</button>
+          <button class="ghost caseBlock" data-id="${a.from_user}" data-name="${esc(from.name)}" style="font-size:11px;padding:3px 8px;min-height:0">🚫 封鎖</button>
+        </div>`)}
+
+      ${caseSec('🕐', '病例時間軸', `
+        <details class="tlBox" data-app="${a.id}" open>
+          <summary>展開／收合</summary>
+          <div class="tlHost" data-app="${a.id}"></div>
+        </details>`)}
+
+      <p class="hint" style="margin-top:14px">想自訂第二階段題目、使用罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」。</p>
     </fieldset>`;
-  }).join('');
-  bindInbox();
-  /* 收件匣是把每一封的完整回答直接攤開顯示的，所以「畫出來」就等於「志工看過了」。
-     一次送一批 id，不要一封打一次 RPC。等第 4 步的 CRM 看板做出來（點進去才看得到
-     內容的清單），這個呼叫就會搬到「點進某一封」的時候。 */
-  const unopened = list.filter(a => !a.opened_at).map(a => a.id);
-  if(unopened.length){
-    DB.markApplicationsOpened(unopened)
-      .then(() => list.forEach(a => { if(!a.opened_at) a.opened_at = new Date().toISOString(); }))
-      .catch(() => {});   /* 標記已讀失敗不該影響收件匣本身 */
-  }
+}
+
+/* 病例上的動作：返回、標籤、備註、罐頭帶入、檢舉、封鎖 */
+let pendingTemplate = null;
+function bindCase(a, cs){
+  const back = $('caseBack'); if(back) back.onclick = () => { showCrmList(); renderCrmBoard(); };
+
+  const saveTags = $('caseSaveTags');
+  if(saveTags) saveTags.onclick = async () => {
+    const tags = $('caseTags').value.split(/[,，]/).map(x => x.trim()).filter(Boolean);
+    try{
+      const updated = await DB.updateApplication(a.id, {crm_tags: tags});
+      Object.assign(a, updated);
+      const row = crmRows.find(r => r.app_id === a.id); if(row) row.crm_tags = tags;
+      flash('caseTagsMsg', '已儲存');
+    }catch(e){ flash('caseTagsMsg', e.message || '儲存失敗'); }
+  };
+
+  const saveNote = $('caseSaveNote');
+  if(saveNote) saveNote.onclick = async () => {
+    try{
+      await DB.saveCaseNote(a.id, $('caseNote').value);
+      flash('caseNoteMsg', '已儲存');
+      const host = $('inbox').querySelector('.tlHost');
+      if(host){ host.dataset.loaded = ''; loadTimeline(a.id, host); }
+    }catch(e){ flash('caseNoteMsg', e.message || '儲存失敗'); }
+  };
+
+  $('inbox').querySelectorAll('.tplUse').forEach(b => b.onclick = () => {
+    const t = ((cs && cs.templates) || []).find(x => x.id === b.dataset.id);
+    if(!t) return;
+    pendingTemplate = t.text;
+    b.textContent = '已帶入，按「婉拒」或「通過」時會出現';
+  });
+
+  $('inbox').querySelectorAll('.caseReport').forEach(b => b.onclick = () => reportProfile(b.dataset.id));
+  $('inbox').querySelectorAll('.caseBlock').forEach(b => b.onclick = () => blockUserFlow(b.dataset.id, b.dataset.name));
 }
 function bindInbox(){
-  /* 時間軸展開才載入——收件匣可能有上百封，不該一進來就打上百次查詢 */
-  $('inbox').querySelectorAll('.tlBox').forEach(d => d.ontoggle = () => {
-    if(!d.open) return;
-    loadTimeline(d.dataset.app, d.querySelector('.tlHost'));
+  /* 時間軸展開才載入。病例裡的那一個預設就是展開的，而 ontoggle 只在
+     「狀態改變」時才觸發——所以一開始就展開的要另外主動載入一次，
+     不然會永遠停在空的。 */
+  $('inbox').querySelectorAll('.tlBox').forEach(d => {
+    const load = () => loadTimeline(d.dataset.app, d.querySelector('.tlHost'));
+    d.ontoggle = () => { if(d.open) load(); };
+    if(d.open) load();
   });
   const upd = async (id, patch) => {
     const a = apps.find(x => x.id === id);
@@ -2595,8 +2872,10 @@ function bindInbox(){
           Object.assign(a, updated);
           renderInbox(); renderBoard();
         }, async () => {
-          const note = prompt('想留一句話給對方嗎？（可留空，已帶入你的「婉拒」範本，可直接修改）', tplById('no'));
+          const note = prompt('想留一句話給對方嗎？（可留空，已帶入回覆範本，可直接修改）',
+            pendingTemplate || tplById('no'));
           if(note === null) return;
+          pendingTemplate = null;
           await upd(a.id, {status:'rejected', note: note||null});
         });
         return;
@@ -2605,8 +2884,11 @@ function bindInbox(){
     }catch(e){ alert(e.message||'操作失敗'); }
   });
   $('inbox').querySelectorAll('.rej').forEach(b => b.onclick = async () => {
-    const note = prompt('想留一句話給對方嗎？（可留空，已帶入你的「婉拒」範本，可直接修改）', tplById('no'));
+    /* 如果剛剛在「回覆建議」按了帶入，就用那一封當預設值 */
+    const note = prompt('想留一句話給對方嗎？（可留空，已帶入回覆範本，可直接修改）',
+      pendingTemplate || tplById('no'));
     if(note === null) return;
+    pendingTemplate = null;
     try{ await upd(b.dataset.app, {status:'rejected', note: note||null}); }catch(e){ alert(e.message||'操作失敗'); }
   });
   $('inbox').querySelectorAll('.unlockTo').forEach(b => b.onclick = () => {

@@ -237,6 +237,26 @@
     return data || 0;
   }
 
+  // ── 認養看板（收件方視角）────────────────────────────
+  // 整個看板只打這一次：初診燈號存在 screening_results，而那張表刻意不開放
+  // 給前端直接查，所以一封一封問的話，124 封申請就是 124 次往返。
+  async function getCrmBoard() {
+    const { data, error } = await sb.rpc('get_crm_board');
+    if (error) throw error;
+    return data || [];
+  }
+  // 點進一封申請時，把散在各處的東西一次收齊（初診細節、罐頭建議、
+  // 自己送出過的檢舉、封鎖狀態、志工筆記）
+  async function getApplicationCase(appId) {
+    const { data, error } = await sb.rpc('get_application_case', { p_app_id: appId });
+    if (error) throw error;
+    return data || null;
+  }
+  async function saveCaseNote(appId, note) {
+    const { error } = await sb.rpc('save_case_note', { p_app_id: appId, p_note: note });
+    if (error) throw error;
+  }
+
   // ── 第二階段後的雙向對話 ────────────────────────────
   async function listMessages(appId) {
     const { data, error } = await sb.from('match_messages').select('*')
@@ -503,6 +523,7 @@
     signUpEmail, signInEmail, signInGoogle, signOut, deleteMyAccount, getUser, onAuthChange,
     ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles, getScreening,
     listApplicationEvents, markApplicationsOpened,
+    getCrmBoard, getApplicationCase, saveCaseNote,
     adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminUserAction,
     listOutbox, listInbox, findApplicationTo, updateApplication,
     listMessages, sendMessage, closeChat, subscribeMessages,
