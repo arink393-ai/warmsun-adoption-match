@@ -1356,7 +1356,9 @@ function setCheckGroup(containerId, values){
 }
 
 let me = null, myProfile = null, profiles = [], apps = [], templateMaster = [];
-const OWNER_EMAIL = 'warmsun.shelter@gmail.com';
+/* 站長帳號的唯一定義處是 js/config.js。這裡刻意不給預設值：
+   設定漏了就一律關門，而不是猜一個 email——猜錯就是把門開給別人。 */
+const OWNER_EMAIL = (window.OWNER_EMAIL || '').toLowerCase();
 const PROTECTED_TABS = ['board', 'center', 'admin'];
 const PENDING_TAB_KEY = 'warmsun.pendingTab';
 let pendingTab = (() => {
@@ -1542,10 +1544,10 @@ function showSub(k){
   if(k === 'tpl') renderTpl();
   if(k === 'clinic') renderClinic();
 }
-/* 私人工具連結：只有站長本人（warmsun.shelter@gmail.com）看得到 */
+/* 私人工具連結：只有站長本人（js/config.js 的 OWNER_EMAIL）看得到 */
 function showMyLinks(){
   let box = $('ownerToolBox');
-  const isOwner = me && (me.email || '').toLowerCase() === OWNER_EMAIL;
+  const isOwner = !!OWNER_EMAIL && me && (me.email || '').toLowerCase() === OWNER_EMAIL;
   if(isOwner){
     if(!box){
       box = document.createElement('div');

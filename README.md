@@ -17,9 +17,9 @@
   - **待認養**（被追求的一方）：收件審查（通過／婉拒／解鎖）、自訂第一階段題目、
     第二階段價值觀題庫（十類 48 題可勾選）、罐頭回覆庫、AI 建議評分（免費、不扣點）。
   - **飼主**（提出申請的一方）：送出的申請進度、私人筆記、回答小抄。
-- `shelter-review-assistant.html` — **私人工具**，只綁定站長本人的會員帳號（`warmsun.shelter@gmail.com`），
-  跟平台的多人資料模型完全分開（不使用 `profiles`／`applications`），資料存在只有本人能存取的
-  `owner_kv` 資料表。用來管理小橘的 Dcard 企劃：病例設定、罐頭回覆、FAQ、貼文申請書、
+- `shelter-review-assistant.html` — **私人工具**，只綁定站長本人的會員帳號
+  （`js/config.js` 的 `OWNER_EMAIL`），跟平台的多人資料模型完全分開
+  （不使用 `profiles`／`applications`），資料存在 `owner_kv` 資料表（每個帳號各自隔離，見第 6 步）。用來管理小橘的 Dcard 企劃：病例設定、罐頭回覆、FAQ、貼文申請書、
   表單匯入評分、AI 判斷該用哪封罐頭。登入後會在「個人中心 → 我的資料」看到這個工具的連結
   （只有站長本人的帳號登入時才會顯示）。
 - `supabase-schema.sql` — 資料庫結構與 RLS（Row Level Security）政策，包含
@@ -30,6 +30,21 @@
 - `supabase/functions/claude/index.ts` — （選用）Claude API 代理，讓照片初檢、主治獸醫評估、
   「AI 建議評分」、私人工具的審查草稿產生都能安全呼叫 AI，金鑰只存在伺服器端，
   瀏覽器端一律不會直接呼叫 `api.anthropic.com`。
+
+## 這份 README 適用哪一種情況
+
+**維護目前這個正式站**：`js/config.js` 已經指向正式的 Supabase 專案（Project URL、
+anon key、Claude 函式網址都填好了），**不需要重填**。下面的「建立 Supabase 專案」
+是給第二種情況看的。你要做的通常只有改程式、推上 `main`，GitHub Pages 會自動更新。
+
+**Fork 或自己開一套環境**：才需要照下面整套走一遍，把 `js/config.js` 的四個值
+（`SUPABASE_URL`、`SUPABASE_ANON_KEY`、`CLAUDE_PROXY_URL`、`OWNER_EMAIL`）換成你自己的。
+
+> **唯一的真實來源是 GitHub 的 `main` 分支。**
+> 網站是從 `main` 部署的，所以「網站現在的行為」等於「`main` 現在的內容」。
+> 雲端硬碟裡的資料夾是備份快照，時間點可能比 `main` 舊，**不要拿它當作依據**，
+> 也不要把它的內容當成「應該是這樣」——要確認正式站現在是什麼設定，看 `main`。
+> 兩邊不一致時，一律以 `main` 為準，備份重新匯出一份就好。
 
 ## 上線前要做的事
 
@@ -47,11 +62,27 @@
 前端已經接好一顆「使用 Google 登入」按鈕（`supabase.auth.signInWithOAuth({provider:'google'})`），
 你只需要：
 1. 到 Google Cloud Console 建立 OAuth 2.0 用戶端（網頁應用程式）。
-2. Supabase 專案 → **Authentication → Providers → Google**，貼上 Client ID / Secret 並啟用。
-3. **Authentication → URL Configuration**，把正式網址（例如
-   `https://<你的帳號>.github.io/warmsun-adoption-match/`）加進
-   Site URL 與 Redirect URLs。
-4. 完成後不用改任何程式碼，按鈕會自動生效。Email／密碼登入在此之前就能正常使用。
+2. **在那個用戶端裡加入 Supabase 的 callback 網址**（很容易漏掉，漏了 Google 登入會直接失敗）：
+   ```text
+   Authorized redirect URIs
+   https://<你的專案代號>.supabase.co/auth/v1/callback
+   ```
+   專案代號就是 `js/config.js` 裡 `SUPABASE_URL` 的那一段。
+3. Supabase 專案 → **Authentication → Providers → Google**，貼上 Client ID / Secret 並啟用。
+4. Supabase → **Authentication → URL Configuration**，把正式網址加進 Site URL 與 Redirect URLs：
+   ```text
+   Site URL      https://<你的帳號>.github.io/warmsun-adoption-match/
+   Redirect URLs https://<你的帳號>.github.io/warmsun-adoption-match/**
+   ```
+
+> **第 2 步和第 4 步是兩件不同的事，不要混在一起。**
+> 第 2 步（Google Cloud Console）管的是「使用者在 Google 按下同意之後，Google 要把他送回哪裡」
+> ——答案是送回 **Supabase**，不是送回你的網站。
+> 第 4 步（Supabase）管的是「Supabase 收下之後，再把使用者送回你網站的哪裡」。
+> 只設了第 4 步而漏掉第 2 步，Google 會擋在 `redirect_uri_mismatch`，
+> 而且錯誤訊息出現在 Google 那一頁，看起來完全不像是自己網站的問題。
+
+5. 完成後不用改任何程式碼，按鈕會自動生效。Email／密碼登入在此之前就能正常使用。
    使用者從受保護分頁開啟 Google 登入時，網站會把原本的目的分頁暫存在同一分頁的
    `sessionStorage`，OAuth 回站後再導回，不會一律跳到佈告欄。
 
@@ -59,22 +90,94 @@
 Repo 設定 → **Settings → Pages** → Source 選「Deploy from a branch」→ 選 `main` 分支、
 `/ (root)` 目錄 → Save。幾分鐘後就能用 `https://<你的帳號>.github.io/warmsun-adoption-match/` 開啟。
 
-### 4.（選用）開啟 AI 輔助評估
-配對站的「診療室」（消耗診療點數的「主治獸醫評估」）與「待認養」後台的「AI 建議評分」
-（免費不扣點）都靠同一個 AI 代理，只需要設定一次：
+### 4. 部署 Edge Functions（兩個必要、一個選用）
+
+專案有三個 Edge Function。**其中兩個是必要的，跟要不要用 AI 完全無關**：
+
+| 函式 | 做什麼 | 沒部署的話 |
+|---|---|---|
+| `admin-users` | 管理後台的會員管理（限制發文、停用登入、永久刪除會員） | 管理後台那幾顆按鈕會失敗 |
+| `delete-account` | 使用者自行刪除帳號（同時處理 Auth 帳號與相關資料） | 「刪除帳號」會失敗 |
+| `claude` | （選用）AI 代理 | AI 功能自動停用，其他功能不受影響 |
+
 1. 安裝 [Supabase CLI](https://supabase.com/docs/guides/cli)，登入並連結你的專案：
    `supabase login` → `supabase link --project-ref <你的專案代號>`
-2. 部署函式：`supabase functions deploy claude && supabase functions deploy admin-users && supabase functions deploy delete-account`
-3. 到 https://console.anthropic.com 申請一組 API 金鑰，並設定正式站來源（不會出現在前端）：
+2. 部署這兩個必要的函式：
+   ```bash
+   supabase functions deploy admin-users
+   supabase functions deploy delete-account
+   ```
+
+> 這兩個以前被寫在「（選用）開啟 AI」底下，很容易讓人得到「我不用 AI，所以整段跳過」
+> 的結論——結果連刪除帳號跟會員管理都沒部署，而且是等到真的要用才發現。
+
+### 4b.（選用）開啟 AI 輔助評估
+配對站的「診療室」（消耗診療點數的「主治獸醫評估」）與「待認養」後台的「AI 閱讀這份申請」
+（免費不扣點）都靠同一個 AI 代理，只需要設定一次：
+1. 部署函式：`supabase functions deploy claude`
+2. 到 https://console.anthropic.com 申請一組 API 金鑰，並設定正式站來源（不會出現在前端）：
    `supabase secrets set ANTHROPIC_API_KEY=sk-ant-xxxxx SITE_ORIGIN=https://你的正式網域`
-4. 把函式網址貼進 `js/config.js` 的 `CLAUDE_PROXY_URL`：
+3. 把函式網址貼進 `js/config.js` 的 `CLAUDE_PROXY_URL`：
    `https://<你的專案代號>.supabase.co/functions/v1/claude`
-5. 留空這個設定，兩個 AI 功能的按鈕都會自動顯示為停用狀態，不影響其他功能。
+4. 留空這個設定，兩個 AI 功能的按鈕都會自動顯示為停用狀態，不影響其他功能。
 
 新帳號預設贈送 5 點診療點數（`match_profiles.credits`）。送出一份認養申請要扣 1 點「掛號費」，
 請主治獸醫評估一位申請人要扣 1 點「診療費」；若對方超過 14 天沒處理你的申請，可以在
 「我送出的申請」自行退回掛號費。「診療室」裡的儲值方案目前是模擬付款，不會真的扣款——
 要串接真的金流（例如綠界、TapPay）需要另外接金流商的後端，目前還沒做。
+
+### 4c. 部署完成後的驗收清單
+
+「照著做完應該就好了」不算驗收。實際跑一遍下面這些，尤其是打勾的那幾項——
+它們對應的都是設定漏掉時**不會報錯、只會安靜壞掉**的地方：
+
+```text
+登入
+□ Email 註冊成功
+□ Email 登入成功
+□ Google 登入成功                    ← 漏了第 2 步的 callback URI 就會卡在 Google 那頁
+□ OAuth 完成後回到原本要去的分頁，不是一律跳回佈告欄
+
+權限
+□ 建立登記資料成功
+□ 一般會員看不到「管理後台」分頁
+□ 管理員看得到並打得開「管理後台」
+□ 站長帳號在「我的資料」最下面看得到私人工具連結
+□ 其他帳號看不到連結，直接開網址也會被擋在門口
+□ 私人工具關掉重開，資料還在（owner_kv 有寫進去）
+
+必要的 Edge Functions
+□ 管理後台的「限制發文／停用登入」有作用      ← admin-users
+□ 「刪除帳號」跑得完                          ← delete-account
+
+照片
+□ 上傳大頭照成功
+□ 上傳驗證照成功，審核通過或退回後驗證照被刪掉
+
+AI（選用）
+□ 沒設定 CLAUDE_PROXY_URL 時，網站其他功能完全正常，AI 按鈕顯示為停用
+□ 設定之後，主治獸醫評估與「AI 閱讀這份申請」都回得了內容
+□ AI 的輸出裡沒有任何百分比／分數（見第 34 節）
+```
+
+### 4d. 本機開發
+
+**不要用 `file://` 直接開 `index.html` 測登入。** OAuth 的 redirect、
+`sessionStorage` 的分頁記憶都需要一個真正的 origin，`file://` 下會失敗或行為不同。
+起一個本機伺服器就好：
+
+```bash
+python3 -m http.server 8080
+# 然後開 http://localhost:8080
+```
+
+要測 Google 登入的話，記得把 `http://localhost:8080` 也加進
+Supabase 的 **Redirect URLs**（Google Cloud Console 那邊不用改，
+因為 Google 永遠只回到 Supabase 的 callback）。
+
+Email／密碼登入、其他所有功能在 `http://localhost:8080` 下都能直接測。
+（專案的自動化測試是另一回事——它們用 `file://` 開頁面並攔截掉 Supabase，
+不碰真的登入流程，所以不受這一條影響。）
 
 ### 5. 大頭照／身分驗證／管理員審核
 
@@ -94,20 +197,33 @@ bucket 與對應權限的 SQL，跑過整份腳本就會自動建好，不用另
 3. 重新整理網站，頂端分頁會出現「管理後台」，裡面會顯示全站統計、待處理檢舉、範本主檔編輯，
    以及原本的照片／驗證照審核台。
 
-大頭照的系統初檢一樣透過 Claude 代理（見上一步），沒設定 `CLAUDE_PROXY_URL` 也不會擋住
+大頭照的系統初檢一樣透過 Claude 代理（見第 4b 步），沒設定 `CLAUDE_PROXY_URL` 也不會擋住
 註冊流程，只是會略過初檢、直接進人工審核。
 
 ### 6. 私人工具（`shelter-review-assistant.html`）
 
 這個工具只給站長本人使用，跟平台其他會員的資料完全分開：
-1. 打開 `index.html` 裡的 `const OWNER_EMAIL = 'warmsun.shelter@gmail.com';`（在 `<script>` 區塊裡）
-   跟 `shelter-review-assistant.html` 裡同名的常數，確認都是你自己的帳號 email，兩邊要一致。
+1. 站長帳號寫在 **`js/config.js` 的 `window.OWNER_EMAIL`，只有這一個地方**。
+   `index.html` 與 `shelter-review-assistant.html` 都讀它，不用同步兩份。
+   沒設這個值的話兩個頁面都會直接關門（連結不出現、工具進不去），不會退回任何預設帳號。
 2. 用這個帳號登入 `index.html` 後，到「個人中心 → 我的資料」最下面會看到
    「小橘的 Dcard 企劃工具（僅本人可見）」連結，點進去就是 `shelter-review-assistant.html`。
-3. 直接用同一組帳密登入即可，資料會存進只有這個帳號能讀寫的 `owner_kv` 資料表
-   （`supabase-schema.sql` 已經建好對應的表格與 RLS 政策）。用別的帳號登入會被擋在門口，
-   不會看到任何內容。
-4. 這個工具裡產生審查草稿一樣透過 Claude 代理（見上面第 4 步），沒設定 `CLAUDE_PROXY_URL`
+3. 直接用同一組帳密登入即可，資料存在 `owner_kv` 資料表
+   （`supabase-schema.sql` 已經建好表格與 RLS 政策）。用別的帳號登入會被擋在門口。
+
+> **`owner_kv` 的保護實際上是什麼，值得講精確一點**，不然下一個維護的人會誤會。
+>
+> RLS 政策是 `auth.uid() = owner_id`，意思是**每個登入的會員都可以讀寫「自己的」
+> `owner_kv`，但讀不到別人的**。資料庫層面**沒有**一份「只有某個 email 能用」的白名單。
+>
+> 所以「只有站長能用這個工具」是兩層合起來的結果：
+> **前端閘門**（`user.email === OWNER_EMAIL`，決定誰進得去這個頁面）
+> ＋ **資料庫隔離**（`auth.uid() = owner_id`，決定誰讀得到站長的資料）。
+>
+> 對現在的目標這樣已經夠了——就算有人繞過前端直接呼叫 `DB.ownerKvSet()`，
+> 他也只會寫進**他自己的**那一份，碰不到站長的任何資料。
+> 但要知道 RLS 不會說「你不是站長所以拒絕」，它只說「你不是這筆資料的主人」。
+4. 這個工具裡產生審查草稿一樣透過 Claude 代理（見第 4b 步），沒設定 `CLAUDE_PROXY_URL`
    的話會顯示「尚未設定 AI 代理網址」，但存檔、罐頭回覆、名冊等其他功能不受影響。
 
 ### 7. 安全性補強：擋掉自己改自己權限／點數的漏洞

@@ -993,8 +993,16 @@ on conflict (id) do nothing;
 comment on column public.match_profiles.canned is '自訂罐頭回覆庫覆蓋值（所有會員都可使用，對照 template_master 的主檔）';
 
 -- ============================================================
--- 8) owner_kv：私人工具（暖陽動物之家回覆助手）專用的個人儲存空間
---    只給你自己的帳號使用，其他人完全存取不到
+-- 8) owner_kv：私人工具（暖陽動物之家回覆助手）用的個人儲存空間
+--
+--    講精確一點：下面的 RLS 是 auth.uid() = owner_id，也就是**每個登入的會員都可以
+--    讀寫自己的那一份，但讀不到別人的**。這裡沒有、也不該有一份「只有某個 email
+--    能用」的白名單——email 白名單屬於前端閘門（js/config.js 的 OWNER_EMAIL），
+--    負責決定誰進得去那個頁面。
+--
+--    兩層合起來才是「只有站長能用那個工具」：
+--      前端閘門決定誰進得去，這裡的 RLS 決定誰讀得到站長的資料。
+--    就算有人繞過前端直接呼叫 ownerKvSet()，他也只會寫進他自己的那一份。
 -- ============================================================
 create table if not exists public.owner_kv (
   owner_id   uuid not null references auth.users(id) on delete cascade,

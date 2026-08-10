@@ -424,7 +424,9 @@
 <script src="js/supabase-client.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const OWNER_EMAIL = 'warmsun.shelter@gmail.com';
+/* 站長帳號的唯一定義處是 js/config.js。沒設就一律擋在門外——
+   這是唯一一個「設定漏掉時比較安全的方向是關門」的地方。 */
+const OWNER_EMAIL = (window.OWNER_EMAIL || '').toLowerCase();
 /* 私人工具用的儲存：綁在站長本人帳號下的 owner_kv 資料表，取代原本的沙盒 window.storage */
 window.storage = {
   get: (key) => DB.ownerKvGet(key),
@@ -1101,6 +1103,10 @@ async function lockNow(){ await DB.signOut(); location.reload(); }
 function gateStart(){
   DB.onAuthChange(async (user) => {
     if(!user){ lock(); return; }
+    if(!OWNER_EMAIL){
+      lock('尚未設定站長帳號（js/config.js 的 OWNER_EMAIL），這個工具暫時無法使用');
+      return;
+    }
     if((user.email || '').toLowerCase() !== OWNER_EMAIL){
       lock('此帳號沒有使用權限');
       return;
