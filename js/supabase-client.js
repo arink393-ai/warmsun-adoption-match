@@ -167,6 +167,17 @@
     return (data || []).filter(p => p.kind && p.species && p.name);
   }
 
+  // ── 主治醫師初診（免費、規則式、0 API 成本）──────────────
+  // 燈號數量永遠看得到，細節只給目前揭露層級該看到的那幾筆——
+  // 分層是在 get_screening_for() 裡做掉的，前端不做也不該做過濾：
+  // 前端過濾就代表資料已經傳到瀏覽器了。
+  async function getScreening(otherId) {
+    const { data, error } = await sb.rpc('get_screening_for', { p_other: otherId });
+    if (error) throw error;
+    return data || { stage: 0, inputs_seen: 0, green: 0, yellow: 0, red: 0, unknown: 0,
+                     findings: [], hidden: 0 };
+  }
+
   // ── Applications ──────────────────────────────────────
   // 回答存在受保護的 application_answers（收件方付費解鎖後才讀得到，見 schema 第 10 節）。
   // 這裡一併撈出來攤平成 a.a1 / a.a2，畫面端就跟以前一樣用；沒解鎖時 RLS 會讓它是 null。
@@ -472,7 +483,7 @@
   window.DB = {
     sb,
     signUpEmail, signInEmail, signInGoogle, signOut, deleteMyAccount, getUser, onAuthChange,
-    ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles,
+    ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles, getScreening,
     adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminUserAction,
     listOutbox, listInbox, findApplicationTo, updateApplication,
     listMessages, sendMessage, closeChat, subscribeMessages,

@@ -153,6 +153,21 @@
   .discl details[open] summary{margin-bottom:6px}
   .discl details.isOpen summary{color:var(--brand-dk);font-weight:600}
   .disclWhat{font-size:11px;color:var(--ink-soft);font-weight:400}
+  /* 主治醫師初診：燈號用線條與色字，不做整塊填色 */
+  .screenHost:not(:empty){margin-top:12px;padding-top:10px;border-top:1px dotted var(--rule)}
+  .screenCounts{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11.5px}
+  .lamp{white-space:nowrap;color:var(--ink)}
+  .lamp.zero{color:var(--ink-soft);opacity:.6}
+  .screenGroup{margin-top:12px}
+  .screenGroupHead{font-family:var(--font-heading);font-weight:600;font-size:12px;
+        letter-spacing:.06em;color:var(--ink-soft);margin-bottom:5px}
+  .screenItem{border-left:2px solid var(--rule);padding:3px 0 3px 10px;margin:7px 0;font-size:12.5px;line-height:1.75}
+  .screenItem.o-red{border-left-color:var(--bad)}
+  .screenItem.o-yellow{border-left-color:var(--warn)}
+  .screenItem.o-green{border-left-color:var(--ok)}
+  .screenItem.o-unknown{border-left-style:dashed}
+  .screenItem b{font-weight:600}
+  .screenAsk{margin-top:5px;color:var(--brand-dk);font-size:12px}
   .cardActions{margin-top:14px;padding-top:10px;border-top:1px solid var(--rule)}
   .cardActions .bar{margin-top:0}
   .cardActions .sub{margin-top:6px}
@@ -635,7 +650,12 @@
           <option>已有小孩，不打算再生</option><option>其他</option></select></div>
     </div>
     <label>一週工作時數（含通勤．選填）</label>
-    <input id="mWorkHours" placeholder="例：45 小時">
+    <input id="mWorkHours" type="number" min="0" max="200" step="1" inputmode="numeric" placeholder="例：45">
+    <p class="hint" style="margin-top:4px">
+      填數字就好，單位是「小時／週」。主治醫師初診會用這個數字判斷工作負荷，
+      所以「約 40-50」「看情況」這種寫法它讀不懂——不確定的話填一個平均值，
+      真的很難估就先留白（初診會顯示「尚未提供」而不是亂猜）。
+    </p>
 
     <div class="hint" style="margin:20px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 由你自己決定開放時機 —</div>
     <div class="row">
@@ -1472,7 +1492,9 @@ async function fillMe(){
   mMilitary.value = myProfile.military||''; mLiving.value = myProfile.living||''; mDebt.value = myProfile.debt||'';
   mDebtWhen.value = myProfile.debt_when||'stage2';
   mRelGoal.value = myProfile.relationship_goal||''; mKidsPlan.value = myProfile.kids_plan||''; mMbti.value = myProfile.mbti||'';
-  mWorkHours.value = myProfile.work_hours||'';
+  /* 舊帳號的 work_hours 可能是「45 小時」這種文字，取第一個數字回填到數值欄 */
+  mWorkHours.value = myProfile.weekly_work_hours != null ? myProfile.weekly_work_hours
+    : (String(myProfile.work_hours||'').match(/\d+/) || [''])[0];
   setCheckGroup('mInterests', myProfile.interests);
   setCheckGroup('mPersonality', myProfile.personality);
   setCheckGroup('mHabits', myProfile.habits);
@@ -1633,7 +1655,9 @@ $('mSave').onclick = async () => {
       income: mIncome.value, marital: mMarital.value, has_kids: mHasKids.value,
       military: mMilitary.value, living: mLiving.value, debt: mDebt.value, debt_when: mDebtWhen.value,
       relationship_goal: mRelGoal.value, kids_plan: mKidsPlan.value, mbti: mMbti.value.trim(),
-      work_hours: mWorkHours.value.trim(),
+      /* 規則引擎讀 weekly_work_hours（數值），卡片上顯示 work_hours（文字），兩個一起寫 */
+      weekly_work_hours: workHoursNum(),
+      work_hours: workHoursNum() == null ? '' : workHoursNum() + ' 小時',
       interests: getCheckGroup('mInterests'), personality: getCheckGroup('mPersonality'),
       habits: getCheckGroup('mHabits'), habits_other: mHabitsOther.value.trim(),
       req_marital: mReqMarital.value, req_age_min: mReqAgeMin.value.trim(), req_age_max: mReqAgeMax.value.trim(),
@@ -1793,6 +1817,78 @@ function detailBlock(p){
       ${reqParts.length ? `<br>希望對方：${reqParts.map(esc).join('，')}` : ''}
     </div>
   </details>`;
+}
+
+/* 一週工作時數：0–200 之外的輸入一律當作沒填，不要讓打錯的數字變成一盞黃燈 */
+function workHoursNum(){
+  const raw = String(mWorkHours.value || '').trim();
+  if(!raw) return null;
+  const n = parseInt(raw, 10);
+  if(!Number.isFinite(n) || n < 0 || n > 200) return null;
+  return n;
+}
+
+/* ── 主治醫師初診（免費、規則式、0 API 成本）───────────────────
+   燈號的細節分層是伺服器決定的：get_screening_for() 只會回傳
+   min_stage <= 目前揭露層級的那幾筆，其餘只計入 hidden。
+   前端不做任何過濾，也不該做——做了就代表資料已經傳到瀏覽器了。 */
+const SCREEN_LAMP = {
+  green:  {icon:'🟢', label:'暫未發現明顯衝突'},
+  yellow: {icon:'🟡', label:'需要追蹤'},
+  red:    {icon:'🔴', label:'核心條件衝突'},
+  unknown:{icon:'⚪', label:'尚未取得資訊'}
+};
+const screenCache = new Map();
+
+function screenCountsHTML(r){
+  return ['green','yellow','red','unknown'].map(k => {
+    const n = Number(r[k] || 0);
+    return `<span class="lamp${n ? '' : ' zero'}">${SCREEN_LAMP[k].icon} ${esc(SCREEN_LAMP[k].label)} ${n} 項</span>`;
+  }).join('');
+}
+
+function screenReportHTML(r){
+  const groups = ['red','yellow','unknown','green'];
+  const body = groups.map(g => {
+    const items = (r.findings || []).filter(f => f.outcome === g);
+    if(!items.length) return '';
+    /* 分組標題刻意不再寫數字：最上面那排是「總共幾項」，這裡列的是
+       「目前這一層看得到的」，兩個數字在有東西被收起來時會不一樣，
+       同時寫出來只會讓人以為系統自相矛盾。差額由下面的 🔒 那行解釋。 */
+    return `<div class="screenGroup">
+      <div class="screenGroupHead">${SCREEN_LAMP[g].icon} ${esc(SCREEN_LAMP[g].label)}</div>
+      ${items.map(f => `<div class="screenItem o-${esc(f.outcome)}">
+        <b>${esc(f.title || '')}</b>
+        ${f.body ? `<div>${esc(f.body)}</div>` : ''}
+        ${(Array.isArray(f.ask) && f.ask.length) ? `<div class="screenAsk">💬 建議問診<br>${
+          f.ask.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>')}</div>` : ''}
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+  const stageWord = ['提出邀請','通過第一階段','進入第二階段'];
+  return `<div class="screenReport">
+    <div class="screenCounts">${screenCountsHTML(r)}</div>
+    <p class="hint" style="margin:8px 0 0">目前取得 ${Number(r.inputs_seen||0)} 項有效資料。</p>
+    ${body || '<p class="hint">目前沒有任何可以整理的項目。</p>'}
+    ${Number(r.hidden||0) > 0 ? `<p class="hint" style="margin-top:10px">
+      🔒 另外有 ${Number(r.hidden)} 項的細節，要${esc(stageWord[Math.min(Number(r.stage||0), 2)])}之後才看得到——
+      初診不會提前透露對方還沒開放的資料。</p>` : ''}
+    <p class="hint" style="margin-top:10px">
+      🌤️ 初診只能協助整理已經提供的資料，不代表主治醫師認定兩個人一定適合或不適合。
+      這份報告免費，不會扣點數。</p>
+  </div>`;
+}
+
+async function showScreening(targetId, host){
+  if(!host) return;
+  host.innerHTML = '<p class="hint">主治醫師看診中⋯⋯</p>';
+  try{
+    let r = screenCache.get(targetId);
+    if(!r){ r = await DB.getScreening(targetId); screenCache.set(targetId, r); }
+    host.innerHTML = screenReportHTML(r);
+  }catch(e){
+    host.innerHTML = `<p class="err">初診暫時無法執行：${esc(e.message || '未知錯誤')}</p>`;
+  }
 }
 
 /* ── 佈告欄 ── */
@@ -2002,9 +2098,11 @@ async function renderBoard(){
             freeApplyRemaining() > 0 ? '（免費）' : `（${APPLY_COST} 點）`}</button>`}
       </div>
       <div class="bar sub">
+        <button class="ghost screen" data-id="${p.id}" style="font-size:11px;padding:3px 8px;min-height:0">🩺 查看初診結果（免費）</button>
         <button class="ghost report" data-id="${p.id}" style="font-size:11px;padding:3px 8px;min-height:0">⚑ 檢舉</button>
         <button class="ghost blockBtn" data-id="${p.id}" data-name="${esc(p.name)}" style="font-size:11px;padding:3px 8px;min-height:0">🚫 封鎖</button>
       </div>
+      <div class="screenHost" data-host="${p.id}"></div>
     </div>`;
     return profileCardHTML(p, {stage: Number(p.rel_stage || 0), unlocked: !!p.rel_unlocked, footer});
   }).join('');
@@ -2012,6 +2110,13 @@ async function renderBoard(){
   $('board').querySelectorAll('.apply').forEach(b => b.onclick = () => openApply(b.dataset.id));
   $('board').querySelectorAll('.report').forEach(b => b.onclick = () => reportProfile(b.dataset.id));
   $('board').querySelectorAll('.blockBtn').forEach(b => b.onclick = () => blockUserFlow(b.dataset.id, b.dataset.name));
+  $('board').querySelectorAll('.screen').forEach(b => b.onclick = () => {
+    const host = $('board').querySelector(`.screenHost[data-host="${b.dataset.id}"]`);
+    /* 再按一次收起來，免得一張卡片被報告撐得太長 */
+    if(host && host.innerHTML){ host.innerHTML = ''; b.textContent = '🩺 查看初診結果（免費）'; return; }
+    b.textContent = '🩺 收起初診結果';
+    showScreening(b.dataset.id, host);
+  });
 }
 async function reportProfile(id){
   const why = prompt('請說明檢舉原因（例如：疑似盜圖、資料造假、騷擾訊息）');

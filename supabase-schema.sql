@@ -213,6 +213,18 @@ alter table public.match_profiles add column if not exists req_age_max text defa
 alter table public.match_profiles add column if not exists req_kids text default '';
 alter table public.match_profiles add column if not exists req_habits jsonb not null default '[]'::jsonb;
 
+-- 一週工作時數：規則引擎（第 13 節「主治醫師初診」）讀的是這個數值欄，
+-- 原本的 work_hours 自由文字欄留著當顯示用。這兩個欄位必須在
+-- get_visible_match_profiles() 之前就存在，因為 SQL 函式在建立當下就會驗證本體。
+alter table public.match_profiles add column if not exists weekly_work_hours smallint;
+alter table public.match_profiles drop constraint if exists match_profiles_weekly_work_hours_check;
+alter table public.match_profiles add constraint match_profiles_weekly_work_hours_check
+  check (weekly_work_hours is null or (weekly_work_hours >= 0 and weekly_work_hours <= 200));
+
+-- Dealbreaker 嚴重度：每個題組一個 none / discussable / non_negotiable。
+-- 預設 {} 代表「沒有任何不可妥協條件」，不會憑空產生紅燈。
+alter table public.match_profiles add column if not exists dealbreakers jsonb not null default '{}'::jsonb;
+
 -- 一次性搬移舊版暖陽欄位。只複製兩張表共有的欄位，避免碰到同專案其他產品新增的欄位。
 do $$
 declare v_cols text;
@@ -473,7 +485,10 @@ language sql security definer stable set search_path = '' as $$
       -- 以下全部改由下面的 jsonb_build_object 依階段決定要不要給
       'age','birth','health','health_tags','locked','weight_kg','show_weight',
       'height_cm','education','marital','has_kids','military','habits','habits_other',
-      'income','living','kids_plan','work_hours','debt','debt_when'
+      'income','living','kids_plan','work_hours','weekly_work_hours','debt','debt_when',
+      -- Dealbreaker 嚴重度整個不外流：只給「有幾項」。細項是很強的識別資訊，
+      -- 而且初診本來就在伺服器端讀得到，前端沒有任何理由需要拿到值。
+      'dealbreakers'
     ]::text[])
     || jsonb_build_object(
       -- 第 0 層：年齡只給區間
@@ -494,6 +509,11 @@ language sql security definer stable set search_path = '' as $$
       'living',      case when rel.stage >= 2 then p.living else null end,
       'kids_plan',   case when rel.stage >= 2 then p.kids_plan else null end,
       'work_hours',  case when rel.stage >= 2 then p.work_hours else null end,
+      -- 規則引擎用的數值欄跟顯示用的文字欄是同一件事，遮罩層級也必須一樣，
+      -- 否則第 0 層就能從 weekly_work_hours 讀到第 2 層才該開放的工時。
+      'weekly_work_hours', case when rel.stage >= 2 then p.weekly_work_hours else null end,
+      'dealbreaker_count', (select count(*) from jsonb_each_text(coalesce(p.dealbreakers,'{}'::jsonb)) d
+                             where d.value = 'non_negotiable'),
       -- 第 3 層：要雙方都同意解鎖
       'birth',  case when rel.stage >= 3 and rel.unlock_from and rel.unlock_to then p.birth else null end,
       'locked', case when rel.stage >= 3 and rel.unlock_from and rel.unlock_to then p.locked else null end,
@@ -1787,3 +1807,597 @@ grant execute on function public.match_is_admin(uuid), public.spend_credits_for(
   public.send_stage2(uuid,jsonb), public.advance_stage3(uuid), public.unlock_stage3(uuid,boolean),
   public.consent_unlock_to(uuid,boolean), public.settle_bonus_credits(uuid), public.skip_to_unlock(uuid),
   public.submit_stage2(uuid,jsonb,jsonb) to authenticated;
+
+-- ============================================================
+-- 13) 主治醫師初診：規則引擎（免費、0 API 成本）
+--
+--     規格見 docs/screening-crm-spec.md。這一節實作規格的第 1、2 步：
+--       ・weekly_work_hours 數值欄位（一個欄位解決 R001–R005 五條規則）
+--       ・screening_rules / screening_results 兩張表
+--       ・條件式直譯器（screening_ref / screening_eval）
+--       ・run_screening() / get_screening_for()
+--       ・R047–R054 禁止規則，而且是「會擋下寫入」的那種，不是註解裡的約定
+--
+--     稱謂約定（整節通用）：
+--       applicant = 被評估的那個人（佈告欄上你正在看的人／CRM 裡的申請人）
+--       recipient = 看報告的人（你自己／CRM 裡的收件人）
+-- ============================================================
+
+-- 13.1 一週工作時數改成數值 -----------------------------------
+-- 原本的 work_hours 是自由文字（「例：45 小時」），規則沒辦法可靠解析
+-- 「約 40-50」「看情況」這種輸入。保留 work_hours 當顯示用，另外存一個數值欄。
+-- 欄位本身宣告在第 1 節（見「一週工作時數」）——get_visible_match_profiles()
+-- 在那之後就會引用它，而 SQL 函式建立當下就會驗證函式本體，欄位必須先存在。
+
+-- 從舊的自由文字欄回填：只取第一個數字，而且只在看起來合理（1–168）時才寫進去。
+-- 冪等：只補 weekly_work_hours 還是 null 的列。
+update public.match_profiles
+   set weekly_work_hours = sub.n
+  from (
+    select id, nullif(regexp_replace(coalesce(work_hours,''), '[^0-9].*$', ''), '')::int as n
+      from public.match_profiles
+     where weekly_work_hours is null and coalesce(work_hours,'') ~ '^[^0-9]*[0-9]'
+  ) sub
+ where public.match_profiles.id = sub.id
+   and sub.n between 1 and 168;
+
+-- 13.2 Dealbreaker 嚴重度 --------------------------------------
+-- 規格第 1.4 節：沒有這個維度，所有 🔴 都做不出來。欄位先開，表單 UI 之後才做，
+-- 預設 {} 代表「沒有任何不可妥協條件」，不會憑空產生紅燈。
+-- 欄位本身同樣宣告在第 1 節。
+
+-- 13.3 規則表 --------------------------------------------------
+create table if not exists public.screening_rules (
+  code         text primary key,
+  topic        text not null default '',
+  category     text not null default '',
+  outcome      text not null
+                 check (outcome in ('green','yellow','red','unknown','safety','never')),
+  priority     smallint not null default 50,
+  min_stage    smallint not null default 1,
+  min_stage_ref text,                       -- 揭露層級跟著某個欄位走（R055 用）
+  audience     text not null default 'member' check (audience in ('member','admin')),
+  cond         jsonb not null default '{}'::jsonb,
+  escalate     jsonb,
+  requires     text[] not null default '{}',
+  reason_code  text,
+  title        text not null default '',
+  body         text not null default '',
+  ask          jsonb not null default '[]'::jsonb,
+  enabled      boolean not null default true,
+  updated_at   timestamptz not null default now()
+);
+alter table public.screening_rules add column if not exists min_stage_ref text;
+alter table public.screening_rules add column if not exists escalate jsonb;
+alter table public.screening_rules add column if not exists reason_code text;
+
+create table if not exists public.screening_results (
+  id          bigserial primary key,
+  app_id      uuid references public.applications(id) on delete cascade,
+  from_user   uuid not null references auth.users(id) on delete cascade,
+  to_user     uuid not null references auth.users(id) on delete cascade,
+  audience    text not null default 'member' check (audience in ('member','admin')),
+  ran_at      timestamptz not null default clock_timestamp(),
+  rules_ver   text not null default 'v1',
+  inputs_seen smallint not null default 0,
+  green       smallint not null default 0,
+  yellow      smallint not null default 0,
+  red         smallint not null default 0,
+  unknown     smallint not null default 0,
+  safety      smallint not null default 0,
+  findings    jsonb not null default '[]'::jsonb,
+  unique (from_user, to_user, audience)
+);
+
+-- 13.4 禁止規則（R047–R054）----------------------------------
+-- 「MBTI 不產生黃燈」寫在註解裡，遲早有人忘記。這裡把它變成會擋下寫入的檢查：
+-- 禁止清單本身就是 outcome='never' 的那幾條規則，所以新增一條禁止規則就會自動生效。
+create or replace function public.screening_forbidden_fields()
+returns text[] language sql stable set search_path = public, pg_temp as $$
+  select coalesce(array_agg(distinct f), '{}'::text[])
+    from public.screening_rules r,
+         lateral jsonb_array_elements_text(coalesce(r.cond->'prohibits', '[]'::jsonb)) f
+   where r.outcome = 'never' and r.enabled;
+$$;
+
+create or replace function public.screening_rule_unsafe_reason(
+  p_cond jsonb, p_escalate jsonb, p_requires text[]
+) returns text language plpgsql stable set search_path = public, pg_temp as $$
+declare s text; fields text[]; pat text;
+begin
+  s := coalesce(p_cond::text,'') || coalesce(p_escalate::text,'') ||
+       coalesce(array_to_string(p_requires, ','), '');
+  fields := public.screening_forbidden_fields();
+  if array_length(fields, 1) is not null then
+    pat := '\.(' || array_to_string(fields, '|') || ')\y';
+    if s ~ pat then
+      return '引用了不得產生燈號的欄位（' || array_to_string(fields, '、') || '）';
+    end if;
+  end if;
+  -- R052：年齡差本身不得產生燈號。只檢查「同時引用雙方年齡」，
+  -- 因為「本人年齡 vs 對方公開的年齡條件」是使用者自己設的 Dealbreaker，允許。
+  if s like '%applicant.age_num%' and s like '%recipient.age_num%' then
+    return '把雙方年齡直接相比（R052：年齡差本身不得產生燈號）';
+  end if;
+  return null;
+end $$;
+
+create or replace function public.screening_rules_guard() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+declare why text;
+begin
+  if new.outcome <> 'never' and new.enabled then
+    why := public.screening_rule_unsafe_reason(new.cond, new.escalate, new.requires);
+    if why is not null then
+      raise exception '初診規則 % 違反禁止規則：%', new.code, why;
+    end if;
+  end if;
+  new.updated_at := now();
+  return new;
+end $$;
+drop trigger if exists screening_rules_guard on public.screening_rules;
+create trigger screening_rules_guard before insert or update on public.screening_rules
+  for each row execute function public.screening_rules_guard();
+
+-- run_screening() 每次執行前也再掃一次整張表——萬一有人把 trigger 停掉，
+-- 引擎寧可整個不跑，也不要跑出一份用學歷或收入評分的報告。
+create or replace function public.screening_assert_safe() returns void
+language plpgsql stable set search_path = public, pg_temp as $$
+declare bad_code text; bad_why text;
+begin
+  select r.code, public.screening_rule_unsafe_reason(r.cond, r.escalate, r.requires)
+    into bad_code, bad_why
+    from public.screening_rules r
+   where r.enabled and r.outcome <> 'never'
+     and public.screening_rule_unsafe_reason(r.cond, r.escalate, r.requires) is not null
+   limit 1;
+  if bad_code is not null then
+    raise exception '初診規則庫含有違反禁止規則的條目（% ：%），拒絕執行初診。', bad_code, bad_why;
+  end if;
+end $$;
+
+-- 13.5 受評估對象：只暴露規則可以讀的欄位 ---------------------
+-- 這是禁止規則的第二道防線。學歷、收入、身高、體重、MBTI、健康告知內容
+-- 根本不會出現在這個 jsonb 裡，就算有人寫了引用它們的規則也只會拿到 null。
+create or replace function public.screening_subject(p_uid uuid)
+returns jsonb language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object(
+    'kind',              nullif(p.kind, ''),
+    'age_num',           nullif(regexp_replace(coalesce(p.age,''), '[^0-9].*$', ''), '')::int,
+    'weekly_work_hours', p.weekly_work_hours,
+    'kids_plan',         nullif(p.kids_plan, ''),
+    'has_kids',          nullif(p.has_kids, ''),
+    'marital',           nullif(p.marital, ''),
+    'living',            nullif(p.living, ''),
+    'debt',              nullif(p.debt, ''),
+    'debt_when',         nullif(p.debt_when, ''),
+    'relationship_goal', nullif(p.relationship_goal, ''),
+    'req_kids',          nullif(p.req_kids, ''),
+    'req_marital',       nullif(p.req_marital, ''),
+    'req_age_min',       nullif(regexp_replace(coalesce(p.req_age_min,''), '[^0-9].*$', ''), '')::int,
+    'req_age_max',       nullif(regexp_replace(coalesce(p.req_age_max,''), '[^0-9].*$', ''), '')::int,
+    -- 健康告知：只給「有沒有」與「本人選的揭露時機」，永遠不給內容（R053/R054）
+    'has_health_note',   (coalesce(p.health,'') <> ''
+                          or jsonb_array_length(coalesce(p.health_tags,'[]'::jsonb)) > 0),
+    'health_when',       nullif(p.health_when, ''),
+    'stars_indep',       nullif(p.stars->>'indep','')::int,
+    'dealbreakers',      coalesce(p.dealbreakers, '{}'::jsonb)
+  )
+  from public.match_profiles p where p.id = p_uid;
+$$;
+
+-- 13.6 條件式直譯器 -------------------------------------------
+create or replace function public.screening_ref(
+  p_ref text, p_a jsonb, p_b jsonb, p_ans jsonb
+) returns jsonb language plpgsql immutable set search_path = public, pg_temp as $$
+declare parts text[]; cur jsonb; i int;
+begin
+  if p_ref is null or p_ref = '' then return null; end if;
+  parts := string_to_array(p_ref, '.');
+  if    parts[1] = 'applicant' then cur := p_a;
+  elsif parts[1] = 'recipient' then cur := p_b;
+  elsif parts[1] = 'answers'   then cur := p_ans;
+  else  return null; end if;
+  for i in 2 .. coalesce(array_length(parts, 1), 1) loop
+    if cur is null then return null; end if;
+    cur := cur -> parts[i];
+  end loop;
+  if cur is null or cur = 'null'::jsonb then return null; end if;
+  return cur;
+end $$;
+
+create or replace function public.screening_eval(
+  p_cond jsonb, p_a jsonb, p_b jsonb, p_ans jsonb
+) returns boolean language plpgsql immutable set search_path = public, pg_temp as $$
+declare item jsonb; v jsonb; w jsonb; op text; val jsonb; num numeric;
+begin
+  if p_cond is null or p_cond = '{}'::jsonb then return true; end if;
+
+  if p_cond ? 'all' then
+    for item in select * from jsonb_array_elements(p_cond->'all') loop
+      if not public.screening_eval(item, p_a, p_b, p_ans) then return false; end if;
+    end loop;
+    return true;
+  end if;
+  if p_cond ? 'any' then
+    for item in select * from jsonb_array_elements(p_cond->'any') loop
+      if public.screening_eval(item, p_a, p_b, p_ans) then return true; end if;
+    end loop;
+    return false;
+  end if;
+  if p_cond ? 'not' then
+    return not public.screening_eval(p_cond->'not', p_a, p_b, p_ans);
+  end if;
+  if not (p_cond ? 'field') then return false; end if;
+
+  v   := public.screening_ref(p_cond->>'field', p_a, p_b, p_ans);
+  op  := coalesce(p_cond->>'op', 'eq');
+  -- value 是字面值；value_ref 則是「跟另一個欄位比」（例如年齡對上對方公開的年齡條件）。
+  -- 參照不到就當作不成立，不會因為對方沒設條件就亂亮燈。
+  if p_cond ? 'value_ref' then
+    val := public.screening_ref(p_cond->>'value_ref', p_a, p_b, p_ans);
+    if val is null then return false; end if;
+  else
+    val := p_cond->'value';
+  end if;
+
+  if op = 'is_null'  then return v is null; end if;
+  if op = 'not_null' then return v is not null; end if;
+  -- 除了 is_null 之外，沒有值一律當作「不成立」，
+  -- 不會把「沒填」誤讀成「填了否定的值」。
+  if v is null then return false; end if;
+
+  if op = 'eq'  then return v = val; end if;
+  if op = 'ne'  then return v <> val; end if;
+  if op = 'in'  then
+    return exists (select 1 from jsonb_array_elements(coalesce(val,'[]'::jsonb)) e where e = v);
+  end if;
+  if op = 'not_in' then
+    return not exists (select 1 from jsonb_array_elements(coalesce(val,'[]'::jsonb)) e where e = v);
+  end if;
+  if op = 'contains' then
+    if jsonb_typeof(v) <> 'array' then return false; end if;
+    if jsonb_typeof(val) = 'array' then return v @> val; end if;
+    return v @> jsonb_build_array(val);
+  end if;
+  if op in ('same','differs') then
+    w := public.screening_ref(p_cond->>'value', p_a, p_b, p_ans);
+    if w is null then return false; end if;
+    if op = 'same' then return v = w; else return v <> w; end if;
+  end if;
+
+  -- 數值比較
+  if jsonb_typeof(v) not in ('number','string') then return false; end if;
+  begin
+    num := (v #>> '{}')::numeric;
+  exception when others then
+    return false;
+  end;
+  if op = 'between' then
+    return num >= (val->>0)::numeric and num <= (val->>1)::numeric;
+  end if;
+  if op = 'gt'  then return num >  (val #>> '{}')::numeric; end if;
+  if op = 'gte' then return num >= (val #>> '{}')::numeric; end if;
+  if op = 'lt'  then return num <  (val #>> '{}')::numeric; end if;
+  if op = 'lte' then return num <= (val #>> '{}')::numeric; end if;
+  return false;
+end $$;
+
+-- 把「揭露層級跟著欄位走」的設定換算成階段（R055：本人自選的說明時機）
+create or replace function public.screening_min_stage(
+  p_rule public.screening_rules, p_a jsonb, p_b jsonb
+) returns int language plpgsql immutable set search_path = public, pg_temp as $$
+declare v jsonb; s text;
+begin
+  if p_rule.min_stage_ref is null then return p_rule.min_stage; end if;
+  v := public.screening_ref(p_rule.min_stage_ref, p_a, p_b, '{}'::jsonb);
+  if v is null then return 99; end if;
+  s := v #>> '{}';
+  if s = 'public' then return 0; end if;
+  if s = 'stage1' then return 1; end if;
+  if s = 'stage2' then return 2; end if;
+  return 99;   -- never：永遠不顯示
+end $$;
+
+-- 13.7 執行初診 ------------------------------------------------
+create or replace function public.run_screening(
+  p_from uuid, p_to uuid, p_app uuid default null, p_audience text default 'member'
+) returns bigint language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  a jsonb; b jsonb; r public.screening_rules%rowtype;
+  ref text; miss boolean; outc text; ms int;
+  findings jsonb := '[]'::jsonb;
+  unknown_topics text[] := '{}';
+  n_green int := 0; n_yellow int := 0; n_red int := 0; n_safety int := 0;
+  seen int := 0; rid bigint;
+begin
+  perform public.screening_assert_safe();
+  a := public.screening_subject(p_from);
+  b := public.screening_subject(p_to);
+  if a is null or b is null then
+    raise exception '找不到病歷卡，無法初診';
+  end if;
+
+  -- 「目前取得 N 項有效資料」：兩邊加起來有填的欄位數（不含 kind 與 dealbreakers）
+  select count(*) into seen from (
+    select key, value from jsonb_each(a)
+    union all
+    select key, value from jsonb_each(b)
+  ) t where t.value is not null and t.value <> 'null'::jsonb
+      and t.key not in ('kind','dealbreakers');
+
+  for r in
+    select * from public.screening_rules
+     where enabled and outcome <> 'never' and audience = p_audience
+     order by priority, code
+  loop
+    -- requires 缺任何一個欄位就整條跳過，並把這個題組記為「資料不足」
+    miss := false;
+    foreach ref in array r.requires loop
+      if public.screening_ref(ref, a, b, '{}'::jsonb) is null then miss := true; exit; end if;
+    end loop;
+    if miss then
+      if not (r.topic = any(unknown_topics)) then unknown_topics := unknown_topics || r.topic; end if;
+      continue;
+    end if;
+
+    if not public.screening_eval(r.cond, a, b, '{}'::jsonb) then continue; end if;
+
+    outc := r.outcome;
+    -- 「🟡／🔴 依重要性設定」：對方把這個題組標成不可妥協才升級成紅燈
+    if outc = 'yellow' and r.escalate is not null
+       and public.screening_eval(r.escalate, a, b, '{}'::jsonb) then
+      outc := 'red';
+    end if;
+
+    ms := public.screening_min_stage(r, a, b);
+    findings := findings || jsonb_build_array(jsonb_build_object(
+      'code', r.code, 'topic', r.topic, 'category', r.category, 'outcome', outc,
+      'min_stage', ms, 'priority', r.priority, 'reason_code', r.reason_code,
+      'title', r.title, 'body', r.body, 'ask', r.ask
+    ));
+
+    if    outc = 'green'  then n_green  := n_green + 1;
+    elsif outc = 'yellow' then n_yellow := n_yellow + 1;
+    elsif outc = 'red'    then n_red    := n_red + 1;
+    elsif outc = 'safety' then n_safety := n_safety + 1;
+    elsif outc = 'unknown' and not (r.topic = any(unknown_topics)) then
+      unknown_topics := unknown_topics || r.topic;
+    end if;
+  end loop;
+
+  insert into public.screening_results
+    (app_id, from_user, to_user, audience, ran_at, inputs_seen,
+     green, yellow, red, unknown, safety, findings)
+  values
+    (p_app, p_from, p_to, p_audience, clock_timestamp(), seen,
+     n_green, n_yellow, n_red, coalesce(array_length(unknown_topics,1),0), n_safety, findings)
+  on conflict (from_user, to_user, audience) do update
+    set app_id = excluded.app_id, ran_at = excluded.ran_at, inputs_seen = excluded.inputs_seen,
+        green = excluded.green, yellow = excluded.yellow, red = excluded.red,
+        unknown = excluded.unknown, safety = excluded.safety, findings = excluded.findings
+  returning id into rid;
+  return rid;
+end $$;
+
+-- 13.8 給會員看的初診結果 --------------------------------------
+-- 數量永遠看得到；細節只給 min_stage <= 目前揭露層級的那些。
+-- 這樣佈告欄（第 0 層）看得到「🔴 1 項」，但不會知道那一項是生育規劃——
+-- 第 0 層連精確年齡都看不到，初診不能變成繞過遮罩的後門。
+create or replace function public.get_screening_for(p_other uuid)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  me uuid := auth.uid(); rel int := 0; res public.screening_results%rowtype;
+  newest timestamptz; shown jsonb := '[]'::jsonb; item jsonb; hidden int := 0;
+begin
+  if me is null then raise exception '請先登入'; end if;
+  if p_other = me then raise exception '不能對自己做初診'; end if;
+  if not exists (select 1 from public.get_visible_match_profiles(p_other)) then
+    raise exception '找不到這個人';
+  end if;
+
+  select coalesce(max(a.stage), 0) into rel
+    from public.applications a
+   where (a.from_user = me and a.to_user = p_other)
+      or (a.to_user = me and a.from_user = p_other);
+
+  select greatest(max(p.updated_at), max(r.updated_at)) into newest
+    from public.match_profiles p, public.screening_rules r
+   where p.id in (me, p_other);
+
+  select * into res from public.screening_results s
+   where s.from_user = p_other and s.to_user = me and s.audience = 'member'
+     and s.ran_at >= newest;
+  if not found then
+    perform public.run_screening(p_other, me);
+    select * into res from public.screening_results s
+     where s.from_user = p_other and s.to_user = me and s.audience = 'member';
+  end if;
+
+  for item in select * from jsonb_array_elements(res.findings) loop
+    if coalesce((item->>'min_stage')::int, 99) <= rel then
+      shown := shown || jsonb_build_array(item);
+    else
+      hidden := hidden + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'stage', rel, 'inputs_seen', res.inputs_seen,
+    'green', res.green, 'yellow', res.yellow, 'red', res.red, 'unknown', res.unknown,
+    'findings', shown, 'hidden', hidden, 'ran_at', res.ran_at
+  );
+end $$;
+
+-- 13.9 權限 ----------------------------------------------------
+-- 規則表所有人都讀得到（文案要顯示在畫面上），只有管理員能改。
+alter table public.screening_rules  enable row level security;
+alter table public.screening_results enable row level security;
+
+drop policy if exists "screening_rules_select_all" on public.screening_rules;
+create policy "screening_rules_select_all" on public.screening_rules for select
+  to authenticated using (true);
+drop policy if exists "screening_rules_write_admin" on public.screening_rules;
+create policy "screening_rules_write_admin" on public.screening_rules for all
+  to authenticated using (public.match_is_admin(auth.uid())) with check (public.match_is_admin(auth.uid()));
+
+-- 結果表一律不開放給前端直接查，只能走 get_screening_for()——
+-- 直接查得到就等於可以繞過 min_stage 的分層。
+drop policy if exists "screening_results_no_client_access" on public.screening_results;
+create policy "screening_results_no_client_access" on public.screening_results for all
+  to anon, authenticated using (false) with check (false);
+
+revoke all on function public.run_screening(uuid,uuid,uuid,text) from public, anon, authenticated;
+grant execute on function public.run_screening(uuid,uuid,uuid,text) to postgres, service_role;
+revoke all on function public.get_screening_for(uuid) from public, anon;
+grant execute on function public.get_screening_for(uuid) to authenticated;
+revoke all on function public.screening_subject(uuid) from public, anon, authenticated;
+grant execute on function public.screening_subject(uuid) to postgres, service_role;
+
+-- 13.10 規則庫 V1 種子資料 -------------------------------------
+-- 先塞禁止規則，因為 screening_rules_guard 會拿它們去檢查後面的規則。
+insert into public.screening_rules (code, topic, category, outcome, priority, cond, title, body) values
+  ('R047','mbti',      'prohibition','never',99,'{"prohibits":["mbti"]}'::jsonb,
+   'MBTI 不產生黃燈','人格分類不是風險指標，也不該拿來評估兩個人合不合適。'),
+  ('R048','height',    'prohibition','never',99,'{"prohibits":["height_cm"]}'::jsonb,
+   '身高差異不產生黃燈',''),
+  ('R049','weight',    'prohibition','never',99,'{"prohibits":["weight_kg"]}'::jsonb,
+   '體重／BMI 不產生黃燈',''),
+  ('R050','education', 'prohibition','never',99,'{"prohibits":["education"]}'::jsonb,
+   '學歷差距不產生黃燈',''),
+  ('R051','income',    'prohibition','never',99,'{"prohibits":["income"]}'::jsonb,
+   '收入高低本身不產生黃燈','否則系統會變成階級評分。'),
+  ('R052','age',       'prohibition','never',99,'{"prohibits":[],"prohibits_pair":["applicant.age_num","recipient.age_num"]}'::jsonb,
+   '年齡差本身不產生黃燈','只有超出使用者本人設定的年齡條件才處理。'),
+  ('R053','health',    'prohibition','never',99,'{"prohibits":["health","health_tags"]}'::jsonb,
+   '疾病不得自動亮黃燈','氣喘、糖尿病、精神疾病、身心障礙、慢性疾病等一律不得自動產生燈號。'),
+  ('R054','health',    'prohibition','never',99,'{"prohibits":["health","health_tags"]}'::jsonb,
+   '健康資料不得降低匹配度','')
+on conflict (code) do update set
+  topic = excluded.topic, category = excluded.category, outcome = excluded.outcome,
+  priority = excluded.priority, cond = excluded.cond,
+  title = excluded.title, body = excluded.body;
+
+-- A. 工時（R001–R005）：一個 weekly_work_hours 欄位換五條規則
+insert into public.screening_rules
+  (code, topic, category, outcome, priority, min_stage, cond, requires, reason_code, title, body, ask) values
+  ('R001','work_hours','workload','unknown',60,2,
+   '{"field":"applicant.weekly_work_hours","op":"is_null"}'::jsonb, '{}',
+   'R_WORK_HOURS_UNKNOWN','尚未提供工作時間',
+   '目前無法評估對方平日可以安排的生活與相處時間。','[]'::jsonb),
+
+  ('R002','work_hours','workload','yellow',30,2,
+   '{"field":"applicant.weekly_work_hours","op":"between","value":[60,79]}'::jsonb,
+   '{applicant.weekly_work_hours}',
+   'R_WORK_HOURS_HIGH','工作時間較長',
+   '平日可安排的相處與休息時間可能較有限。',
+   '["工作較忙的時期，你通常怎麼安排自己的休息與伴侶相處時間？"]'::jsonb),
+
+  ('R003','work_hours','workload','yellow',25,2,
+   '{"field":"applicant.weekly_work_hours","op":"between","value":[80,99]}'::jsonb,
+   '{applicant.weekly_work_hours}',
+   'R_WORK_HOURS_VERY_HIGH','工作負荷偏高',
+   '建議進一步了解這是長期的工作型態，還是階段性的忙碌。',
+   '["這樣的工作時數是長期常態，還是最近特別忙？"]'::jsonb),
+
+  ('R004','work_hours','workload','yellow',10,2,
+   '{"field":"applicant.weekly_work_hours","op":"between","value":[100,168]}'::jsonb,
+   '{applicant.weekly_work_hours}',
+   'R_WORK_HOURS_EXTREME','填寫的工作時間非常高',
+   '建議先確認這個數字是否包含待命、通勤、研究或準備時間，或者只是特殊期間。',
+   '["這個工作時數是平時常態，還是近期特殊狀況？","裡面有包含待命或通勤的時間嗎？"]'::jsonb),
+
+  ('R005','work_hours','data_quality','unknown',15,2,
+   '{"field":"applicant.weekly_work_hours","op":"gt","value":168}'::jsonb,
+   '{applicant.weekly_work_hours}',
+   'R_WORK_HOURS_INVALID','工作時數資料可能有誤',
+   '一週總時數超過 168 小時（一週的總時數上限），請確認資料是否填寫正確。','[]'::jsonb),
+
+-- D. 生育規劃（R010、R011）
+  ('R010','kids_plan','life_plan','yellow',20,2,
+   '{"any":[
+      {"all":[{"field":"applicant.kids_plan","op":"eq","value":"想要小孩"},
+              {"field":"recipient.kids_plan","op":"eq","value":"不確定，需要再溝通"}]},
+      {"all":[{"field":"applicant.kids_plan","op":"eq","value":"不確定，需要再溝通"},
+              {"field":"recipient.kids_plan","op":"eq","value":"想要小孩"}]}
+    ]}'::jsonb,
+   '{applicant.kids_plan,recipient.kids_plan}',
+   'R_KIDS_PLAN_UNSURE','一方想要小孩，另一方還不確定',
+   '這不代表不適合，但值得在關係深入之前先聊過。',
+   '["你目前對生小孩這件事，最在意或最猶豫的是什麼？"]'::jsonb),
+
+  ('R011','kids_plan','life_plan','yellow',20,2,
+   '{"any":[
+      {"all":[{"field":"applicant.kids_plan","op":"in","value":["不想要小孩","已有小孩，不打算再生"]},
+              {"field":"recipient.kids_plan","op":"eq","value":"不確定，需要再溝通"}]},
+      {"all":[{"field":"applicant.kids_plan","op":"eq","value":"不確定，需要再溝通"},
+              {"field":"recipient.kids_plan","op":"in","value":["不想要小孩","已有小孩，不打算再生"]}]}
+    ]}'::jsonb,
+   '{applicant.kids_plan,recipient.kids_plan}',
+   'R_KIDS_PLAN_UNSURE','一方不打算生小孩，另一方還不確定',
+   '這不代表不適合，但值得在關係深入之前先聊過。',
+   '["如果最後決定不生小孩，你會希望兩個人的生活長什麼樣子？"]'::jsonb),
+
+-- E. 已有孩子（R013、R014）——目前唯一一條完整可做的 🔴
+  ('R013','has_kids','family','unknown',40,1,
+   '{"all":[{"field":"applicant.has_kids","op":"in","value":["有，同住","有，未同住"]},
+            {"field":"recipient.req_kids","op":"is_null"}]}'::jsonb,
+   '{applicant.has_kids}',
+   'R_KIDS_ACCEPT_UNKNOWN','對方已有孩子，你還沒填孩子條件',
+   '建議先確認自己對「伴侶已有孩子」的接受程度，再決定要不要往下走。','[]'::jsonb),
+
+  ('R014','has_kids','family','red',5,1,
+   '{"all":[{"field":"applicant.has_kids","op":"in","value":["有，同住","有，未同住"]},
+            {"field":"recipient.req_kids","op":"eq","value":"需沒有小孩"}]}'::jsonb,
+   '{applicant.has_kids,recipient.req_kids}',
+   'H_CHILD_EXISTING','對方已有孩子，但你設定的條件是「需沒有小孩」',
+   '這是你自己設定的條件，系統只是把它指出來。如果你的想法改變了，可以到「我的登記」修改。','[]'::jsonb),
+
+-- 年齡：R052 允許的唯一一種用法——本人是否符合對方「公開」的年齡條件。
+-- 這裡刻意只做這個方向：對方的年齡條件本來就公開，你自己的年齡你也知道，所以不洩漏任何東西。
+  ('R052A','age_pref','preference','yellow',35,0,
+   '{"any":[{"field":"recipient.age_num","op":"lt","value":0},
+            {"field":"recipient.age_num","op":"gt","value":0}]}'::jsonb,
+   '{recipient.age_num}',
+   'R_AGE_OUT_OF_RANGE','你不在對方公開的年齡條件內',
+   '對方在登記表上寫了希望的年齡範圍，而你目前不在裡面。這不影響你提出邀請，只是先讓你知道。','[]'::jsonb),
+
+-- U. 健康資料（R055）：只說「有一項本人想在適當階段說明的事」，永遠不說是什麼。
+--    min_stage_ref 讓它跟著本人自選的揭露時機走——在那之前連「有這件事」都不會透露。
+  ('R055','health_note','self_disclosure','unknown',50,2,
+   '{"all":[{"field":"applicant.has_health_note","op":"eq","value":true},
+            {"field":"applicant.health_when","op":"in","value":["public","stage1","stage2"]}]}'::jsonb,
+   '{applicant.has_health_note,applicant.health_when}',
+   'R_SELF_DISCLOSURE','有一項本人希望在適當階段主動說明的重要生活資訊',
+   '這是對方自己選擇要說明的，不是系統判定的問題。請等他說，不需要追問。','[]'::jsonb),
+
+-- 🟢 條目：讓報告不會只剩黃燈與問號
+  ('G001','kids_plan','life_plan','green',70,2,
+   '{"all":[{"field":"applicant.kids_plan","op":"same","value":"recipient.kids_plan"},
+            {"field":"applicant.kids_plan","op":"not_in","value":["其他","不確定，需要再溝通"]}]}'::jsonb,
+   '{applicant.kids_plan,recipient.kids_plan}',
+   null,'生育規劃一致','兩邊在這件事上的答案相同。','[]'::jsonb),
+
+  ('G002','has_kids','family','green',70,1,
+   '{"any":[
+      {"all":[{"field":"recipient.req_kids","op":"eq","value":"需沒有小孩"},
+              {"field":"applicant.has_kids","op":"eq","value":"沒有"}]},
+      {"all":[{"field":"recipient.req_kids","op":"eq","value":"可接受已有小孩"},
+              {"field":"applicant.has_kids","op":"in","value":["有，同住","有，未同住"]}]}
+    ]}'::jsonb,
+   '{applicant.has_kids,recipient.req_kids}',
+   null,'孩子的條件相符','對方的狀況符合你設定的孩子條件。','[]'::jsonb)
+on conflict (code) do update set
+  topic = excluded.topic, category = excluded.category, outcome = excluded.outcome,
+  priority = excluded.priority, min_stage = excluded.min_stage, cond = excluded.cond,
+  requires = excluded.requires, reason_code = excluded.reason_code,
+  title = excluded.title, body = excluded.body, ask = excluded.ask;
+
+-- R052A 的條件式沒辦法在 insert 裡直接引用另一個欄位當界線，這裡補成正確的比較。
+update public.screening_rules set cond = '{"any":[
+    {"field":"recipient.age_num","op":"lt","value_ref":"applicant.req_age_min"},
+    {"field":"recipient.age_num","op":"gt","value_ref":"applicant.req_age_max"}
+  ]}'::jsonb where code = 'R052A';
+
+-- R055 的揭露時機跟著本人自選的 health_when 走
+update public.screening_rules set min_stage_ref = 'applicant.health_when' where code = 'R055';
