@@ -213,6 +213,23 @@
   .s2Q{border-top:1px dotted var(--rule);padding-top:10px;margin-top:12px}
   .s2Q:first-of-type{border-top:none;padding-top:0;margin-top:0}
   .s2QTitle{font-size:13.5px;font-weight:600;line-height:1.7}
+  /* 內建與自訂的標籤：自訂的多一圈虛線，一眼看得出哪些是自己加的 */
+  .tagChk{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink);
+        margin:0;padding:3px 2px;min-height:30px}
+  .tagChk input[type=checkbox]{width:auto;margin:0;flex:none}
+  .tagChk.custom{border:1px dashed var(--brand);border-radius:999px;padding:2px 4px 2px 8px}
+  .tagDel{background:none;border:none;color:var(--ink-soft);font-size:15px;line-height:1;
+        padding:0 4px;min-height:0;cursor:pointer}
+  .tagDel:hover{color:var(--bad);background:none}
+  .tagAdd{display:flex;align-items:center;gap:5px;flex:1 1 200px;min-width:170px}
+  .tagAdd .tagInput{width:auto;flex:1;min-width:0;padding:5px 8px;font-size:13px}
+  .tagAdd .tagAddBtn{padding:5px 10px;font-size:12.5px;min-height:0;
+        color:var(--ink);border-color:var(--rule)}
+  .tagAdd .tagAddBtn:hover{background:var(--paper-2);border-color:var(--ink-soft)}
+  @media(max-width:600px){
+    .tagChk{min-height:34px}
+    .tagAdd .tagInput{font-size:16px}
+  }
   /* 對話室安全提醒：色彩當線條用，不當色塊。
      這是提醒不是判決，版面上不該長得像一張紅單。 */
   .safeNote{margin-top:8px;padding:8px 10px;border-left:2px solid var(--rule);
@@ -587,13 +604,18 @@
             <option value="pet">待認養（我想被認識）</option>
             <option value="keeper">飼主（我想認識別人）</option>
           </select></div>
-        <div><label>物種</label><select id="mSpecies"></select></div>
+        <div><label>物種</label><select id="mSpecies"></select>
+          <input id="mSpeciesOther" maxlength="12" placeholder="自己填物種（最多 12 字）"
+            style="display:none;margin-top:6px"></div>
         <div><label>性別</label>
           <select id="mGender">
             <option value="f">女生</option>
             <option value="m">男生</option>
             <option value="x">不透露</option>
-          </select></div>
+            <option value="__other__">＋ 其他（自己填）</option>
+          </select>
+          <input id="mGenderOther" maxlength="12" placeholder="自己填（最多 12 字）"
+            style="display:none;margin-top:6px"></div>
       </div>
       <div class="row">
         <div><label>年齡</label><input id="mAge" placeholder="例：28"></div>
@@ -1313,7 +1335,14 @@ const SPECIES_LIST = [
 const SPECIES = {}, SPECIES_EMOJI = {};
 SPECIES_LIST.forEach(x => { SPECIES[x.k] = x.e + ' ' + x.n; SPECIES_EMOJI[x.k] = x.e; });
 const GENDER = {f:'女生', m:'男生', x:'不透露'};
-const pronoun = g => g === 'm' ? '他' : '她';
+/* 自訂物種／性別：存的是使用者打的字本身，不是代號。
+   所以顯示時查不到對照表就直接用原文，而不是掉成空白或「未知」。 */
+const OTHER_OPT = '__other__';
+const speciesLabel = v => SPECIES[v] || (v ? '🐾 ' + v : '');
+const speciesEmoji = v => SPECIES_EMOJI[v] || (v ? '🐾' : '');
+const genderLabel  = v => GENDER[v] || v || '';
+/* 自訂性別一律用「他們」——猜錯代價比不猜高，而且對方本來就選擇了不套用既有分類 */
+const pronoun = g => g === 'm' ? '他' : g === 'f' ? '她' : '他們';
 const STAR_FIELDS = [
   {k:'warm',    label:'親人程度'},
   {k:'active',  label:'活動量'},
@@ -1405,17 +1434,104 @@ function setStars(vals){
   const v = (vals && typeof vals === 'object') ? vals : {};
   $('mStars').querySelectorAll('.starPick').forEach(s => { s.value = String(v[s.dataset.k] || 3); });
 }
-function renderCheckGroup(containerId, opts){
-  $(containerId).innerHTML = opts.map(o => `
-    <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink);margin:0">
-      <input type="checkbox" value="${esc(o)}" style="width:auto;margin:0">${esc(o)}
-    </label>`).join('');
+/* 內建選項 ＋ 使用者自己新增的。
+   自訂的部分在佈告欄上是第 0 層公開的，所以伺服器端會擋聯絡方式（schema 第 26 節）——
+   這裡的前端檢查只是為了讓人早一點知道，真正的防線在資料庫。 */
+const CUSTOM_TAG_MAX = 12, CUSTOM_TAG_COUNT = 20;
+
+/* 「選單或自己填」：選到「＋ 其他」時旁邊的輸入框才出現。
+   讀值一律走 pickOrOther()，這樣呼叫端不用記得判斷 __other__——
+   忘記判斷的話存進去的會是字串 "__other__"，而且畫面上看起來像正常值。 */
+function pickOrOther(selId){
+  const sel = $(selId), other = $(selId + 'Other');
+  if(!sel) return '';
+  if(sel.value !== OTHER_OPT) return sel.value;
+  return other ? (other.value || '').replace(/[\s\u3000]+/g, ' ').trim() : '';
+}
+function setPickOrOther(selId, value){
+  const sel = $(selId), other = $(selId + 'Other');
+  const known = [...sel.options].some(o => o.value === value && o.value !== OTHER_OPT);
+  if(known){ sel.value = value; if(other){ other.value = ''; other.style.display = 'none'; } }
+  else{
+    sel.value = OTHER_OPT;
+    if(other){ other.value = value || ''; other.style.display = ''; }
+  }
+}
+function bindPickOrOther(selId){
+  const sel = $(selId), other = $(selId + 'Other');
+  if(!sel || !other) return;
+  sel.addEventListener('change', () => {
+    other.style.display = sel.value === OTHER_OPT ? '' : 'none';
+    if(sel.value === OTHER_OPT) other.focus();
+    renderCompleteness();
+  });
+  other.addEventListener('input', renderCompleteness);
+}
+const builtinOf = {};   /* containerId -> 內建選項，用來分辨哪些是自訂的 */
+
+function checkGroupHTML(o, custom){
+  return `<label class="tagChk${custom ? ' custom' : ''}">
+    <input type="checkbox" value="${esc(o)}">${esc(o)}${
+      custom ? `<button type="button" class="tagDel" data-v="${esc(o)}"
+        title="移除這個自訂標籤" aria-label="移除 ${esc(o)}">×</button>` : ''}
+  </label>`;
+}
+function renderCheckGroup(containerId, opts, customs){
+  builtinOf[containerId] = opts;
+  const extra = (customs || []).filter(v => !opts.includes(v));
+  $(containerId).innerHTML =
+    opts.map(o => checkGroupHTML(o, false)).join('')
+    + extra.map(o => checkGroupHTML(o, true)).join('')
+    + `<span class="tagAdd">
+        <input type="text" class="tagInput" maxlength="${CUSTOM_TAG_MAX}"
+          placeholder="自己新增⋯⋯" aria-label="新增自訂選項">
+        <button type="button" class="tagAddBtn">＋ 新增</button>
+      </span>`;
+  bindCheckGroup(containerId);
+}
+function bindCheckGroup(containerId){
+  const box = $(containerId);
+  const input = box.querySelector('.tagInput');
+  const add = () => {
+    const v = (input.value || '').replace(/[\s\u3000]+/g, ' ').trim();
+    if(!v) return;
+    if(v.length > CUSTOM_TAG_MAX){ alert(`最多 ${CUSTOM_TAG_MAX} 個字`); return; }
+    /* 重複的話不新增，直接把既有那個勾起來——比跳一個「已經有了」有用 */
+    const same = [...box.querySelectorAll('input[type=checkbox]')]
+      .find(c => c.value === v);
+    if(same){ same.checked = true; input.value = ''; renderCompleteness(); return; }
+    if(box.querySelectorAll('input[type=checkbox]:checked').length >= CUSTOM_TAG_COUNT){
+      alert(`最多選 ${CUSTOM_TAG_COUNT} 個`); return;
+    }
+    /* 這裡只擋最明顯的，真正的防線在資料庫（第 26 節）。
+       擋在這裡是為了讓人當下就知道，而不是按了儲存才被退回。 */
+    if(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|09\d{8}|^@|https?:\/\//i.test(v)){
+      alert('這個欄位在佈告欄上是公開的，不能放聯絡方式。\n\n'
+        + '聯絡方式請填在「解鎖後才看得到的資訊」，那一欄要雙方都通過三階段並同意才會交換。');
+      return;
+    }
+    const holder = box.querySelector('.tagAdd');
+    holder.insertAdjacentHTML('beforebegin', checkGroupHTML(v, true));
+    holder.previousElementSibling.querySelector('input').checked = true;
+    input.value = '';
+    bindCheckGroup(containerId);
+    renderCompleteness();
+  };
+  box.querySelector('.tagAddBtn').onclick = add;
+  input.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); add(); } };
+  box.querySelectorAll('.tagDel').forEach(b => b.onclick = () => {
+    b.closest('label').remove(); renderCompleteness();
+  });
 }
 function getCheckGroup(containerId){
   return [...$(containerId).querySelectorAll('input:checked')].map(x => x.value);
 }
 function setCheckGroup(containerId, values){
   const v = Array.isArray(values) ? values : [];
+  /* 使用者存過的自訂標籤不在內建清單裡，要先重畫把它們加回來，
+     否則載入自己的資料時那些標籤會整個消失，看起來像被吃掉了。 */
+  const builtin = builtinOf[containerId];
+  if(builtin && v.some(x => !builtin.includes(x))) renderCheckGroup(containerId, builtin, v);
   $(containerId).querySelectorAll('input[type=checkbox]').forEach(c => c.checked = v.includes(c.value));
 }
 
@@ -1769,8 +1885,10 @@ function showVerifyTask(p){
 }
 async function fillMe(){
   if(!myProfile) return;
-  mName.value = myProfile.name||''; mKind.value = myProfile.kind||'pet'; mSpecies.value = myProfile.species||'cat';
-  mGender.value = myProfile.gender||'f'; mBirth.value = myProfile.birth||'';
+  mName.value = myProfile.name||''; mKind.value = myProfile.kind||'pet';
+  setPickOrOther('mSpecies', myProfile.species || 'cat');
+  setPickOrOther('mGender',  myProfile.gender  || 'f');
+  mBirth.value = myProfile.birth||'';
   mHeight.value = myProfile.height_cm||''; mWeight.value = myProfile.weight_kg||'';
   mShowWeight.value = myProfile.show_weight ? 'true' : 'false'; mAiPhoto.checked = myProfile.avatar_kind === 'ai';
   mTraits.value = myProfile.traits||''; mLikes.value = myProfile.likes||''; mTaboo.value = myProfile.taboo||'';
@@ -1822,7 +1940,7 @@ async function fillMe(){
 function computeCompleteness(){
   const hasPhoto = (myProfile && myProfile.photo_status && myProfile.photo_status !== 'none')
     || $('mPhoto').dataset.new === '1';
-  const basic = [!!mName.value.trim(), !!mBio.value.trim(), !!mSpecies.value, hasPhoto];
+  const basic = [!!mName.value.trim(), !!mBio.value.trim(), !!pickOrOther('mSpecies'), hasPhoto];
   const selectIds = ['mEducation','mMbti', ...REQUIRED_DETAIL_SELECTS.map(([id]) => id)];
   const detail = [
     !!mHeight.value, !!mWeight.value, !!mWorkHours.value.trim(),
@@ -2051,7 +2169,11 @@ const IMPORT_FIELDS = [
 /* 合法選項一律從畫面上現讀，不在程式裡抄第二份 */
 function importAllowed(f){
   const el = $(f.el); if(!el) return null;
-  if(f.kind === 'select') return [...el.options].map(o => o.value).filter(Boolean);
+  /* __other__ 是「自己填」的哨兵值，不是一個真的答案。
+     漏掉這個過濾的話，AI 可能回傳 "__other__"，然後那四個字會被當成
+     使用者的物種存進資料庫，而且畫面上看起來像一個正常的值。 */
+  if(f.kind === 'select')
+    return [...el.options].map(o => o.value).filter(v => v && v !== OTHER_OPT);
   if(f.kind === 'multi')
     return [...el.querySelectorAll('input[type=checkbox]')].map(c => c.value);
   return null;
@@ -2319,7 +2441,8 @@ $('mSave').onclick = async () => {
   const previousAvatarKind = myProfile.avatar_kind || 'real';
   try{
     const patch = {
-      name, kind: mKind.value, species: mSpecies.value, gender: mGender.value,
+      name, kind: mKind.value,
+      species: pickOrOther('mSpecies'), gender: pickOrOther('mGender'),
       birth: mBirth.value.trim(), traits: mTraits.value.trim(), likes: mLikes.value.trim(),
       taboo: mTaboo.value.trim(), health: mHealth.value.trim(), health_tags: getCheckGroup('mHealthTags'),
       health_when: mHealthWhen.value,
@@ -2396,7 +2519,7 @@ $('mVetNoteAi').onclick = async () => {
 只回傳這一句話本身，不要加引號、不要加任何說明或前綴，20～40字之間。
 
 姓名：${myProfile.name || '（未填）'}
-物種／性別：${SPECIES[myProfile.species] || ''}／${GENDER[myProfile.gender || 'f'] || ''}
+物種／性別：${speciesLabel(myProfile.species)}／${genderLabel(myProfile.gender || 'f')}
 個性標籤：${myProfile.traits || '（未填）'}
 最喜歡的事：${myProfile.likes || '（未填）'}
 自介：${myProfile.bio || '（未填）'}
@@ -2662,8 +2785,8 @@ function starRow(p){
 /* 一行式基本資料，取代原本「物種／年齡／活動範圍／日常」四列點線表 */
 function metaLine(p){
   const parts = [
-    SPECIES[p.species] || '',
-    GENDER[p.gender || 'f'] || '',
+    speciesLabel(p.species),
+    genderLabel(p.gender || 'f'),
     p.age ? p.age + (p.age_is_bucket ? '' : ' 歲') : '',
     p.area || '',
     p.job || ''
@@ -2745,7 +2868,7 @@ function profileCardHTML(p, opts){
       <div>
         <div class="caseNo">病例號碼　${esc(o.caseNo || caseNo(p))}${
           o.demo ? ' <span style="color:var(--brand)">示意</span>' : ''}</div>
-        <h3>${SPECIES_EMOJI[p.species] || '🐾'} ${esc(p.name || '')}</h3>
+        <h3>${speciesEmoji(p.species) || '🐾'} ${esc(p.name || '')}</h3>
       </div>
       <span class="pill kindPill" title="${esc(KIND_PLAIN[p.kind] || '')}">${esc(KIND[p.kind] || '')}</span>
     </div>
@@ -4260,7 +4383,7 @@ async function renderAudit(){
           ${p.verify_task ? `<p class="hint" style="margin-top:6px">指定動作：${esc(p.verify_task.gesture)}　紙條代碼：暖陽 ${esc(p.verify_task.code)}</p>` : ''}
         </div>
         <div style="flex:1">
-          <div class="hint">${KIND[p.kind]||''}　${SPECIES[p.species]||''}　${GENDER[p.gender||'f']||''}　${esc(p.age||'')}　${esc(p.area||'')}　身高 ${esc(p.height_cm||'—')} cm</div>
+          <div class="hint">${KIND[p.kind]||''}　${esc(speciesLabel(p.species))}　${esc(genderLabel(p.gender||'f'))}　${esc(p.age||'')}　${esc(p.area||'')}　身高 ${esc(p.height_cm||'—')} cm</div>
           <div class="hint">照片類型：${p.avatar_kind === 'ai' ? '✨ AI 形象照（本人聲明能合理反映目前外貌；請搭配真人驗證照人工確認是否為同一人）' : '本人照片'}
             ${p.photo_review_due_at ? `　預計審核期限：${new Date(p.photo_review_due_at).toLocaleDateString('zh-TW')}` : ''}</div>
           <div class="bio">${esc(p.bio||'')}</div>
@@ -4654,9 +4777,14 @@ $('clinicRefundDays').textContent = REFUND_DAYS;
 $('howFreeCredits').textContent = 5;
 $('howPhotoBonus').textContent = PHOTO_BONUS;
 /* 物種下拉（登記表單與佈告欄篩選共用同一份清單）與健康告知時機 */
-$('mSpecies').innerHTML = SPECIES_LIST.map(x => `<option value="${x.k}">${x.e} ${x.n}</option>`).join('');
+$('mSpecies').innerHTML = SPECIES_LIST.map(x => `<option value="${x.k}">${x.e} ${x.n}</option>`).join('')
+  + `<option value="${OTHER_OPT}">＋ 其他（自己填）</option>`;
+/* 佈告欄的篩選只列內建物種：自訂物種每個人寫法都不一樣，
+   放進篩選只會變成一長串幾乎沒有人會選的選項。要找自訂物種用關鍵字比較實際。 */
 $('fSpecies').innerHTML = '<option value="">全部物種</option>'
   + SPECIES_LIST.map(x => `<option value="${x.k}">${x.e} ${x.n}</option>`).join('');
+bindPickOrOther('mSpecies');
+bindPickOrOther('mGender');
 ['mHealthWhen','mDebtWhen'].forEach(id =>
   $(id).innerHTML = HEALTH_WHEN.map(x => `<option value="${x.k}">${x.label}</option>`).join(''));
 renderStars();

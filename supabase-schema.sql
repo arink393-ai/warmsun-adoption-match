@@ -4529,3 +4529,140 @@ begin
 end $$;
 revoke all on function public.admin_set_feedback_status(uuid,text,text) from public, anon;
 grant execute on function public.admin_set_feedback_status(uuid,text,text) to authenticated;
+
+-- ============================================================
+-- 26) 自訂選項：興趣、個性、物種、性別都可以自己新增
+--
+--     這四個欄位有一個共同點，而且是這一節存在的全部理由：
+--     **它們在佈告欄上是第 0 層公開的。**
+--     也就是說，開放自由輸入等於開了一條「把任何文字放到所有人都看得到的地方」
+--     的管道——而暖陽整套四層漸進式揭露，就是為了讓聯絡方式要走完三階段、
+--     雙方都同意才交換。一個叫做「我的興趣」的欄位如果可以填
+--     「IG: xxx_1234」，那整套解鎖流程就被繞過去了，而且是使用者自己繞的，
+--     不會有人來檢舉。
+--
+--     所以自訂值一律在伺服器端檢查。放前端的話改一下 devtools 就沒有了。
+--     檢查的是形式（長度、數量、有沒有聯絡方式），不是內容好壞——
+--     系統不評價別人怎麼描述自己。
+-- ============================================================
+
+-- 26.1 一段文字裡有沒有聯絡方式 --------------------------------
+--      寧可誤擋也不要漏：這裡擋下來的代價是使用者改個寫法，
+--      漏掉的代價是那個人的聯絡方式對全站公開，而且他以為只有配對成功的人看得到。
+create or replace function public.looks_like_contact(p_text text)
+returns boolean language sql immutable set search_path = public, pg_temp as $$
+  -- 括號不能省：|| 的優先序比 ~* 低，不括起來會變成
+  -- (p_text ~* '(') || 其餘字串，整個函式就回傳 text 而不是 boolean。
+  select coalesce(p_text,'') ~* ('('
+      || '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}'          -- email
+      || '|09[0-9]{8}|09[0-9]{2}-?[0-9]{3}-?[0-9]{3}'      -- 手機
+      || '|\+?886[- ]?9[0-9]{8}'
+      || '|(line|賴|萊|加賴)[ :：]?id'                      -- LINE ID
+      || '|(ig|insta|instagram|fb|facebook|telegram|tg|wechat|微信|discord)[ :：@]'
+      || '|@[a-z0-9._]{4,}'                                -- @帳號
+      || '|https?://|t\.me/|line\.me/'
+      || ')');
+$$;
+
+-- 26.2 清洗一組自訂標籤 ----------------------------------------
+--      修剪空白與換行、去掉重複、限制長度與數量。
+--      回傳清乾淨的陣列；有聯絡方式的話由呼叫端負責擋，不在這裡靜靜丟掉——
+--      靜靜丟掉會讓使用者以為存好了。
+create or replace function public.clean_tags(p_tags jsonb, p_max_n int default 20, p_max_len int default 12)
+returns jsonb language sql immutable set search_path = public, pg_temp as $$
+  select coalesce(jsonb_agg(t order by ord), '[]'::jsonb) from (
+    select distinct on (t) t, ord from (
+      select btrim(regexp_replace(v, '[\s　]+', ' ', 'g')) as t,
+             row_number() over () as ord
+        from jsonb_array_elements_text(
+               case when jsonb_typeof(coalesce(p_tags,'[]'::jsonb)) = 'array'
+                    then p_tags else '[]'::jsonb end) v
+    ) x
+    where t <> '' and char_length(t) <= p_max_len
+    order by t, ord
+  ) y
+  where ord <= p_max_n;
+$$;
+
+-- 26.3 存檔時檢查 ----------------------------------------------
+create or replace function public.guard_profile_custom_text()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+declare bad text; raw jsonb; n int;
+begin
+  /* 順序很重要：**先檢查原始輸入，最後才清洗。**
+     反過來寫的話，clean_tags 的長度上限會先把「IG @mycoolname」這種
+     超過 12 個字的聯絡方式整條丟掉——結果是使用者以為存好了，
+     實際上那一項消失了，而且他不知道為什麼。
+     凡是使用者會發現不見的東西，都要報錯講清楚；
+     clean_tags 只負責他不會發現的整理（修剪空白、去重複）。 */
+  raw := (case when jsonb_typeof(coalesce(new.interests,'[]'::jsonb)) = 'array'
+               then new.interests else '[]'::jsonb end)
+      || (case when jsonb_typeof(coalesce(new.personality,'[]'::jsonb)) = 'array'
+               then new.personality else '[]'::jsonb end);
+
+  -- ① 標籤裡不能有聯絡方式（這一整節的重點）
+  select t into bad from jsonb_array_elements_text(raw) t
+   where public.looks_like_contact(t) limit 1;
+  if bad is not null then
+    raise exception '「%」看起來是聯絡方式。興趣與個性標籤在佈告欄上是公開的，'
+      '聯絡方式請填在「解鎖後才看得到的資訊」，那一欄要雙方都通過三階段並同意才會交換。', bad;
+  end if;
+
+  -- ② 太長的標籤：報錯，不要靜靜丟掉
+  select t into bad from jsonb_array_elements_text(raw) t
+   where char_length(btrim(t)) > 12 limit 1;
+  if bad is not null then
+    raise exception '「%」超過 12 個字。標籤是卡片上的小標，太長會排不下——'
+      '想多寫一點的話，自我介紹那一欄沒有這個限制。', bad;
+  end if;
+
+  -- ③ 太多：一樣報錯
+  new.interests   := public.clean_tags(new.interests, 999, 12);
+  new.personality := public.clean_tags(new.personality, 999, 12);
+  n := jsonb_array_length(new.interests);
+  if n > 20 then raise exception '興趣最多 20 個，目前有 % 個', n; end if;
+  n := jsonb_array_length(new.personality);
+  if n > 20 then raise exception '個性標籤最多 20 個，目前有 % 個', n; end if;
+
+  -- 物種與性別的自訂值：一樣是公開欄位
+  if public.looks_like_contact(coalesce(new.species,'')) or
+     public.looks_like_contact(coalesce(new.gender,'')) then
+    raise exception '物種與性別欄位不能填聯絡方式，那兩欄在佈告欄上是公開的。';
+  end if;
+  -- 自訂物種／性別限制長度並修掉換行（卡片版面靠它們排版）
+  new.species := btrim(regexp_replace(coalesce(new.species,''), '[\s　]+', ' ', 'g'));
+  new.gender  := btrim(regexp_replace(coalesce(new.gender,''),  '[\s　]+', ' ', 'g'));
+  if char_length(new.species) > 12 then raise exception '物種請控制在 12 個字以內'; end if;
+  if char_length(new.gender)  > 12 then raise exception '性別請控制在 12 個字以內'; end if;
+  return new;
+end $$;
+
+-- 這個 trigger 要排在既有的權限 guard 之前跑（a_ 開頭），
+-- 因為它會改寫 new，而權限 guard 只負責把受保護欄位還原，兩者互不干擾。
+drop trigger if exists trg_a_profile_custom_text on public.match_profiles;
+create trigger trg_a_profile_custom_text
+  before insert or update on public.match_profiles
+  for each row execute function public.guard_profile_custom_text();
+
+-- 26.4 全站已經有人在用的自訂標籤 ------------------------------
+--      讓後來的人可以直接勾，而不是每個人各自打一次「攝影」「登山」。
+--      只回傳「有幾個人在用」達到門檻的，避免把某一個人獨有的標籤
+--      端到所有人面前——那等於用標籤反向指認一個人。
+create or replace function public.popular_custom_tags(p_field text, p_min_users int default 3)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare out_rows jsonb;
+begin
+  if auth.uid() is null then raise exception '請先登入'; end if;
+  if p_field not in ('interests','personality') then raise exception '不支援的欄位'; end if;
+  execute format($q$
+    select coalesce(jsonb_agg(t order by n desc, t), '[]'::jsonb)
+      from (select v as t, count(*) as n
+              from public.match_profiles p,
+                   lateral jsonb_array_elements_text(coalesce(p.%I,'[]'::jsonb)) v
+             where p.account_status = 'active'
+             group by v having count(*) >= $1) s
+  $q$, p_field) into out_rows using greatest(p_min_users, 2);
+  return out_rows;
+end $$;
+revoke all on function public.popular_custom_tags(text,int) from public, anon;
+grant execute on function public.popular_custom_tags(text,int) to authenticated;
