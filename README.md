@@ -1303,6 +1303,42 @@ prompt 也明講「文章裡如果提到別人（前任、朋友、家人），�
 與 `smoketest-feedback.js` **31 項**。
 連同既有測試共 SQL **333 項**、瀏覽器 **562 項**，全部通過。
 
+### 40. 修掉一個只在「既有資料庫」上才會出現的錯
+
+實際回報：把整份 `supabase-schema.sql` 重貼到正在跑的 Supabase 專案上，炸出
+
+```
+ERROR: 23514: new row for relation "chat_safety_signals"
+violates check constraint "chat_safety_signals_class_check"
+DETAIL: Failing row contains (P_TOME, reported, ...)
+```
+
+**原因：`create table if not exists` 對已經存在的表是完全的 no-op。**
+`chat_safety_signals` 在第 24 節就建好了，第 25 節才把 `'reported'` 加進 `class`
+的清單裡——但那個新的 `check` 只寫在 `create table` 裡面，所以在既有資料庫上
+**永遠不會生效**。而且它不會在載入 schema 時就報錯，是等到那一行 `insert` 才炸。
+
+**為什麼測試沒抓到：所有 SQL 測試都是先 `drop schema` 再載入**，
+也就是每一次都在全新的資料庫上跑——那剛好是唯一碰不到這個問題的跑法。
+測試覆蓋率再高，跑錯路徑一樣看不到。
+
+修法有兩層：
+
+1. **凡是「之後可能會加值」的 `check`，一律拉出來寫成獨立的
+   `alter table drop constraint if exists` ＋ `add constraint`**，重跑才會更新。
+   已經改掉 `chat_safety_signals.class`、`match_messages.safety_level`、
+   `feedback.category`、`feedback.status`。
+   （`reports.category` 本來就是這樣寫的，這次是照那個既有的正確寫法補齊。）
+2. **新增 `tests/pgtest-upgrade.sql`**：把資料庫改回舊版的樣子（換上舊的 check、
+   刪掉新資料），然後 `\i supabase-schema.sql` 重貼一次，再確認舊約束真的被換掉了。
+   README 一直寫著「重新貼一次整份 `supabase-schema.sql` 執行即可」，
+   這一份就是去驗那句話是不是真的——**在此之前沒有任何東西在驗它**。
+
+> 這一份測試要**從 repo 根目錄跑**，因為它會 `\i supabase-schema.sql`。
+
+驗證：`tests/pgtest-upgrade.sql` **6 項**。
+連同既有測試共 SQL **339 項**、瀏覽器 **562 項**，全部通過。
+
 ## 已知限制（原型階段）
 
 ### 只能在 Supabase 控制台做，程式改不到

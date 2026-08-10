@@ -4114,6 +4114,17 @@ create table if not exists public.chat_safety_signals (
   enabled boolean not null default true
 );
 
+/* ⚠️ 這個 check 一定要獨立成 alter，不能只寫在 create table 裡。
+   `create table if not exists` 對已經存在的表是完全的 no-op——表建好之後才加進
+   清單的類別（例如第 25 節的 'reported'），在既有資料庫上永遠不會生效，
+   只會在 insert 的時候炸成 23514。而本機測試每次都先 drop schema，
+   剛好是唯一碰不到這條路徑的跑法。
+   凡是「之後可能會加值」的 check，都要照這個寫法拉出來。 */
+alter table public.chat_safety_signals drop constraint if exists chat_safety_signals_class_check;
+alter table public.chat_safety_signals add constraint chat_safety_signals_class_check
+  check (class in ('sexual','body_topic','threat','threat_harm','coercion',
+                   'intimate_image','request','selfref','refusal','reported'));
+
 insert into public.chat_safety_signals (code, class, pattern, note) values
   -- 露骨性內容
   ('S_ACT','sexual','(口交|肛交|做愛|上床|性交|自慰|一夜情|約砲|約炮)','性行為'),
@@ -4287,9 +4298,12 @@ begin
 end $$;
 
 -- 24.5 訊息上存等級 --------------------------------------------
-alter table public.match_messages add column if not exists safety_level text
-  check (safety_level in ('boundary','sexual','danger'));
+alter table public.match_messages add column if not exists safety_level text;
 alter table public.match_messages add column if not exists safety_code text;
+-- 理由同上：等級之後可能會增加，check 要獨立成 alter 才會在既有資料庫上更新
+alter table public.match_messages drop constraint if exists match_messages_safety_level_check;
+alter table public.match_messages add constraint match_messages_safety_level_check
+  check (safety_level is null or safety_level in ('boundary','sexual','danger'));
 
 -- 24.6 送訊息時就地判定 ----------------------------------------
 --      注意：**不擋下訊息**。擋下來的話送出的人會改寫幾個字再送一次，
@@ -4393,6 +4407,14 @@ create table if not exists public.feedback (
   created_at timestamptz not null default now(),
   handled_at timestamptz
 );
+-- 理由同第 24 節：類別與狀態之後很可能會增加，check 要獨立成 alter
+alter table public.feedback drop constraint if exists feedback_category_check;
+alter table public.feedback add constraint feedback_category_check
+  check (category in ('bug','confusing','suggestion','content','other'));
+alter table public.feedback drop constraint if exists feedback_status_check;
+alter table public.feedback add constraint feedback_status_check
+  check (status in ('new','seen','done'));
+
 create index if not exists feedback_status_created_idx on public.feedback(status, created_at desc);
 create index if not exists feedback_user_idx on public.feedback(user_id, created_at desc);
 
