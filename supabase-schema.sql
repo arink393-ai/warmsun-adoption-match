@@ -4479,6 +4479,8 @@ grant execute on function public.submit_feedback(text,text,text,text) to authent
 create or replace function public.feedback_looks_personal(p_body text)
 returns boolean language sql stable set search_path = public, pg_temp as $$
   select (public.chat_safety_level(coalesce(p_body,''), false, false)->>'level') is not null
+      -- reported_harm 不受 selfref 抵銷：講自己被打，本來就是第一人稱
+      or 'reported_harm' = any(public.chat_signal_classes(coalesce(p_body,'')))
       or ('reported' = any(public.chat_signal_classes(coalesce(p_body,'')))
           and not ('selfref' = any(public.chat_signal_classes(coalesce(p_body,'')))));
 $$;
@@ -4898,3 +4900,1103 @@ begin
 end $$;
 revoke all on function public.set_companion_agree(uuid, boolean) from public, anon;
 grant execute on function public.set_companion_agree(uuid, boolean) to authenticated;
+
+-- ============================================================
+-- 28) 🌱 陪伴紀錄第 3、4 步：回憶、里程碑、共同目標
+--
+--     規格見 docs/companion-journal-spec.md 第 2 節與第 8 節。
+--
+--     ── 這一節新加的一條規則：暫停之後是唯讀，但自己的筆記還能寫 ──
+--     status 有三種寫入權限：
+--       ・active  → 都可以寫
+--       ・paused  → 只能新增「只有我看得到」的回憶。
+--                   共同的東西（共同的回憶、里程碑、目標）不能再動——
+--                   有一方已經撤回同意了，繼續往共同的那本寫等於當作沒看到。
+--                   但也不能因此把人鎖在自己的筆記外面：那本來就是他自己的。
+--       ・ended   → 全部唯讀，等 6.1 的處置。
+--
+--     ── 里程碑刻意不排順序 ──
+--     沒有進度條、沒有「你們完成了 3/8 個里程碑」。預設清單只是提示詞，
+--     真正要用的是 custom。關係不是一條大家都該照走的階梯。
+-- ============================================================
+
+-- 28.1 誰能寫、能寫什麼 ----------------------------------------
+create or replace function public.companion_link_for(p_link_id uuid)
+returns public.companion_links language plpgsql stable security definer
+set search_path = public, pg_temp as $$
+declare v public.companion_links;
+begin
+  if auth.uid() is null then raise exception '請先登入'; end if;
+  select * into v from public.companion_links where id = p_link_id;
+  if v.id is null or auth.uid() not in (v.user_a, v.user_b) then
+    raise exception '無權使用這本陪伴紀錄';
+  end if;
+  return v;
+end $$;
+
+-- p_shared = true 代表要寫的是「共同的那本」
+create or replace function public.companion_assert_writable(p_link public.companion_links,
+                                                            p_shared boolean)
+returns void language plpgsql immutable as $$
+begin
+  if p_link.status = 'ended' then
+    raise exception '這本陪伴紀錄已經結束，只能閱讀';
+  end if;
+  if p_shared and p_link.status <> 'active' then
+    raise exception '陪伴紀錄目前暫停中，只能新增「只有我看得到」的內容';
+  end if;
+end $$;
+
+-- 28.2 回憶 ----------------------------------------------------
+create table if not exists public.companion_memories (
+  id         uuid primary key default gen_random_uuid(),
+  link_id    uuid not null references public.companion_links(id) on delete cascade,
+  at         date not null default current_date,
+  type       text not null default 'moment',
+  title      text not null default '',
+  body       text not null default '',
+  -- 照片先留欄位不開放：私密 bucket 與清理政策還沒決定（規格第 7 節第 2 題）
+  photo_path text,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  visibility text not null default 'both',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.companion_memories drop constraint if exists companion_memories_type_check;
+alter table public.companion_memories add constraint companion_memories_type_check
+  check (type in ('moment','together','words','feeling','other'));
+alter table public.companion_memories drop constraint if exists companion_memories_vis_check;
+alter table public.companion_memories add constraint companion_memories_vis_check
+  check (visibility in ('both','private'));
+create index if not exists companion_memories_link_idx
+  on public.companion_memories(link_id, at desc, created_at desc);
+
+alter table public.companion_memories enable row level security;
+drop policy if exists "companion_memories_read" on public.companion_memories;
+create policy "companion_memories_read" on public.companion_memories
+  for select to authenticated using (
+    created_by = auth.uid()
+    or (visibility = 'both' and exists (
+      select 1 from public.companion_links l
+       where l.id = link_id and auth.uid() in (l.user_a, l.user_b))));
+grant select on public.companion_memories to authenticated;
+
+-- 28.3 里程碑 --------------------------------------------------
+create table if not exists public.companion_milestones (
+  id         uuid primary key default gen_random_uuid(),
+  link_id    uuid not null references public.companion_links(id) on delete cascade,
+  milestone_type text not null default 'custom',
+  at         date not null default current_date,
+  note       text not null default '',
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.companion_milestones drop constraint if exists companion_milestones_type_check;
+alter table public.companion_milestones add constraint companion_milestones_type_check
+  check (milestone_type in ('first_meet','first_trip','met_family','moved_in',
+                            'anniversary','made_up','custom'));
+create index if not exists companion_milestones_link_idx
+  on public.companion_milestones(link_id, at desc);
+
+alter table public.companion_milestones enable row level security;
+drop policy if exists "companion_milestones_read" on public.companion_milestones;
+create policy "companion_milestones_read" on public.companion_milestones
+  for select to authenticated using (exists (
+    select 1 from public.companion_links l
+     where l.id = link_id and auth.uid() in (l.user_a, l.user_b)));
+grant select on public.companion_milestones to authenticated;
+
+-- 28.4 共同目標 ------------------------------------------------
+--      status 一定要有 paused：只給「未開始／進行中／完成」，
+--      「這件事我們現在不想推」就只能留在「未開始」裡看起來像拖延。
+--      關係不是專案管理。
+create table if not exists public.companion_goals (
+  id         uuid primary key default gen_random_uuid(),
+  link_id    uuid not null references public.companion_links(id) on delete cascade,
+  title      text not null,
+  category   text not null default 'other',
+  status     text not null default 'idle',
+  created_by uuid not null references auth.users(id) on delete cascade,
+  completed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+alter table public.companion_goals drop constraint if exists companion_goals_status_check;
+alter table public.companion_goals add constraint companion_goals_status_check
+  check (status in ('idle','doing','done','paused'));
+alter table public.companion_goals drop constraint if exists companion_goals_cat_check;
+alter table public.companion_goals add constraint companion_goals_cat_check
+  check (category in ('travel','money','home','health','family','learn','other'));
+create index if not exists companion_goals_link_idx on public.companion_goals(link_id, created_at);
+
+alter table public.companion_goals enable row level security;
+drop policy if exists "companion_goals_read" on public.companion_goals;
+create policy "companion_goals_read" on public.companion_goals
+  for select to authenticated using (exists (
+    select 1 from public.companion_links l
+     where l.id = link_id and auth.uid() in (l.user_a, l.user_b)));
+grant select on public.companion_goals to authenticated;
+
+-- 28.5 寫入的 RPC ----------------------------------------------
+create or replace function public.add_companion_memory(
+  p_link_id uuid, p_title text, p_body text default '',
+  p_type text default 'moment', p_at date default null,
+  p_visibility text default 'both'
+) returns public.companion_memories
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v public.companion_memories;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  perform public.companion_assert_writable(v_link, p_visibility = 'both');
+  if btrim(coalesce(p_title,'')) = '' and btrim(coalesce(p_body,'')) = '' then
+    raise exception '寫一點東西再儲存吧';
+  end if;
+  insert into public.companion_memories(link_id, at, type, title, body, created_by, visibility)
+    values (p_link_id, coalesce(p_at, current_date), coalesce(p_type,'moment'),
+            left(btrim(coalesce(p_title,'')), 80), left(coalesce(p_body,''), 4000),
+            auth.uid(), coalesce(p_visibility,'both'))
+    returning * into v;
+  return v;
+end $$;
+revoke all on function public.add_companion_memory(uuid,text,text,text,date,text) from public, anon;
+grant execute on function public.add_companion_memory(uuid,text,text,text,date,text) to authenticated;
+
+/* 只有作者能改、能刪自己寫的。
+   共同不等於可以替對方修改他寫下的東西——那是改寫別人的記憶。 */
+create or replace function public.update_companion_memory(
+  p_id uuid, p_title text default null, p_body text default null,
+  p_visibility text default null
+) returns public.companion_memories
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v public.companion_memories; v_link public.companion_links;
+begin
+  select * into v from public.companion_memories where id = p_id;
+  if v.id is null then raise exception '找不到這則回憶'; end if;
+  if v.created_by <> auth.uid() then raise exception '只有寫下它的人可以修改'; end if;
+  v_link := public.companion_link_for(v.link_id);
+  perform public.companion_assert_writable(v_link,
+    coalesce(p_visibility, v.visibility) = 'both');
+  update public.companion_memories
+     set title = left(coalesce(p_title, title), 80),
+         body = left(coalesce(p_body, body), 4000),
+         visibility = coalesce(p_visibility, visibility),
+         updated_at = now()
+   where id = p_id returning * into v;
+  return v;
+end $$;
+revoke all on function public.update_companion_memory(uuid,text,text,text) from public, anon;
+grant execute on function public.update_companion_memory(uuid,text,text,text) to authenticated;
+
+create or replace function public.delete_companion_memory(p_id uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v public.companion_memories;
+begin
+  select * into v from public.companion_memories where id = p_id;
+  if v.id is null then raise exception '找不到這則回憶'; end if;
+  if v.created_by <> auth.uid() then raise exception '只有寫下它的人可以刪除'; end if;
+  perform public.companion_link_for(v.link_id);
+  delete from public.companion_memories where id = p_id;
+end $$;
+revoke all on function public.delete_companion_memory(uuid) from public, anon;
+grant execute on function public.delete_companion_memory(uuid) to authenticated;
+
+create or replace function public.add_companion_milestone(
+  p_link_id uuid, p_milestone_type text default 'custom',
+  p_note text default '', p_at date default null
+) returns public.companion_milestones
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v public.companion_milestones;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  perform public.companion_assert_writable(v_link, true);
+  insert into public.companion_milestones(link_id, milestone_type, at, note, created_by)
+    values (p_link_id, coalesce(p_milestone_type,'custom'), coalesce(p_at, current_date),
+            left(coalesce(p_note,''), 200), auth.uid())
+    returning * into v;
+  return v;
+end $$;
+revoke all on function public.add_companion_milestone(uuid,text,text,date) from public, anon;
+grant execute on function public.add_companion_milestone(uuid,text,text,date) to authenticated;
+
+create or replace function public.delete_companion_milestone(p_id uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v public.companion_milestones;
+begin
+  select * into v from public.companion_milestones where id = p_id;
+  if v.id is null then raise exception '找不到這個里程碑'; end if;
+  if v.created_by <> auth.uid() then raise exception '只有記下它的人可以刪除'; end if;
+  perform public.companion_link_for(v.link_id);
+  delete from public.companion_milestones where id = p_id;
+end $$;
+revoke all on function public.delete_companion_milestone(uuid) from public, anon;
+grant execute on function public.delete_companion_milestone(uuid) to authenticated;
+
+create or replace function public.add_companion_goal(
+  p_link_id uuid, p_title text, p_category text default 'other'
+) returns public.companion_goals
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v public.companion_goals;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  perform public.companion_assert_writable(v_link, true);
+  if btrim(coalesce(p_title,'')) = '' then raise exception '目標要有一個名字'; end if;
+  insert into public.companion_goals(link_id, title, category, created_by)
+    values (p_link_id, left(btrim(p_title), 80), coalesce(p_category,'other'), auth.uid())
+    returning * into v;
+  return v;
+end $$;
+revoke all on function public.add_companion_goal(uuid,text,text) from public, anon;
+grant execute on function public.add_companion_goal(uuid,text,text) to authenticated;
+
+/* 狀態兩個人都能改——「我們現在不想推這件事」不該只有提出的人可以說。
+   刪除仍然只有作者：那是把別人提過的事整個抹掉。 */
+create or replace function public.set_companion_goal_status(p_id uuid, p_status text)
+returns public.companion_goals
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v public.companion_goals; v_link public.companion_links;
+begin
+  select * into v from public.companion_goals where id = p_id;
+  if v.id is null then raise exception '找不到這個目標'; end if;
+  v_link := public.companion_link_for(v.link_id);
+  perform public.companion_assert_writable(v_link, true);
+  if p_status not in ('idle','doing','done','paused') then raise exception '不支援的狀態'; end if;
+  update public.companion_goals
+     set status = p_status,
+         completed_at = case when p_status = 'done' then now() else null end
+   where id = p_id returning * into v;
+  return v;
+end $$;
+revoke all on function public.set_companion_goal_status(uuid,text) from public, anon;
+grant execute on function public.set_companion_goal_status(uuid,text) to authenticated;
+
+create or replace function public.delete_companion_goal(p_id uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v public.companion_goals;
+begin
+  select * into v from public.companion_goals where id = p_id;
+  if v.id is null then raise exception '找不到這個目標'; end if;
+  if v.created_by <> auth.uid() then raise exception '只有提出它的人可以刪除'; end if;
+  perform public.companion_link_for(v.link_id);
+  delete from public.companion_goals where id = p_id;
+end $$;
+revoke all on function public.delete_companion_goal(uuid) from public, anon;
+grant execute on function public.delete_companion_goal(uuid) to authenticated;
+
+-- 28.6 時間線 --------------------------------------------------
+--      回憶、里程碑，以及第 27 節的對話書籤合在一起，照日期排。
+--      書籤本來就是「聊天與陪伴紀錄之間的橋」，所以它們是時間線的第一批內容。
+create or replace function public.companion_timeline(p_link_id uuid, p_limit int default 200)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; out_rows jsonb;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  select coalesce(jsonb_agg(x order by x->>'at' desc, x->>'created_at' desc), '[]'::jsonb)
+    into out_rows
+    from (
+      select jsonb_build_object(
+        'kind','memory', 'id', m.id, 'at', m.at, 'type', m.type,
+        'title', m.title, 'body', m.body, 'visibility', m.visibility,
+        'mine', m.created_by = auth.uid(), 'created_at', m.created_at) as x
+        from public.companion_memories m
+       where m.link_id = p_link_id
+         and (m.created_by = auth.uid() or m.visibility = 'both')
+      union all
+      select jsonb_build_object(
+        'kind','milestone', 'id', s.id, 'at', s.at, 'type', s.milestone_type,
+        'title', '', 'body', s.note, 'visibility', 'both',
+        'mine', s.created_by = auth.uid(), 'created_at', s.created_at)
+        from public.companion_milestones s
+       where s.link_id = p_link_id
+      union all
+      /* 書籤掛在申請上，不是掛在 link 上——同一對人可能只有一段對話，
+         但要用 link 的兩個人去對應，不能直接信 application_id。 */
+      select jsonb_build_object(
+        'kind','bookmark', 'id', b.id, 'at', b.created_at::date, 'type', b.kind,
+        'title', left(msg.body, 80), 'body', b.note, 'visibility', b.visibility,
+        'mine', b.user_id = auth.uid(), 'created_at', b.created_at)
+        from public.message_bookmarks b
+        join public.match_messages msg on msg.id = b.message_id
+        join public.applications a on a.id = b.application_id
+       where least(a.from_user, a.to_user) = v_link.user_a
+         and greatest(a.from_user, a.to_user) = v_link.user_b
+         and (b.user_id = auth.uid() or b.visibility = 'both')
+    ) s
+   limit greatest(1, least(p_limit, 500));
+  return out_rows;
+end $$;
+revoke all on function public.companion_timeline(uuid,int) from public, anon;
+grant execute on function public.companion_timeline(uuid,int) to authenticated;
+
+create or replace function public.companion_goals_list(p_link_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  perform public.companion_link_for(p_link_id);
+  return (select coalesce(jsonb_agg(jsonb_build_object(
+            'id', g.id, 'title', g.title, 'category', g.category, 'status', g.status,
+            'mine', g.created_by = auth.uid(), 'completed_at', g.completed_at,
+            'created_at', g.created_at) order by g.created_at), '[]'::jsonb)
+            from public.companion_goals g where g.link_id = p_link_id);
+end $$;
+revoke all on function public.companion_goals_list(uuid) from public, anon;
+grant execute on function public.companion_goals_list(uuid) to authenticated;
+
+-- ============================================================
+-- 29) 🌱 陪伴紀錄第 5 步：關係健康檢查（規格第 4 節）
+--
+--     ── 兩個人的答案不會自動互通 ──────────────────────────
+--     A 填「最近覺得孤單」，系統**不會**通知 B「你的伴侶說跟你交往很孤單」。
+--     那只會直接製造一場架，而且會讓人下次不敢誠實填。
+--     所以 share_with_partner 預設 false，而且共同觀察**只在兩邊都選擇分享時**
+--     才產生，措辭固定是並列描述（「你們最近都覺得工作比較忙」），
+--     不是轉述指控。
+--
+--     ── 不輸出分數 ────────────────────────────────────────
+--     沒有 Relationship Health Score。理由跟第 22 節把 vet_scores 整欄刪掉一樣：
+--     沒有校準基礎的數字會被當成結論。
+--     選項刻意用文字而不是 1～5——數字放在那裡遲早會有人把它加起來。
+--
+--     ── 不做每 N 天強迫填的問卷 ────────────────────────────
+--     每月最多一次，完全選填，而且系統不主動狂推。
+-- ============================================================
+
+-- 29.1 題目：前後端共用同一份 ----------------------------------
+create or replace function public.checkin_questions()
+returns jsonb language sql immutable as $$
+  select '[
+    {"key":"connected","label":"最近跟對方的距離",
+     "options":["更靠近了","跟之前差不多","有點遠"],"multi":false},
+    {"key":"heard","label":"最近說的話有沒有被聽見",
+     "options":["大多有","有時候有","不太有"],"multi":false},
+    {"key":"time","label":"最近相處的時間",
+     "options":["剛好","有點少","太少","太多了想要一點自己的時間"],"multi":false},
+    {"key":"stress","label":"最近的壓力主要來自哪裡",
+     "options":["工作","家人","金錢","健康","關係本身","說不上來"],"multi":true},
+    {"key":"want_more","label":"最近想要多一點的是",
+     "options":["一起做的事","自己的時間","被問候","被理解","說不上來"],"multi":true},
+    {"key":"note","label":"想補一句話","options":[],"multi":false,"free":true}
+  ]'::jsonb
+$$;
+grant execute on function public.checkin_questions() to authenticated, anon;
+
+create table if not exists public.relationship_checkins (
+  id         uuid primary key default gen_random_uuid(),
+  link_id    uuid not null references public.companion_links(id) on delete cascade,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  answers    jsonb not null default '{}'::jsonb,
+  -- 預設 false，見規格第 4 節。這個預設值本身就是那條規則。
+  share_with_partner boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists relationship_checkins_link_idx
+  on public.relationship_checkins(link_id, created_at desc);
+
+alter table public.relationship_checkins enable row level security;
+drop policy if exists "relationship_checkins_read" on public.relationship_checkins;
+-- 自己的永遠讀得到；對方的只有他自己選擇分享時才讀得到
+create policy "relationship_checkins_read" on public.relationship_checkins
+  for select to authenticated using (
+    user_id = auth.uid()
+    or (share_with_partner and exists (
+      select 1 from public.companion_links l
+       where l.id = link_id and auth.uid() in (l.user_a, l.user_b))));
+grant select on public.relationship_checkins to authenticated;
+
+-- 29.2 填一次 --------------------------------------------------
+create or replace function public.submit_checkin(
+  p_link_id uuid, p_answers jsonb, p_share boolean default false
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v_last timestamptz; v_id uuid; v_keys text[];
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if v_link.status = 'ended' then raise exception '這本陪伴紀錄已經結束，只能閱讀'; end if;
+
+  select max(created_at) into v_last from public.relationship_checkins
+   where link_id = p_link_id and user_id = auth.uid();
+  /* 每月最多一次。這個上限的用途是**擋住系統自己**——
+     一旦可以天天填，畫面上遲早會長出「你已經 5 天沒有回診了」。 */
+  if v_last is not null and v_last > now() - interval '30 days' then
+    raise exception '關係健康檢查每 30 天最多一次，下一次可以在 % 之後',
+      to_char(v_last + interval '30 days', 'YYYY-MM-DD');
+  end if;
+
+  if jsonb_typeof(coalesce(p_answers,'{}'::jsonb)) <> 'object' then
+    raise exception '答案格式不正確';
+  end if;
+  -- 只收題目表裡有的 key，別的丟掉（這張表會被 AI 讀，不能變成任意欄位的倉庫）
+  select array_agg(q->>'key') into v_keys from jsonb_array_elements(public.checkin_questions()) q;
+  insert into public.relationship_checkins(link_id, user_id, answers, share_with_partner)
+    values (p_link_id, auth.uid(),
+            (select coalesce(jsonb_object_agg(k, v), '{}'::jsonb)
+               from jsonb_each(coalesce(p_answers,'{}'::jsonb)) as t(k, v)
+              where k = any(v_keys)),
+            coalesce(p_share, false))
+    returning id into v_id;
+  return jsonb_build_object('id', v_id, 'shared', coalesce(p_share,false));
+end $$;
+revoke all on function public.submit_checkin(uuid,jsonb,boolean) from public, anon;
+grant execute on function public.submit_checkin(uuid,jsonb,boolean) to authenticated;
+
+/* 分享是可以反悔的：填的時候沒想分享，後來想分享；或反過來。
+   只動自己那一列。 */
+create or replace function public.set_checkin_share(p_id uuid, p_share boolean)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v public.relationship_checkins;
+begin
+  select * into v from public.relationship_checkins where id = p_id;
+  if v.id is null or v.user_id <> auth.uid() then raise exception '只有本人可以改自己的回診紀錄'; end if;
+  update public.relationship_checkins set share_with_partner = coalesce(p_share,false)
+   where id = p_id returning * into v;
+  return jsonb_build_object('id', v.id, 'shared', v.share_with_partner);
+end $$;
+revoke all on function public.set_checkin_share(uuid,boolean) from public, anon;
+grant execute on function public.set_checkin_share(uuid,boolean) to authenticated;
+
+-- 29.3 本次回診摘要 --------------------------------------------
+--      沒有分數。輸出的是「狀態」與「一個可以談的方向」。
+create or replace function public.checkin_summary(p_link_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  v_link public.companion_links; v_other uuid;
+  v_mine public.relationship_checkins; v_theirs public.relationship_checkins;
+  v_both jsonb := '[]'::jsonb; v_next text := null; q jsonb; k text;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  v_other := case when auth.uid() = v_link.user_a then v_link.user_b else v_link.user_a end;
+
+  select * into v_mine from public.relationship_checkins
+   where link_id = p_link_id and user_id = auth.uid()
+   order by created_at desc limit 1;
+
+  /* 對方那一份只有在他自己選擇分享時才拿得到——
+     而且就算拿到了，也只能拿來做並列描述。 */
+  select * into v_theirs from public.relationship_checkins
+   where link_id = p_link_id and user_id = v_other and share_with_partner
+   order by created_at desc limit 1;
+
+  if v_mine.id is not null and v_theirs.id is not null and v_mine.share_with_partner then
+    for q in select * from jsonb_array_elements(public.checkin_questions()) loop
+      k := q->>'key';
+      if k <> 'note' and v_mine.answers ? k and v_theirs.answers ? k then
+        if (q->>'multi')::boolean then
+          -- 兩個人都勾到的那幾項才算共同
+          v_both := v_both || (
+            select coalesce(jsonb_agg(jsonb_build_object('key', k, 'label', q->>'label', 'value', e)), '[]'::jsonb)
+              from jsonb_array_elements_text(v_mine.answers->k) e
+             where v_theirs.answers->k ? e);
+        elsif v_mine.answers->>k = v_theirs.answers->>k then
+          v_both := v_both || jsonb_build_array(
+            jsonb_build_object('key', k, 'label', q->>'label', 'value', v_mine.answers->>k));
+        end if;
+      end if;
+    end loop;
+  end if;
+
+  -- 「一個可以談的方向」——一次只給一個，而且是問句，不是指令
+  if v_mine.id is not null then
+    if v_mine.answers->>'time' in ('有點少','太少') then
+      v_next := '要不要找一個時間，聊聊最近各自的時間都花在哪裡？';
+    elsif v_mine.answers->>'heard' = '不太有' then
+      v_next := '有沒有一件最近想說、但還沒說出口的事？';
+    elsif v_mine.answers->>'connected' = '有點遠' then
+      v_next := '最近有什麼事情，是你希望對方知道的？';
+    elsif v_mine.answers ? 'want_more' then
+      v_next := '你最近想要多一點的那件事，對方知道嗎？';
+    end if;
+  end if;
+
+  return jsonb_build_object(
+    'has_mine',   v_mine.id is not null,
+    'mine',       coalesce(v_mine.answers, '{}'::jsonb),
+    'mine_at',    v_mine.created_at,
+    'mine_shared', coalesce(v_mine.share_with_partner, false),
+    'mine_id',    v_mine.id,
+    /* 對方填了但沒分享時，這裡只會是 false，不會透露「他填了但不給你看」——
+       那句話本身就是一個指控。 */
+    'both_shared', (v_theirs.id is not null and coalesce(v_mine.share_with_partner,false)),
+    'shared_observations', v_both,
+    'next_question', v_next,
+    'can_submit_after', (select max(created_at) + interval '30 days'
+                           from public.relationship_checkins
+                          where link_id = p_link_id and user_id = auth.uid()));
+end $$;
+revoke all on function public.checkin_summary(uuid) from public, anon;
+grant execute on function public.checkin_summary(uuid) to authenticated;
+
+-- ============================================================
+-- 30) 🌱 陪伴紀錄第 6、7 步：診療室的讀取權限與診療紀錄（規格第 3、5 節）
+--
+--     第 6 步一定要排在第 7 步之前，不然預設就會變成全開。
+--
+--     ── 三條硬規定（規格第 3 節）──────────────────────────
+--     (1) **預設全部 false。** 進診療室不會自動把所有歷史翻出來。
+--         每一次要讀什麼，都是使用者當下勾的。
+--     (2) **對話只能整段授權、不能整本授權，而且是一次性的。**
+--         所以這裡**沒有** allow_chat_range 這個欄位。
+--         規格原本寫了一個，但一個叫 allow_* 的欄位存在資料庫裡，
+--         遲早會有人把它當成常設開關來讀——那正好違反「一次性」。
+--         改成 last_chat_days：只記上一次勾了幾天，純粹拿來預填畫面，
+--         build_clinic_context() 從頭到尾不看它。
+--     (3) **共同關係分析要雙方同意；只幫一個人整理感受則不需要。**
+--         界線是輸出裡有沒有對另一個人的判斷。
+--
+--     由 (3) 再推出一條規格沒寫、但不補上就會破功的規則：
+--     **對話只能在 joint 模式、而且兩個人都同意時才進得了 AI 的輸入。**
+--     對話裡有對方說的話。solo 模式說好了「只讀使用者自己給的片段」，
+--     那就不能從後門把整段對話撈進去。
+--
+--     ── 診療室不判誰有理（規格第 5 節）────────────────────
+--     輸出固定四段：事實／感受／需求／下一個問題。
+--     唯一的例外是安全：輸入若涉及人身安全，離開關係協調模式，
+--     切換成安全模式，而且**不能**回答「你們可以試著理解彼此的需求」——
+--     在有人身安全疑慮的情境裡，「各退一步」會把責任推回受害的一方。
+-- ============================================================
+
+create table if not exists public.clinic_context_permissions (
+  link_id     uuid not null references public.companion_links(id) on delete cascade,
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  allow_profile      boolean not null default false,
+  allow_dealbreakers boolean not null default false,
+  allow_stage2       boolean not null default false,
+  allow_checkins     boolean not null default false,
+  allow_sessions     boolean not null default false,
+  allow_goals        boolean not null default false,
+  allow_joint        boolean not null default false,
+  -- 上一次勾了幾天，只拿來預填畫面。不是權限，沒有任何地方把它當權限讀。
+  last_chat_days     int not null default 0,
+  updated_at  timestamptz not null default now(),
+  primary key (link_id, user_id)
+);
+alter table public.clinic_context_permissions enable row level security;
+drop policy if exists "clinic_perm_own" on public.clinic_context_permissions;
+create policy "clinic_perm_own" on public.clinic_context_permissions
+  for select to authenticated using (user_id = auth.uid());
+grant select on public.clinic_context_permissions to authenticated;
+
+create table if not exists public.clinic_sessions (
+  id         uuid primary key default gen_random_uuid(),
+  link_id    uuid not null references public.companion_links(id) on delete cascade,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  mode       text not null default 'solo',
+  topic      text not null default '',
+  input      text not null default '',
+  ai_summary jsonb,
+  followup   jsonb,
+  safety_mode boolean not null default false,
+  saved      boolean not null default true,
+  created_at timestamptz not null default now()
+);
+alter table public.clinic_sessions drop constraint if exists clinic_sessions_mode_check;
+alter table public.clinic_sessions add constraint clinic_sessions_mode_check
+  check (mode in ('solo','joint'));
+create index if not exists clinic_sessions_link_idx
+  on public.clinic_sessions(link_id, created_at desc);
+
+alter table public.clinic_sessions enable row level security;
+drop policy if exists "clinic_sessions_own" on public.clinic_sessions;
+/* 診療紀錄只有本人讀得到，joint 也一樣。
+   joint 指的是「輸出可以談到兩個人」，不是「對方可以翻我的診療紀錄」。 */
+create policy "clinic_sessions_own" on public.clinic_sessions
+  for select to authenticated using (user_id = auth.uid());
+grant select on public.clinic_sessions to authenticated;
+
+-- 30.1 權限：讀與寫 --------------------------------------------
+create or replace function public.clinic_permissions(p_link_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v public.clinic_context_permissions; v_other_joint boolean;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  select * into v from public.clinic_context_permissions
+   where link_id = p_link_id and user_id = auth.uid();
+  select coalesce(bool_or(allow_joint), false) into v_other_joint
+    from public.clinic_context_permissions
+   where link_id = p_link_id and user_id <> auth.uid();
+  return jsonb_build_object(
+    'allow_profile',      coalesce(v.allow_profile, false),
+    'allow_dealbreakers', coalesce(v.allow_dealbreakers, false),
+    'allow_stage2',       coalesce(v.allow_stage2, false),
+    'allow_checkins',     coalesce(v.allow_checkins, false),
+    'allow_sessions',     coalesce(v.allow_sessions, false),
+    'allow_goals',        coalesce(v.allow_goals, false),
+    'allow_joint',        coalesce(v.allow_joint, false),
+    'other_allow_joint',  v_other_joint,
+    'last_chat_days',     coalesce(v.last_chat_days, 0));
+end $$;
+revoke all on function public.clinic_permissions(uuid) from public, anon;
+grant execute on function public.clinic_permissions(uuid) to authenticated;
+
+create or replace function public.set_clinic_permission(p_link_id uuid, p_key text, p_on boolean)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform public.companion_link_for(p_link_id);
+  if p_key not in ('allow_profile','allow_dealbreakers','allow_stage2',
+                   'allow_checkins','allow_sessions','allow_goals','allow_joint') then
+    raise exception '不支援的授權項目';
+  end if;
+  insert into public.clinic_context_permissions(link_id, user_id)
+    values (p_link_id, auth.uid()) on conflict (link_id, user_id) do nothing;
+  -- 只動自己那一列，而且一次只動一格
+  execute format('update public.clinic_context_permissions set %I = $1, updated_at = now()
+                   where link_id = $2 and user_id = $3', p_key)
+    using coalesce(p_on,false), p_link_id, auth.uid();
+  return public.clinic_permissions(p_link_id);
+end $$;
+revoke all on function public.set_clinic_permission(uuid,text,boolean) from public, anon;
+grant execute on function public.set_clinic_permission(uuid,text,boolean) to authenticated;
+
+-- 30.2 安全模式的判定 ------------------------------------------
+--      直接接第 24 節的 chat_safety_level()，不另外寫一套。
+--      兩邊用同一組偵測，才不會「對話室亮紅燈、診療室卻繼續勸和」。
+--
+--      但診療室多了一種第 24 節抓不到、而且規格點名的情境：
+--      **「他打我，但我不知道是不是我先惹他生氣」**。
+--      對話室的偵測看的是「有人在對另一個人要求或威脅」，
+--      這一句沒有威脅任何人，它是受害者在轉述發生在自己身上的事。
+--      所以另外開一類 reported_harm，只給診療室與意見回饋用——
+--      在對話室裡命中的會是受害者自己那則訊息，替受害者的訊息標紅燈是最糟的結果。
+--
+--      跟第 25 節的 reported 分開，是為了不要把「他逼我太緊」這種
+--      關係壓力也推進安全模式：那會讓人不敢談日常的拉扯。
+alter table public.chat_safety_signals drop constraint if exists chat_safety_signals_class_check;
+alter table public.chat_safety_signals add constraint chat_safety_signals_class_check
+  check (class in ('sexual','body_topic','threat','threat_harm','coercion',
+                   'intimate_image','request','selfref','refusal','reported','reported_harm'));
+insert into public.chat_safety_signals (code, class, pattern, note) values
+  ('P_HIT','reported_harm',
+   '(他|她|對方|男友|女友|老公|老婆|伴侶|前任).{0,6}(打我|動手|推我|掐我|踹我|摔我|勒我|扯我頭髮)',
+   '轉述對方對自己的肢體暴力'),
+  ('P_FORCE','reported_harm',
+   '被(他|她|對方|男友|女友|老公|老婆|伴侶).{0,8}(強迫|性侵|限制行動|不准出門|不讓我走|跟蹤)',
+   '轉述強迫或控制人身自由')
+on conflict (code) do update set
+  class = excluded.class, pattern = excluded.pattern,
+  note = excluded.note, enabled = excluded.enabled;
+
+create or replace function public.clinic_safety_mode(p_input text)
+returns jsonb language plpgsql stable set search_path = public, pg_temp as $$
+declare v jsonb; cls text[]; harm boolean;
+begin
+  v   := public.chat_safety_level(coalesce(p_input,''), false, false);
+  cls := public.chat_signal_classes(coalesce(p_input,''));
+  harm := 'reported_harm' = any(cls);
+  return jsonb_build_object(
+    /* coalesce 是必要的：沒有任何訊號時 level 是 null，
+       而 null = 'danger' 的結果是 null，不是 false——
+       前端拿到 null 會當成「還沒判斷」而不是「安全」。 */
+    'safety', coalesce(v->>'level','') = 'danger' or harm,
+    'level',  coalesce(v->>'level', case when harm then 'danger' else null end),
+    'code',   coalesce(v->>'code', case when harm then 'P_REPORTED_HARM' else null end));
+end $$;
+grant execute on function public.clinic_safety_mode(text) to authenticated;
+
+-- 30.3 組出這一次可以給 AI 看的東西 ----------------------------
+-- 這支不是 stable：它會把「這一次讀了幾天對話」記回去（純粹拿來預填畫面）。
+create or replace function public.build_clinic_context(
+  p_link_id uuid, p_mode text default 'solo', p_chat_days int default 0
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_link public.companion_links; v_perm jsonb; v_other uuid;
+  ctx jsonb := '{}'::jsonb; v_days int; v_app uuid;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  v_perm := public.clinic_permissions(p_link_id);
+  v_other := case when auth.uid() = v_link.user_a then v_link.user_b else v_link.user_a end;
+  if p_mode not in ('solo','joint') then raise exception '不支援的模式'; end if;
+
+  /* 共同關係分析要雙方同意。單方面把一段關係交給 AI 分析，
+     等於替另一個人決定他要不要被分析。 */
+  if p_mode = 'joint' and not ((v_perm->>'allow_joint')::boolean
+                               and (v_perm->>'other_allow_joint')::boolean) then
+    raise exception '共同關係分析要兩個人都同意才能開始';
+  end if;
+
+  if (v_perm->>'allow_profile')::boolean then
+    ctx := ctx || jsonb_build_object('profile', (
+      select jsonb_build_object('name', p.name, 'bio', p.bio,
+                                'interests', p.interests, 'personality', p.personality)
+        from public.match_profiles p where p.id = auth.uid()));
+  end if;
+  if (v_perm->>'allow_dealbreakers')::boolean then
+    ctx := ctx || jsonb_build_object('dealbreakers', (
+      select coalesce(p.dealbreakers, '{}'::jsonb) from public.match_profiles p where p.id = auth.uid()));
+  end if;
+  if (v_perm->>'allow_stage2')::boolean then
+    ctx := ctx || jsonb_build_object('stage2', (
+      select coalesce(jsonb_agg(a.application_answers), '[]'::jsonb)
+        from public.applications a
+       where least(a.from_user,a.to_user) = v_link.user_a
+         and greatest(a.from_user,a.to_user) = v_link.user_b));
+  end if;
+  if (v_perm->>'allow_checkins')::boolean then
+    ctx := ctx || jsonb_build_object('checkins', (
+      select coalesce(jsonb_agg(jsonb_build_object('at', c.created_at, 'answers', c.answers)
+                                order by c.created_at desc), '[]'::jsonb)
+        from public.relationship_checkins c
+       where c.link_id = p_link_id and c.user_id = auth.uid()));
+  end if;
+  if (v_perm->>'allow_goals')::boolean then
+    ctx := ctx || jsonb_build_object('goals', public.companion_goals_list(p_link_id));
+  end if;
+  if (v_perm->>'allow_sessions')::boolean then
+    ctx := ctx || jsonb_build_object('past_sessions', (
+      select coalesce(jsonb_agg(jsonb_build_object('at', s.created_at, 'topic', s.topic,
+                                                   'summary', s.ai_summary)
+                                order by s.created_at desc), '[]'::jsonb)
+        from (select * from public.clinic_sessions
+               where link_id = p_link_id and user_id = auth.uid()
+               order by created_at desc limit 5) s));
+  end if;
+
+  /* 對話：三個條件同時成立才進得來——
+     joint 模式、兩個人都同意、而且這一次明確指定了天數。
+     常設開關在這裡是拿不到東西的（last_chat_days 從頭到尾沒被讀）。 */
+  v_days := greatest(0, least(coalesce(p_chat_days, 0), 90));
+  if p_mode = 'joint' and v_days > 0 then
+    select a.id into v_app from public.applications a
+     where least(a.from_user,a.to_user) = v_link.user_a
+       and greatest(a.from_user,a.to_user) = v_link.user_b
+     order by a.created_at desc limit 1;
+    ctx := ctx || jsonb_build_object('chat_days', v_days, 'chat', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'who', case when m.sender_id = auth.uid() then '我' else '對方' end,
+               'at', m.created_at, 'body', m.body) order by m.created_at), '[]'::jsonb)
+        from public.match_messages m
+       where m.application_id = v_app and m.created_at > now() - make_interval(days => v_days)));
+    update public.clinic_context_permissions set last_chat_days = v_days, updated_at = now()
+     where link_id = p_link_id and user_id = auth.uid();
+  end if;
+
+  return ctx || jsonb_build_object('mode', p_mode, 'link_id', p_link_id);
+end $$;
+revoke all on function public.build_clinic_context(uuid,text,int) from public, anon;
+grant execute on function public.build_clinic_context(uuid,text,int) to authenticated;
+
+-- 30.4 存下這一次的診療紀錄 ------------------------------------
+create or replace function public.save_clinic_session(
+  p_link_id uuid, p_topic text, p_input text, p_summary jsonb,
+  p_mode text default 'solo', p_safety boolean default false
+) returns public.clinic_sessions
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v public.clinic_sessions; v_link public.companion_links;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if v_link.status = 'ended' then raise exception '這本陪伴紀錄已經結束，只能閱讀'; end if;
+  insert into public.clinic_sessions(link_id, user_id, mode, topic, input, ai_summary,
+                                     safety_mode)
+    values (p_link_id, auth.uid(), coalesce(p_mode,'solo'),
+            left(coalesce(p_topic,''), 120), left(coalesce(p_input,''), 8000),
+            p_summary, coalesce(p_safety,false))
+    returning * into v;
+  return v;
+end $$;
+revoke all on function public.save_clinic_session(uuid,text,text,jsonb,text,boolean) from public, anon;
+grant execute on function public.save_clinic_session(uuid,text,text,jsonb,text,boolean) to authenticated;
+
+create or replace function public.list_clinic_sessions(p_link_id uuid, p_limit int default 20)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  perform public.companion_link_for(p_link_id);
+  return (select coalesce(jsonb_agg(jsonb_build_object(
+            'id', s.id, 'at', s.created_at, 'mode', s.mode, 'topic', s.topic,
+            'summary', s.ai_summary, 'safety_mode', s.safety_mode) order by s.created_at desc),
+            '[]'::jsonb)
+            from (select * from public.clinic_sessions
+                   where link_id = p_link_id and user_id = auth.uid()
+                   order by created_at desc limit greatest(1, least(p_limit, 100))) s);
+end $$;
+revoke all on function public.list_clinic_sessions(uuid,int) from public, anon;
+grant execute on function public.list_clinic_sessions(uuid,int) to authenticated;
+
+create or replace function public.delete_clinic_session(p_id uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  delete from public.clinic_sessions where id = p_id and user_id = auth.uid();
+  if not found then raise exception '找不到這份診療紀錄'; end if;
+end $$;
+revoke all on function public.delete_clinic_session(uuid) from public, anon;
+grant execute on function public.delete_clinic_session(uuid) to authenticated;
+
+-- ============================================================
+-- 31) 🌱 陪伴紀錄第 8 步（一半）：回憶膠囊，以及關係結束之後的處置
+--
+--     規格 6.1、6.2 這兩題已經決定過了，所以做得下去。
+--     同一步的**年度回顧還沒做**：它要先回答規格第 7 節第 3 題
+--     （資料要留一年以上，跟現在隱私權政策寫的保存期限衝突）。
+--
+--     ── 6.2 回憶膠囊：關係非 active 時不自動開 ──────────────
+--     半年後自動跳出來的那封信，如果那時候兩個人已經分開了，它會變成傷害。
+--     所以到期只是「可以開」，不是「自動打開」：
+--       ・status = 'active' → 到期自動顯示
+--       ・其他狀態         → 只靜靜列一行，點了才開，而且點之前先問一次
+--     膠囊不因為關係結束就刪除——它是本人寫給自己的，處置跟著 6.1 走。
+--
+--     ── 6.1 30 天是「選擇的期限」，不是「保留的期限」──────
+--     這兩個很容易寫反：
+--       ・期限內選了 → **立刻**照選的做，不用等 30 天。
+--       ・期限內沒選 → 到期時**自動刪除**。沒有回應不能被當成「同意永久保留」，
+--         分手之後最可能發生的事就是再也不登入，而那不是同意。
+--     所以 purge_due() 到期的動作是刪除，不是封存。
+--
+--     ⚠️ **這需要排程，而排程還沒有。** purge_due() 已經寫好了，
+--     但沒有東西每天去呼叫它（跟第 36 節檢舉時效通知是同一個缺口）。
+--     **在排程接上之前，介面上不可以對使用者承諾「30 天後會自動刪除」**——
+--     承諾了卻沒有東西在執行，比不承諾更糟。
+-- ============================================================
+
+create table if not exists public.companion_capsules (
+  id         uuid primary key default gen_random_uuid(),
+  link_id    uuid not null references public.companion_links(id) on delete cascade,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  open_at    date not null,
+  title      text not null default '',
+  body       text not null,
+  opened_at  timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists companion_capsules_user_idx
+  on public.companion_capsules(link_id, user_id, open_at);
+
+alter table public.companion_capsules enable row level security;
+drop policy if exists "companion_capsules_own" on public.companion_capsules;
+-- 膠囊是本人寫給自己的，對方永遠讀不到
+create policy "companion_capsules_own" on public.companion_capsules
+  for select to authenticated using (user_id = auth.uid());
+grant select on public.companion_capsules to authenticated;
+
+-- 一方刪掉自己寫的東西時，在封存本裡留下痕跡。
+-- 不留的話另一方會以為自己記錯了。
+create table if not exists public.companion_tombstones (
+  id         uuid primary key default gen_random_uuid(),
+  link_id    uuid not null references public.companion_links(id) on delete cascade,
+  deleted_by uuid not null references auth.users(id) on delete cascade,
+  kind       text not null,
+  n          int  not null default 0,
+  at         timestamptz not null default now()
+);
+alter table public.companion_tombstones enable row level security;
+drop policy if exists "companion_tombstones_read" on public.companion_tombstones;
+create policy "companion_tombstones_read" on public.companion_tombstones
+  for select to authenticated using (exists (
+    select 1 from public.companion_links l
+     where l.id = link_id and auth.uid() in (l.user_a, l.user_b)));
+grant select on public.companion_tombstones to authenticated;
+
+-- 31.1 膠囊 ----------------------------------------------------
+create or replace function public.write_capsule(
+  p_link_id uuid, p_open_at date, p_body text, p_title text default ''
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v_id uuid;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if v_link.status = 'ended' then raise exception '這本陪伴紀錄已經結束，只能閱讀'; end if;
+  if p_open_at is null or p_open_at <= current_date then
+    raise exception '要選一個未來的日期，膠囊才有意義';
+  end if;
+  if btrim(coalesce(p_body,'')) = '' then raise exception '寫一點東西再封起來吧'; end if;
+  insert into public.companion_capsules(link_id, user_id, open_at, title, body)
+    values (p_link_id, auth.uid(), p_open_at, left(coalesce(p_title,''), 80),
+            left(p_body, 8000))
+    returning id into v_id;
+  return jsonb_build_object('id', v_id, 'open_at', p_open_at);
+end $$;
+revoke all on function public.write_capsule(uuid,date,text,text) from public, anon;
+grant execute on function public.write_capsule(uuid,date,text,text) to authenticated;
+
+/* 清單裡**不含內容**。到期只代表「可以開」，不代表已經開。 */
+create or replace function public.list_capsules(p_link_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  return (select coalesce(jsonb_agg(jsonb_build_object(
+            'id', c.id, 'open_at', c.open_at, 'title', c.title,
+            'due', c.open_at <= current_date,
+            'opened', c.opened_at is not null,
+            /* 關係還在進行中才自動顯示。其他狀態下只列一行，
+               點了才開——而且前端要先問一次。 */
+            'auto_open', (c.open_at <= current_date and c.opened_at is null
+                          and v_link.status = 'active')) order by c.open_at)
+            , '[]'::jsonb)
+            from public.companion_capsules c
+           where c.link_id = p_link_id and c.user_id = auth.uid());
+end $$;
+revoke all on function public.list_capsules(uuid) from public, anon;
+grant execute on function public.list_capsules(uuid) to authenticated;
+
+create or replace function public.open_capsule(p_id uuid)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare c public.companion_capsules;
+begin
+  select * into c from public.companion_capsules where id = p_id and user_id = auth.uid();
+  if c.id is null then raise exception '找不到這封信'; end if;
+  -- 沒到期就拿不到內容。擋在資料庫，不是擋在畫面上。
+  if c.open_at > current_date then
+    raise exception '這封信要到 % 才能打開', to_char(c.open_at, 'YYYY-MM-DD');
+  end if;
+  if c.opened_at is null then
+    update public.companion_capsules set opened_at = now() where id = p_id;
+  end if;
+  return jsonb_build_object('id', c.id, 'open_at', c.open_at,
+                            'title', c.title, 'body', c.body);
+end $$;
+revoke all on function public.open_capsule(uuid) from public, anon;
+grant execute on function public.open_capsule(uuid) to authenticated;
+
+-- 31.2 結束一段關係 --------------------------------------------
+create or replace function public.end_companion_link(p_link_id uuid)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if v_link.status = 'ended' then return public.companion_disposition_state(p_link_id); end if;
+  update public.companion_links
+     set status = 'ended', ended_at = now(), purge_at = now() + interval '30 days'
+   where id = p_link_id;
+  return public.companion_disposition_state(p_link_id);
+end $$;
+
+create or replace function public.companion_disposition_state(p_link_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v_me_is_a boolean;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  v_me_is_a := (auth.uid() = v_link.user_a);
+  return jsonb_build_object(
+    'status', v_link.status,
+    'ended_at', v_link.ended_at,
+    'purge_at', v_link.purge_at,
+    'mine', case when v_me_is_a then v_link.disposition_a else v_link.disposition_b end,
+    /* 對方選了什麼不揭露。那是他自己的決定，而且知道了也改變不了什麼，
+       只會變成分手之後多一件可以拿來想的事。 */
+    'tombstones', (select coalesce(jsonb_agg(jsonb_build_object(
+                     'kind', t.kind, 'n', t.n, 'mine', t.deleted_by = auth.uid())), '[]'::jsonb)
+                     from public.companion_tombstones t where t.link_id = p_link_id));
+end $$;
+revoke all on function public.end_companion_link(uuid) from public, anon;
+grant execute on function public.end_companion_link(uuid) to authenticated;
+revoke all on function public.companion_disposition_state(uuid) from public, anon;
+grant execute on function public.companion_disposition_state(uuid) to authenticated;
+
+-- 刪掉某個人在這段關係裡寫的所有東西，並留下痕跡
+create or replace function public.companion_purge_side(p_link_id uuid, p_user uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare n int; v_link public.companion_links;
+begin
+  select * into v_link from public.companion_links where id = p_link_id;
+
+  delete from public.companion_memories where link_id = p_link_id and created_by = p_user;
+  get diagnostics n = row_count;
+  if n > 0 then insert into public.companion_tombstones(link_id, deleted_by, kind, n)
+    values (p_link_id, p_user, 'memory', n); end if;
+
+  delete from public.companion_milestones where link_id = p_link_id and created_by = p_user;
+  get diagnostics n = row_count;
+  if n > 0 then insert into public.companion_tombstones(link_id, deleted_by, kind, n)
+    values (p_link_id, p_user, 'milestone', n); end if;
+
+  delete from public.companion_goals where link_id = p_link_id and created_by = p_user;
+  get diagnostics n = row_count;
+  if n > 0 then insert into public.companion_tombstones(link_id, deleted_by, kind, n)
+    values (p_link_id, p_user, 'goal', n); end if;
+
+  delete from public.relationship_checkins where link_id = p_link_id and user_id = p_user;
+  delete from public.clinic_sessions where link_id = p_link_id and user_id = p_user;
+  delete from public.companion_capsules where link_id = p_link_id and user_id = p_user;
+
+  -- 對話書籤也是這段關係的一部分
+  delete from public.message_bookmarks b using public.applications a
+   where b.application_id = a.id and b.user_id = p_user
+     and least(a.from_user, a.to_user) = v_link.user_a
+     and greatest(a.from_user, a.to_user) = v_link.user_b;
+end $$;
+revoke all on function public.companion_purge_side(uuid,uuid) from public, anon, authenticated;
+
+create or replace function public.set_companion_disposition(p_link_id uuid, p_choice text)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v_me_is_a boolean;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if v_link.status <> 'ended' then raise exception '這段關係還沒結束'; end if;
+  if p_choice not in ('delete','archive','mine_only') then raise exception '不支援的處置方式'; end if;
+  v_me_is_a := (auth.uid() = v_link.user_a);
+
+  if v_me_is_a then update public.companion_links set disposition_a = p_choice where id = p_link_id;
+  else                update public.companion_links set disposition_b = p_choice where id = p_link_id; end if;
+
+  -- 選了就立刻做，不用等 30 天。30 天是選擇的期限，不是保留的期限。
+  if p_choice = 'delete' then
+    perform public.companion_purge_side(p_link_id, auth.uid());
+  end if;
+  return public.companion_disposition_state(p_link_id);
+end $$;
+revoke all on function public.set_companion_disposition(uuid,text) from public, anon;
+grant execute on function public.set_companion_disposition(uuid,text) to authenticated;
+
+/* 到期還沒選的，刪掉。沒有回應不是同意永久保留。
+   ⚠️ 這支函式目前**沒有東西在呼叫它**——要接 pg_cron 或 Scheduled Function。
+   在那之前，介面上不可以承諾「30 天後自動刪除」。 */
+create or replace function public.purge_due_companion_links()
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare r record; n int := 0;
+begin
+  for r in select * from public.companion_links
+            where status = 'ended' and purge_at is not null and purge_at < now() loop
+    if r.disposition_a is null then perform public.companion_purge_side(r.id, r.user_a); n := n + 1; end if;
+    if r.disposition_b is null then perform public.companion_purge_side(r.id, r.user_b); n := n + 1; end if;
+    update public.companion_links
+       set disposition_a = coalesce(disposition_a, 'delete'),
+           disposition_b = coalesce(disposition_b, 'delete'),
+           purge_at = null
+     where id = r.id;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.purge_due_companion_links() from public, anon, authenticated;
+grant execute on function public.purge_due_companion_links() to service_role;
+
+-- 31.3 時間線改版：尊重「只留我自己寫的」---------------------
+--      放在這裡覆寫第 28.6 節的版本，因為它要用到這一節的 disposition 欄位。
+create or replace function public.companion_timeline(p_link_id uuid, p_limit int default 200)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; out_rows jsonb; v_mine_only boolean;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  /* coalesce 不能省：處置方式還沒選的時候它是 null，
+     而 null = 'mine_only' 的結果是 null 不是 false，
+     接著 `not v_mine_only` 也是 null，整個 where 就變成什麼都不符合——
+     一段還沒結束的關係，時間線會整個變空。 */
+  v_mine_only := coalesce((case when auth.uid() = v_link.user_a
+                                then v_link.disposition_a else v_link.disposition_b end)
+                          = 'mine_only', false);
+  select coalesce(jsonb_agg(x order by x->>'at' desc, x->>'created_at' desc), '[]'::jsonb)
+    into out_rows
+    from (
+      select jsonb_build_object(
+        'kind','memory', 'id', m.id, 'at', m.at, 'type', m.type,
+        'title', m.title, 'body', m.body, 'visibility', m.visibility,
+        'mine', m.created_by = auth.uid(), 'created_at', m.created_at) as x
+        from public.companion_memories m
+       where m.link_id = p_link_id
+         and (m.created_by = auth.uid() or (m.visibility = 'both' and not v_mine_only))
+      union all
+      select jsonb_build_object(
+        'kind','milestone', 'id', s.id, 'at', s.at, 'type', s.milestone_type,
+        'title', '', 'body', s.note, 'visibility', 'both',
+        'mine', s.created_by = auth.uid(), 'created_at', s.created_at)
+        from public.companion_milestones s
+       where s.link_id = p_link_id and (s.created_by = auth.uid() or not v_mine_only)
+      union all
+      select jsonb_build_object(
+        'kind','bookmark', 'id', b.id, 'at', b.created_at::date, 'type', b.kind,
+        'title', left(msg.body, 80), 'body', b.note, 'visibility', b.visibility,
+        'mine', b.user_id = auth.uid(), 'created_at', b.created_at)
+        from public.message_bookmarks b
+        join public.match_messages msg on msg.id = b.message_id
+        join public.applications a on a.id = b.application_id
+       where least(a.from_user, a.to_user) = v_link.user_a
+         and greatest(a.from_user, a.to_user) = v_link.user_b
+         and (b.user_id = auth.uid() or (b.visibility = 'both' and not v_mine_only))
+    ) s
+   limit greatest(1, least(p_limit, 500));
+  return out_rows;
+end $$;
+revoke all on function public.companion_timeline(uuid,int) from public, anon;
+grant execute on function public.companion_timeline(uuid,int) to authenticated;

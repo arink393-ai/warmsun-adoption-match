@@ -449,6 +449,65 @@
     return data;
   }
 
+  // ── 🌱 回憶、里程碑、共同目標、時間線（見 schema 第 28 節）──
+  async function rpc(name, args) {
+    const { data, error } = await sb.rpc(name, args || {});
+    if (error) throw error;
+    return data;
+  }
+  const companionTimeline   = (linkId)        => rpc('companion_timeline', { p_link_id: linkId });
+  const companionGoals      = (linkId)        => rpc('companion_goals_list', { p_link_id: linkId });
+  const addMemory = (linkId, title, body, type, at, visibility) =>
+    rpc('add_companion_memory', { p_link_id: linkId, p_title: title, p_body: body || '',
+                                  p_type: type || 'moment', p_at: at || null,
+                                  p_visibility: visibility || 'both' });
+  const updateMemory = (id, title, body, visibility) =>
+    rpc('update_companion_memory', { p_id: id, p_title: title, p_body: body,
+                                     p_visibility: visibility || null });
+  const deleteMemory   = (id) => rpc('delete_companion_memory', { p_id: id });
+  const addMilestone = (linkId, type, note, at) =>
+    rpc('add_companion_milestone', { p_link_id: linkId, p_milestone_type: type,
+                                     p_note: note || '', p_at: at || null });
+  const deleteMilestone = (id) => rpc('delete_companion_milestone', { p_id: id });
+  const addGoal = (linkId, title, category) =>
+    rpc('add_companion_goal', { p_link_id: linkId, p_title: title, p_category: category || 'other' });
+  const setGoalStatus = (id, status) => rpc('set_companion_goal_status', { p_id: id, p_status: status });
+  const deleteGoal    = (id) => rpc('delete_companion_goal', { p_id: id });
+
+  // ── 關係健康檢查（見 schema 第 29 節）────────────────────
+  // share_with_partner 預設 false，而且那個預設值本身就是規則。
+  const checkinQuestions = ()       => rpc('checkin_questions');
+  const checkinSummary   = (linkId) => rpc('checkin_summary', { p_link_id: linkId });
+  const submitCheckin = (linkId, answers, share) =>
+    rpc('submit_checkin', { p_link_id: linkId, p_answers: answers, p_share: !!share });
+  const setCheckinShare = (id, share) => rpc('set_checkin_share', { p_id: id, p_share: !!share });
+
+  // ── 診療室的讀取權限與診療紀錄（見 schema 第 30 節）──────
+  // 對話的授權是一次性的：每一次都要把天數傳進來，沒有常設開關。
+  const clinicPermissions = (linkId) => rpc('clinic_permissions', { p_link_id: linkId });
+  const setClinicPermission = (linkId, key, on) =>
+    rpc('set_clinic_permission', { p_link_id: linkId, p_key: key, p_on: !!on });
+  const clinicSafetyMode = (input) => rpc('clinic_safety_mode', { p_input: input });
+  const buildClinicContext = (linkId, mode, chatDays) =>
+    rpc('build_clinic_context', { p_link_id: linkId, p_mode: mode || 'solo',
+                                  p_chat_days: chatDays || 0 });
+  const saveClinicSession = (linkId, topic, input, summary, mode, safety) =>
+    rpc('save_clinic_session', { p_link_id: linkId, p_topic: topic, p_input: input,
+                                 p_summary: summary, p_mode: mode || 'solo',
+                                 p_safety: !!safety });
+  const listClinicSessions = (linkId) => rpc('list_clinic_sessions', { p_link_id: linkId });
+  const deleteClinicSession = (id)    => rpc('delete_clinic_session', { p_id: id });
+
+  // ── 回憶膠囊與結束處置（見 schema 第 31 節）──────────────
+  const listCapsules = (linkId) => rpc('list_capsules', { p_link_id: linkId });
+  const writeCapsule = (linkId, openAt, body, title) =>
+    rpc('write_capsule', { p_link_id: linkId, p_open_at: openAt, p_body: body, p_title: title || '' });
+  const openCapsule  = (id)     => rpc('open_capsule', { p_id: id });
+  const endCompanionLink   = (linkId) => rpc('end_companion_link', { p_link_id: linkId });
+  const dispositionState   = (linkId) => rpc('companion_disposition_state', { p_link_id: linkId });
+  const setDisposition = (linkId, choice) =>
+    rpc('set_companion_disposition', { p_link_id: linkId, p_choice: choice });
+
   // ── 意見回饋（見 schema 第 25 節）──────────────────────
   // 跟檢舉刻意分開：檢舉是關於某個人、有安全含意；意見回饋是關於產品。
   async function submitFeedback(category, body, page, env) {
@@ -658,6 +717,13 @@
     listMessages, sendMessage, closeChat, subscribeMessages,
     chatConsentState, setChatConsent, adminChatDangerCounts,
     toggleBookmark, listBookmarks, companionState, setCompanionAgree,
+    companionTimeline, companionGoals, addMemory, updateMemory, deleteMemory,
+    addMilestone, deleteMilestone, addGoal, setGoalStatus, deleteGoal,
+    checkinQuestions, checkinSummary, submitCheckin, setCheckinShare,
+    clinicPermissions, setClinicPermission, clinicSafetyMode, buildClinicContext,
+    saveClinicSession, listClinicSessions, deleteClinicSession,
+    listCapsules, writeCapsule, openCapsule,
+    endCompanionLink, dispositionState, setDisposition,
     submitFeedback, listMyFeedback, feedbackLooksPersonal,
     adminFeedbackList, adminSetFeedbackStatus,
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,

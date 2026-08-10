@@ -31,7 +31,9 @@ begin
   raise notice '=== 先把資料庫改成舊版的樣子 ===';
 end $$;
 
-delete from public.chat_safety_signals where class = 'reported';
+-- 之後每加一個新 class，這一行也要跟著加，才回得去「舊版」的樣子。
+-- 第 30 節的 reported_harm 就是第二次走到同一條路上。
+delete from public.chat_safety_signals where class in ('reported','reported_harm');
 alter table public.chat_safety_signals drop constraint if exists chat_safety_signals_class_check;
 alter table public.chat_safety_signals add constraint chat_safety_signals_class_check
   check (class in ('sexual','body_topic','threat','threat_harm','coercion',
@@ -65,6 +67,10 @@ begin
   select count(*) into n from public.chat_safety_signals where class = 'reported';
   perform pg_temp.ok(n >= 1,
     'chat_safety_signals 的 reported 類別補回來了（這就是實際炸掉的那一項）', n::text);
+
+  select count(*) into n from public.chat_safety_signals where class = 'reported_harm';
+  perform pg_temp.ok(n >= 1,
+    'reported_harm 也補回來了（第 30 節診療室安全模式靠它）', n::text);
 
   -- 直接試插一筆，確認 check 真的放行而不是剛好沒被檢查到
   begin
