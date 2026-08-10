@@ -255,6 +255,13 @@ alter table public.match_profiles add column if not exists req_living           
 alter table public.match_profiles add column if not exists req_family_involvement text default '';
 alter table public.match_profiles add column if not exists req_partner_debt       text default '';
 
+-- ── 第 20 節：第二階段結構化問診的五個新欄位（都是第 2 層）──────
+alter table public.match_profiles add column if not exists partner_alone_time_acceptance text default '';
+alter table public.match_profiles add column if not exists housework_model               text default '';
+alter table public.match_profiles add column if not exists cleanliness_conflict_style    text default '';
+alter table public.match_profiles add column if not exists conflict_pause_preference     text default '';
+alter table public.match_profiles add column if not exists conflict_return_commitment    text default '';
+
 -- 一次性搬移舊版暖陽欄位。只複製兩張表共有的欄位，避免碰到同專案其他產品新增的欄位。
 do $$
 declare v_cols text;
@@ -520,6 +527,8 @@ language sql security definer stable set search_path = '' as $$
       'chronotype','contact_frequency','daily_together_need','alone_time_need','conflict_style',
       'relocation','long_distance_ok','cohabit_with_parents','family_visit_freq',
       'parents_in_decisions','marriage_intent','relationship_structure','finance_style',
+      'partner_alone_time_acceptance','housework_model','cleanliness_conflict_style',
+      'conflict_pause_preference','conflict_return_commitment',
       -- Dealbreaker 嚴重度整個不外流：只給「有幾項」。細項是很強的識別資訊，
       -- 而且初診本來就在伺服器端讀得到，前端沒有任何理由需要拿到值。
       'dealbreakers'
@@ -563,6 +572,12 @@ language sql security definer stable set search_path = '' as $$
       -- ③ 關係結構與 ④ 財務模式：都是第 2 層
       'relationship_structure', case when rel.stage >= 2 then p.relationship_structure else null end,
       'finance_style',          case when rel.stage >= 2 then p.finance_style else null end,
+      -- 第二階段結構化問診的五題：本來就是第二階段才會問到的
+      'partner_alone_time_acceptance', case when rel.stage >= 2 then p.partner_alone_time_acceptance else null end,
+      'housework_model',            case when rel.stage >= 2 then p.housework_model else null end,
+      'cleanliness_conflict_style', case when rel.stage >= 2 then p.cleanliness_conflict_style else null end,
+      'conflict_pause_preference',  case when rel.stage >= 2 then p.conflict_pause_preference else null end,
+      'conflict_return_commitment', case when rel.stage >= 2 then p.conflict_return_commitment else null end,
       'dealbreaker_count', (select count(*) from jsonb_each_text(coalesce(p.dealbreakers,'{}'::jsonb)) d
                              where d.value = 'non_negotiable'),
       -- 第 3 層：要雙方都同意解鎖
@@ -2052,6 +2067,11 @@ returns jsonb language sql stable security definer set search_path = public, pg_
     'req_living',             nullif(p.req_living, ''),
     'req_family_involvement', nullif(p.req_family_involvement, ''),
     'req_partner_debt',       nullif(p.req_partner_debt, ''),
+    'partner_alone_time_acceptance', nullif(p.partner_alone_time_acceptance, ''),
+    'housework_model',               nullif(p.housework_model, ''),
+    'cleanliness_conflict_style',    nullif(p.cleanliness_conflict_style, ''),
+    'conflict_pause_preference',     nullif(p.conflict_pause_preference, ''),
+    'conflict_return_commitment',    nullif(p.conflict_return_commitment, ''),
     'area',                   nullif(p.area, ''),
     'dealbreakers',      coalesce(p.dealbreakers, '{}'::jsonb)
   )
@@ -2241,15 +2261,20 @@ begin
     ));
   end loop;
 
-  -- 同一個題組只報最嚴重的那一層。
-  -- 例：關係期待同時命中 R007（🔴 雙方都不可妥協）與 R006（🟡 方向不同）時，
-  -- 兩個一起顯示等於把同一件事講兩次，而且會讓「🟡 N 項」變得沒有意義。
+  -- 一個題組只留一條：先取最嚴重的那一層，同樣嚴重時留 priority 最小的
+  -- （數字小＝比較具體的那一條，例如第二階段的結構化規則會蓋過簡易版）。
+  -- 例：關係期待同時命中 R007（🔴）與 R006（🟡），或 S2-01 與 R031 同時命中時，
+  -- 一起顯示等於把同一件事講兩次，也會讓「🟡 N 項」失去意義。
   select coalesce(jsonb_agg(h order by (h->>'priority')::int, h->>'code'), '[]'::jsonb)
     into findings
-    from jsonb_array_elements(hits) h
-   where public.screening_severity(h->>'outcome') = (
-     select min(public.screening_severity(k->>'outcome'))
-       from jsonb_array_elements(hits) k where k->>'topic' = h->>'topic');
+    from (
+      select distinct on (k->>'topic') k as h
+        from jsonb_array_elements(hits) k
+       order by k->>'topic',
+                public.screening_severity(k->>'outcome'),
+                (k->>'priority')::int,
+                k->>'code'
+    ) t;
 
   select
     count(*) filter (where f->>'outcome' = 'green'),
@@ -3283,8 +3308,11 @@ insert into public.screening_rules
               {"field":"applicant.family_visit_freq","op":"in","value":["幾個月一次","很少"]}]}
     ]}'::jsonb,
    null,
-   '{applicant.family_visit_freq,recipient.family_visit_freq}',
-   'R_FAMILY_INVOLVE','一方期待伴侶每週參與家庭活動，另一方很少回原生家庭',
+   /* requires 只能列「兩個方向的分支都會讀」的欄位。這條是對稱的 any：
+      A 的期待對上 B 的頻率、或反過來，所以任何一個欄位都不是兩邊都必要的。
+      列了反而會讓「只有一邊填」的情況整條被跳過——而那正是它要抓的情況。 */
+   '{}',
+   'R_FAMILY_INVOLVE','一方期待伴侶經常參與家庭活動，另一方很少回原生家庭',
    '建議先確認彼此對「家庭參與」的想像。',
    '["你希望另一半多常一起回你家？"]'::jsonb, true),
 
@@ -3540,3 +3568,209 @@ create policy "safety_keywords_admin_only" on public.safety_keywords for all
   to authenticated using (public.match_is_admin(auth.uid()))
   with check (public.match_is_admin(auth.uid()));
 grant select, insert, update, delete on table public.safety_keywords to authenticated;
+
+-- ============================================================
+-- 20) 第二階段結構化問診：S2-01 ～ S2-05（先掛著，enabled=false）
+--
+--     跟需求規格的一處出入，先講清楚：
+--     規格給的欄位名是 contact_frequency_importance、family_decision_boundary
+--     這一類「每題一個 importance 欄位」。實作沒有照抄，因為：
+--
+--     （a）重要度已經有一個機制了——dealbreakers jsonb，而且引擎的 10 條 🔴
+--          規則都在讀 applicant.dealbreakers.<topic>。再開五個 *_importance
+--          欄位等於同一件事有兩個來源，之後一定會有人問「哪個算數」。
+--          所以重要度一律進 dealbreakers，只是**問的地方**搬到第二階段題目旁邊。
+--
+--     （b）五題裡有四題，上一輪已經有欄位而且有啟用中的規則在用
+--          （contact_frequency／alone_time_need／parents_in_decisions／
+--            req_family_involvement）。照抄新欄位名會變成同一個問題問兩次。
+--          所以是把既有欄位的**選項換成規格裡更細的那一版**，欄位名不動。
+--
+--     真正新增的只有五個：規格裡確實沒有對應欄位的那幾題。
+-- ============================================================
+
+-- 20.1 重要度改成四級 ------------------------------------------
+-- ⚪ 不在意 none／🟡 可以討論 discussable／🟠 非常重要 very_important／
+-- 🔴 不可妥協 non_negotiable。
+-- 舊資料只會有 none／discussable／non_negotiable，全部仍然有效，不用轉換。
+-- 🔴 的判定維持不變：**雙方都 non_negotiable 才算核心衝突**。
+-- 🟠 不會讓燈變紅，只會讓同一盞黃燈排得比較前面（priority）。
+
+-- 20.2 新增的五個欄位（都是第 2 層資料）------------------------
+-- 欄位本身宣告在第 1 節（遮罩函式在第 2 節就會引用，SQL 函式建立當下就驗證本體）。
+
+-- 20.3 既有四個欄位換成更細的選項 -------------------------------
+-- 舊值一一對到新值，不會有人的資料被清空。
+update public.match_profiles set contact_frequency = case contact_frequency
+  when '每天多次'   then '希望一天中保持多次聯絡'
+  when '每天一次'   then '希望每天至少有簡短聯絡'
+  when '幾天一次'   then '每 2～3 天聯絡一次即可'
+  when '不固定'     then '不需要固定聯絡，有事情再說'
+  else contact_frequency end
+ where contact_frequency in ('每天多次','每天一次','幾天一次','不固定');
+
+update public.match_profiles set alone_time_need = case alone_time_need
+  when '需要很多獨處時間' then '我非常重視獨立生活與個人空間'
+  when '需要一些'         then '我需要不少自己的時間'
+  when '普通'             then '陪伴與獨處大約各半'
+  when '不太需要'         then '很少，我喜歡大部分時間一起行動'
+  else alone_time_need end
+ where alone_time_need in ('需要很多獨處時間','需要一些','普通','不太需要');
+
+update public.match_profiles set parents_in_decisions = case parents_in_decisions
+  when '父母會參與重大決定'   then '家人的意見通常會是重要決定因素'
+  when '會參考但自己決定'     then '伴侶優先，但會充分考慮家人'
+  when '伴侶關係完全獨立'     then '我和伴侶共同決定'
+  else parents_in_decisions end
+ where parents_in_decisions in ('父母會參與重大決定','會參考但自己決定','伴侶關係完全獨立');
+
+update public.match_profiles set req_family_involvement = case req_family_involvement
+  when '希望對方每週參與家庭活動' then '希望經常參與'
+  when '希望對方少參與'           then '幾乎不要求'
+  else req_family_involvement end
+ where req_family_involvement in ('希望對方每週參與家庭活動','希望對方少參與');
+
+-- 20.4 既有規則跟著換成新選項 -----------------------------------
+-- 選項換了規則沒換 = 那條規則從此永遠不會命中，而且畫面上看不出來。
+update public.screening_rules set cond = '{"any":[
+    {"all":[{"field":"applicant.contact_frequency","op":"in","value":["希望一天中保持多次聯絡","希望每天有一段較完整的聊天時間"]},
+            {"field":"recipient.contact_frequency","op":"in","value":["不需要固定聯絡，有事情再說","每 2～3 天聯絡一次即可"]}]},
+    {"all":[{"field":"recipient.contact_frequency","op":"in","value":["希望一天中保持多次聯絡","希望每天有一段較完整的聊天時間"]},
+            {"field":"applicant.contact_frequency","op":"in","value":["不需要固定聯絡，有事情再說","每 2～3 天聯絡一次即可"]}]}
+  ]}'::jsonb where code = 'R030';
+
+update public.screening_rules set cond = '{"all":[
+    {"any":[
+      {"all":[{"field":"applicant.contact_frequency","op":"eq","value":"希望一天中保持多次聯絡"},
+              {"field":"recipient.contact_frequency","op":"eq","value":"不需要固定聯絡，有事情再說"}]},
+      {"all":[{"field":"recipient.contact_frequency","op":"eq","value":"希望一天中保持多次聯絡"},
+              {"field":"applicant.contact_frequency","op":"eq","value":"不需要固定聯絡，有事情再說"}]}]},
+    {"field":"applicant.dealbreakers.contact_frequency","op":"eq","value":"non_negotiable"},
+    {"field":"recipient.dealbreakers.contact_frequency","op":"eq","value":"non_negotiable"}
+  ]}'::jsonb where code = 'R031';
+
+update public.screening_rules set cond = '{"any":[
+    {"all":[{"field":"applicant.alone_time_need","op":"eq","value":"我非常重視獨立生活與個人空間"},
+            {"field":"recipient.daily_together_need","op":"eq","value":"每天要有固定相處時間"}]},
+    {"all":[{"field":"recipient.alone_time_need","op":"eq","value":"我非常重視獨立生活與個人空間"},
+            {"field":"applicant.daily_together_need","op":"eq","value":"每天要有固定相處時間"}]}
+  ]}'::jsonb where code = 'R032';
+
+update public.screening_rules set cond = '{"any":[
+    {"all":[{"field":"applicant.req_family_involvement","op":"in","value":["希望經常參與","希望像自己家人一樣高度參與"]},
+            {"field":"recipient.family_visit_freq","op":"in","value":["幾個月一次","很少"]}]},
+    {"all":[{"field":"recipient.req_family_involvement","op":"in","value":["希望經常參與","希望像自己家人一樣高度參與"]},
+            {"field":"applicant.family_visit_freq","op":"in","value":["幾個月一次","很少"]}]}
+  ]}'::jsonb where code = 'R038';
+
+update public.screening_rules set cond = '{"all":[
+    {"any":[
+      {"all":[{"field":"applicant.parents_in_decisions","op":"in","value":["家人的意見通常會是重要決定因素","希望取得家人的同意再決定"]},
+              {"field":"recipient.parents_in_decisions","op":"eq","value":"我和伴侶共同決定"}]},
+      {"all":[{"field":"recipient.parents_in_decisions","op":"in","value":["家人的意見通常會是重要決定因素","希望取得家人的同意再決定"]},
+              {"field":"applicant.parents_in_decisions","op":"eq","value":"我和伴侶共同決定"}]}]},
+    {"field":"applicant.dealbreakers.parents_in_decisions","op":"eq","value":"non_negotiable"},
+    {"field":"recipient.dealbreakers.parents_in_decisions","op":"eq","value":"non_negotiable"}
+  ]}'::jsonb where code = 'R039';
+
+-- 20.5 五條 S2 規則：先掛著，enabled = false ---------------------
+-- topic 刻意跟既有的簡易版規則相同——這樣等 enabled=true 之後，
+-- 第 13.7 節的「同一個題組只報最嚴重的那一層」會自動處理重疊，
+-- 不會同一件事講兩次。priority 也刻意排在簡易版前面（數字小的優先），
+-- 兩者同時命中時留下比較細的那一條。
+insert into public.screening_rules
+  (code, topic, category, outcome, priority, min_stage, cond, requires, reason_code, title, body, ask, enabled) values
+
+  /* priority 一定要比同題組的簡易版小（數字小＝優先留下）：
+     R031=12、R032=36、R039=10、R045=33。不然翻開開關之後，
+     「一個題組只留一條」會留下比較粗的那一條，等於白做。 */
+  ('S2-01','contact_frequency','communication','red',6,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.contact_frequency","op":"eq","value":"希望一天中保持多次聯絡"},
+                {"field":"recipient.contact_frequency","op":"in","value":["不需要固定聯絡，有事情再說","每 2～3 天聯絡一次即可"]}]},
+        {"all":[{"field":"recipient.contact_frequency","op":"eq","value":"希望一天中保持多次聯絡"},
+                {"field":"applicant.contact_frequency","op":"in","value":["不需要固定聯絡，有事情再說","每 2～3 天聯絡一次即可"]}]}]},
+      {"field":"applicant.dealbreakers.contact_frequency","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.contact_frequency","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   '{applicant.contact_frequency,recipient.contact_frequency}',
+   'R_CONTACT_FREQ','核心相處需求衝突：日常聯絡密度',
+   '雙方對日常聯絡密度的期待相反，而且都標為不可妥協。',
+   '["如果工作很忙，你覺得最低限度怎麼聯絡，會讓彼此都比較安心？"]'::jsonb, false),
+
+  ('S2-02','alone_time','rhythm','red',7,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.alone_time_need","op":"eq","value":"我非常重視獨立生活與個人空間"},
+                {"field":"recipient.alone_time_need","op":"eq","value":"很少，我喜歡大部分時間一起行動"},
+                {"field":"recipient.partner_alone_time_acceptance","op":"eq","value":"無法接受"}]},
+        {"all":[{"field":"recipient.alone_time_need","op":"eq","value":"我非常重視獨立生活與個人空間"},
+                {"field":"applicant.alone_time_need","op":"eq","value":"很少，我喜歡大部分時間一起行動"},
+                {"field":"applicant.partner_alone_time_acceptance","op":"eq","value":"無法接受"}]}]},
+      {"field":"applicant.dealbreakers.alone_time","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.alone_time","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   /* partner_alone_time_acceptance 只有「陪伴需求高」的那一方會填，
+      列進 requires 會讓另一方沒填時整條被跳過。 */
+   '{applicant.alone_time_need,recipient.alone_time_need}',
+   'R_ALONE_TIME','親密與個人空間的需求差距很大',
+   '一方高度需要獨處、另一方高度需要陪伴，而且明確表示無法接受。這不是誰太黏或誰太冷淡，是兩種都成立的需求剛好對不上。',
+   '["當你需要自己待著時，你希望怎麼讓伴侶知道這不是拒絕他？"]'::jsonb, false),
+
+  ('S2-03','housework','home','red',9,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.housework_model","op":"eq","value":"傾向由其中一方主要負責"},
+                {"field":"recipient.housework_model","op":"eq","value":"原則上平均分配"}]},
+        {"all":[{"field":"recipient.housework_model","op":"eq","value":"傾向由其中一方主要負責"},
+                {"field":"applicant.housework_model","op":"eq","value":"原則上平均分配"}]}]},
+      {"field":"applicant.dealbreakers.housework","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.housework","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   '{applicant.housework_model,recipient.housework_model}',
+   'R_HOUSEWORK','共同生活責任的期待存在核心衝突',
+   '一方認為應該平均分配、另一方傾向由其中一方主要負責，而且雙方都標為不可妥協。',
+   '["如果兩個人對乾淨的標準不一樣，你覺得該怎麼決定標準？"]'::jsonb, false),
+
+  ('S2-04','conflict_style','rhythm','yellow',30,2,
+   '{"any":[
+      {"all":[{"field":"applicant.conflict_pause_preference","op":"eq","value":"當下就談清楚"},
+              {"field":"recipient.conflict_pause_preference","op":"in","value":["可以隔天再談","可能需要 2～3 天","我通常需要等自己準備好，不希望有固定時間"]}]},
+      {"all":[{"field":"recipient.conflict_pause_preference","op":"eq","value":"當下就談清楚"},
+              {"field":"applicant.conflict_pause_preference","op":"in","value":["可以隔天再談","可能需要 2～3 天","我通常需要等自己準備好，不希望有固定時間"]}]}
+    ]}'::jsonb,
+   '{applicant.conflict_pause_preference,recipient.conflict_pause_preference}',
+   'R_CONFLICT_STYLE','衝突處理的節奏不同',
+   '一方傾向盡快處理，另一方需要較長的情緒整理時間。兩種都沒有錯。',
+   '["如果其中一個人需要暫停，你們能不能約定一個彼此都安心的恢復溝通時間？"]'::jsonb, false),
+
+  ('S2-04B','conflict_style','rhythm','unknown',31,2,
+   '{"any":[{"field":"applicant.conflict_return_commitment","op":"in","value":["不習慣","不想承諾時間"]},
+            {"field":"recipient.conflict_return_commitment","op":"in","value":["不習慣","不想承諾時間"]}]}'::jsonb,
+   /* 任一方回答「不習慣／不想承諾」就要提醒，不需要兩邊都填 */
+   '{}',
+   'R_CONFLICT_RETURN','衝突後重新建立聯繫的方式需要確認',
+   '有一方在需要暫停時不習慣說明何時回來談。這**不等於冷暴力**——真正是否涉及懲罰性沉默，要看實際情境，系統不會替任何人下這個判斷。',
+   '["如果你需要暫停討論，你願意先說一聲大概多久之後回來談嗎？"]'::jsonb, false),
+
+  ('S2-05','parents_in_decisions','family','red',8,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.parents_in_decisions","op":"in","value":["希望取得家人的同意再決定","家人的意見通常會是重要決定因素"]},
+                {"field":"recipient.parents_in_decisions","op":"eq","value":"我和伴侶共同決定"}]},
+        {"all":[{"field":"recipient.parents_in_decisions","op":"in","value":["希望取得家人的同意再決定","家人的意見通常會是重要決定因素"]},
+                {"field":"applicant.parents_in_decisions","op":"eq","value":"我和伴侶共同決定"}]}]},
+      {"field":"applicant.dealbreakers.parents_in_decisions","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.parents_in_decisions","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   '{applicant.parents_in_decisions,recipient.parents_in_decisions}',
+   'H_PARENTS','伴侶與原生家庭的決策界線可能存在核心衝突',
+   '一方認為重大決定要取得家人同意、另一方認為應由伴侶共同決定，而且雙方都標為不可妥協。這是界線設定不同，不是誰依賴家庭。',
+   '["如果家人跟伴侶意見不同，你會希望最後怎麼決定？"]'::jsonb, false)
+
+on conflict (code) do update set
+  topic = excluded.topic, category = excluded.category, outcome = excluded.outcome,
+  priority = excluded.priority, min_stage = excluded.min_stage, cond = excluded.cond,
+  requires = excluded.requires, reason_code = excluded.reason_code,
+  title = excluded.title, body = excluded.body, ask = excluded.ask, enabled = excluded.enabled;

@@ -1652,12 +1652,14 @@ const EXTRA_FIELDS = [
   /* ① 生活節奏（第 1 層） */
   {col:'chronotype',          grp:'grpTier1', label:'作息型態',
    opts:['早鳥型','中間型','夜貓型']},
-  {col:'contact_frequency',   grp:'grpTier1', label:'習慣的聯絡頻率',
-   opts:['每天多次','每天一次','幾天一次','不固定']},
+  {col:'contact_frequency',   grp:'grpTier1', label:'理想中的聯絡頻率',
+   opts:['不需要固定聯絡，有事情再說','每 2～3 天聯絡一次即可','希望每天至少有簡短聯絡',
+         '希望每天有一段較完整的聊天時間','希望一天中保持多次聯絡','其他']},
   {col:'daily_together_need', grp:'grpTier1', label:'希望的相處頻率',
    opts:['每天要有固定相處時間','大部分日子','一週幾次','不需要固定']},
-  {col:'alone_time_need',     grp:'grpTier1', label:'需要多少獨處時間',
-   opts:['需要很多獨處時間','需要一些','普通','不太需要']},
+  {col:'alone_time_need',     grp:'grpTier1', label:'進入穩定關係後，需要多少自己的時間',
+   opts:['很少，我喜歡大部分時間一起行動','希望常常在一起，但偶爾需要自己待著',
+         '陪伴與獨處大約各半','我需要不少自己的時間','我非常重視獨立生活與個人空間']},
   {col:'conflict_style',      grp:'grpTier1', label:'意見不同時你會怎麼處理',
    opts:['當下就想處理','會先說一聲再暫停，之後回來處理','需要冷靜一段時間','看情況'],
    hint:'「會先說一聲再暫停」跟冷暴力是相反的兩件事，所以刻意分成兩個選項。'},
@@ -1674,8 +1676,9 @@ const EXTRA_FIELDS = [
    opts:['婚後必須與父母同住','可以與長輩同住','希望不要','無法接受與長輩同住']},
   {col:'family_visit_freq',      grp:'grpTier2', label:'多常回原生家庭',
    opts:['每週','每月幾次','幾個月一次','很少']},
-  {col:'parents_in_decisions',   grp:'grpTier2', label:'父母在重大決定裡的角色',
-   opts:['父母會參與重大決定','會參考但自己決定','伴侶關係完全獨立']},
+  {col:'parents_in_decisions',   grp:'grpTier2', label:'家人與伴侶意見不同時，最後由誰決定',
+   opts:['我和伴侶共同決定','伴侶優先，但會充分考慮家人','視事情性質決定',
+         '希望取得家人的同意再決定','家人的意見通常會是重要決定因素']},
   {col:'relationship_structure', grp:'grpTier2', label:'希望的關係結構',
    opts:['單偶關係','開放式關係','可討論']},
   {col:'finance_style',          grp:'grpTier2', label:'偏好的財務模式',
@@ -1690,8 +1693,9 @@ const EXTRA_FIELDS = [
   /* 希望對方的條件（跟其他 req_* 一樣公開） */
   {col:'req_living',             grp:'grpReq', label:'居住要求',
    opts:['希望對方獨立居住'], any:'不限'},
-  {col:'req_family_involvement', grp:'grpReq', label:'家庭參與要求',
-   opts:['希望對方每週參與家庭活動','希望對方少參與'], any:'不限'},
+  {col:'req_family_involvement', grp:'grpReq', label:'期待伴侶參與自己原生家庭活動的程度',
+   opts:['幾乎不要求','重大節日即可','每月幾次','希望經常參與','希望像自己家人一樣高度參與'],
+   any:'不限'},
   {col:'req_partner_debt',       grp:'grpReq', label:'對伴侶負債的接受度',
    opts:['希望對方沒有負債','不接受伴侶有負債'], any:'不限'}
 ];
@@ -1709,13 +1713,18 @@ const DEALBREAKER_TOPICS = [
   {k:'finance',                label:'財務模式'},
   {k:'partner_debt',           label:'伴侶的負債'},
   {k:'contact_frequency',      label:'聯絡頻率'},
+  {k:'alone_time',             label:'獨處與陪伴的需求'},
+  {k:'housework',              label:'家務分配'},
   {k:'relationship_structure', label:'單偶／開放式'},
   {k:'parents_in_decisions',   label:'父母參與重大決定'}
 ];
+/* 四級重要度。🟠 非常重要不會讓燈變紅——🔴 的判定始終是「雙方都不可妥協」；
+   🟠 只會讓同一盞黃燈排得比較前面。 */
 const DEALBREAKER_LEVELS = [
-  {v:'none',           t:'沒特別意見'},
-  {v:'discussable',    t:'在意，可討論'},
-  {v:'non_negotiable', t:'不可妥協'}
+  {v:'none',           t:'⚪ 不在意'},
+  {v:'discussable',    t:'🟡 可以討論'},
+  {v:'very_important', t:'🟠 非常重要'},
+  {v:'non_negotiable', t:'🔴 不可妥協'}
 ];
 
 function fieldId(col){ return 'x_' + col; }

@@ -48,9 +48,12 @@ begin
    where code ~ '^R0[0-5][0-9]$' and code between 'R001' and 'R058';
   perform pg_temp.ok(n = 58, 'R001–R058 全部 58 條都在規則庫裡', n::text);
 
-  select count(*) into n from public.screening_rules where not enabled;
+  select count(*) into n from public.screening_rules where not enabled and code like 'R%';
   perform pg_temp.ok(n = 5,
     '五條「問不到真話」的先關著（R034/R035/R036/R041/R044）', n::text);
+  select count(*) into n from public.screening_rules where not enabled and code like 'S2-%';
+  perform pg_temp.ok(n = 6,
+    '第二階段結構化問診的六條也先關著（等表單做好再開）', n::text);
 
   select count(*) into n from public.screening_rules where outcome = 'never';
   perform pg_temp.ok(n = 15, '禁止規則與「刻意不觸發」共 15 條留在庫裡看得見', n::text);
