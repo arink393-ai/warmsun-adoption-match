@@ -225,6 +225,36 @@ alter table public.match_profiles add constraint match_profiles_weekly_work_hour
 -- 預設 {} 代表「沒有任何不可妥協條件」，不會憑空產生紅燈。
 alter table public.match_profiles add column if not exists dealbreakers jsonb not null default '{}'::jsonb;
 
+-- ── 第 17 節的四個新題組（欄位提前到這裡宣告，理由同上）──────────
+-- 17.1 欄位 ----------------------------------------------------
+-- ① 生活節奏（第 1 層：跟生活習慣同一層）
+alter table public.match_profiles add column if not exists chronotype          text default '';
+alter table public.match_profiles add column if not exists contact_frequency   text default '';
+alter table public.match_profiles add column if not exists daily_together_need text default '';
+alter table public.match_profiles add column if not exists alone_time_need     text default '';
+alter table public.match_profiles add column if not exists conflict_style      text default '';
+
+-- ② 家庭與居住（第 2 層：跟居住狀況同一層）
+alter table public.match_profiles add column if not exists relocation             text default '';
+alter table public.match_profiles add column if not exists long_distance_ok       text default '';
+alter table public.match_profiles add column if not exists cohabit_with_parents   text default '';
+alter table public.match_profiles add column if not exists family_visit_freq      text default '';
+alter table public.match_profiles add column if not exists parents_in_decisions   text default '';
+
+-- ③ 關係結構（marriage_intent 第 1 層、relationship_structure 第 2 層）
+alter table public.match_profiles add column if not exists marriage_intent        text default '';
+alter table public.match_profiles add column if not exists relationship_structure text default '';
+
+-- ④ 財務（第 2 層）與寵物（第 0 層：這是認養比喻的站，寵物本來就該公開）
+alter table public.match_profiles add column if not exists finance_style   text default '';
+alter table public.match_profiles add column if not exists has_pets        text default '';
+alter table public.match_profiles add column if not exists pet_acceptance  text default '';
+
+-- 「希望對方」的條件（跟 req_* 一樣是公開的，那是你自己的徵求條件）
+alter table public.match_profiles add column if not exists req_living             text default '';
+alter table public.match_profiles add column if not exists req_family_involvement text default '';
+alter table public.match_profiles add column if not exists req_partner_debt       text default '';
+
 -- 一次性搬移舊版暖陽欄位。只複製兩張表共有的欄位，避免碰到同專案其他產品新增的欄位。
 do $$
 declare v_cols text;
@@ -486,6 +516,10 @@ language sql security definer stable set search_path = '' as $$
       'age','birth','health','health_tags','locked','weight_kg','show_weight',
       'height_cm','education','marital','has_kids','military','habits','habits_other',
       'income','living','kids_plan','work_hours','weekly_work_hours','debt','debt_when',
+      -- 第 17 節的四個新題組。黑名單制，漏掉一個就是一次洩漏。
+      'chronotype','contact_frequency','daily_together_need','alone_time_need','conflict_style',
+      'relocation','long_distance_ok','cohabit_with_parents','family_visit_freq',
+      'parents_in_decisions','marriage_intent','relationship_structure','finance_style',
       -- Dealbreaker 嚴重度整個不外流：只給「有幾項」。細項是很強的識別資訊，
       -- 而且初診本來就在伺服器端讀得到，前端沒有任何理由需要拿到值。
       'dealbreakers'
@@ -504,6 +538,14 @@ language sql security definer stable set search_path = '' as $$
       'military',    case when rel.stage >= 1 then p.military else null end,
       'habits',      case when rel.stage >= 1 then p.habits else '[]'::jsonb end,
       'habits_other',case when rel.stage >= 1 then p.habits_other else null end,
+      -- ① 生活節奏：跟生活習慣同一層
+      'chronotype',          case when rel.stage >= 1 then p.chronotype else null end,
+      'contact_frequency',   case when rel.stage >= 1 then p.contact_frequency else null end,
+      'daily_together_need', case when rel.stage >= 1 then p.daily_together_need else null end,
+      'alone_time_need',     case when rel.stage >= 1 then p.alone_time_need else null end,
+      'conflict_style',      case when rel.stage >= 1 then p.conflict_style else null end,
+      -- ③ 結婚意願：跟婚姻狀態同一層
+      'marriage_intent',     case when rel.stage >= 1 then p.marriage_intent else null end,
       -- 第 2 層
       'income',      case when rel.stage >= 2 then p.income else null end,
       'living',      case when rel.stage >= 2 then p.living else null end,
@@ -512,6 +554,15 @@ language sql security definer stable set search_path = '' as $$
       -- 規則引擎用的數值欄跟顯示用的文字欄是同一件事，遮罩層級也必須一樣，
       -- 否則第 0 層就能從 weekly_work_hours 讀到第 2 層才該開放的工時。
       'weekly_work_hours', case when rel.stage >= 2 then p.weekly_work_hours else null end,
+      -- ② 家庭與居住：跟居住狀況同一層
+      'relocation',             case when rel.stage >= 2 then p.relocation else null end,
+      'long_distance_ok',       case when rel.stage >= 2 then p.long_distance_ok else null end,
+      'cohabit_with_parents',   case when rel.stage >= 2 then p.cohabit_with_parents else null end,
+      'family_visit_freq',      case when rel.stage >= 2 then p.family_visit_freq else null end,
+      'parents_in_decisions',   case when rel.stage >= 2 then p.parents_in_decisions else null end,
+      -- ③ 關係結構與 ④ 財務模式：都是第 2 層
+      'relationship_structure', case when rel.stage >= 2 then p.relationship_structure else null end,
+      'finance_style',          case when rel.stage >= 2 then p.finance_style else null end,
       'dealbreaker_count', (select count(*) from jsonb_each_text(coalesce(p.dealbreakers,'{}'::jsonb)) d
                              where d.value = 'non_negotiable'),
       -- 第 3 層：要雙方都同意解鎖
@@ -1981,6 +2032,27 @@ returns jsonb language sql stable security definer set search_path = public, pg_
                           or jsonb_array_length(coalesce(p.health_tags,'[]'::jsonb)) > 0),
     'health_when',       nullif(p.health_when, ''),
     'stars_indep',       nullif(p.stars->>'indep','')::int,
+    -- 第 17 節的四個新題組。這裡是白名單：沒列進來的欄位規則引擎就讀不到，
+    -- 所以學歷、收入、身高、體重、MBTI、健康告知內容永遠不會出現在這裡。
+    'chronotype',             nullif(p.chronotype, ''),
+    'contact_frequency',      nullif(p.contact_frequency, ''),
+    'daily_together_need',    nullif(p.daily_together_need, ''),
+    'alone_time_need',        nullif(p.alone_time_need, ''),
+    'conflict_style',         nullif(p.conflict_style, ''),
+    'relocation',             nullif(p.relocation, ''),
+    'long_distance_ok',       nullif(p.long_distance_ok, ''),
+    'cohabit_with_parents',   nullif(p.cohabit_with_parents, ''),
+    'family_visit_freq',      nullif(p.family_visit_freq, ''),
+    'parents_in_decisions',   nullif(p.parents_in_decisions, ''),
+    'marriage_intent',        nullif(p.marriage_intent, ''),
+    'relationship_structure', nullif(p.relationship_structure, ''),
+    'finance_style',          nullif(p.finance_style, ''),
+    'has_pets',               nullif(p.has_pets, ''),
+    'pet_acceptance',         nullif(p.pet_acceptance, ''),
+    'req_living',             nullif(p.req_living, ''),
+    'req_family_involvement', nullif(p.req_family_involvement, ''),
+    'req_partner_debt',       nullif(p.req_partner_debt, ''),
+    'area',                   nullif(p.area, ''),
     'dealbreakers',      coalesce(p.dealbreakers, '{}'::jsonb)
   )
   from public.match_profiles p where p.id = p_uid;
@@ -2099,6 +2171,17 @@ begin
   return 99;   -- never：永遠不顯示
 end $$;
 
+-- 燈號的嚴重度順序：紅 > 黃 > 白 > 綠。數字小的比較嚴重。
+create or replace function public.screening_severity(p_outcome text)
+returns int language sql immutable as $$
+  select case p_outcome
+    when 'safety'  then 0
+    when 'red'     then 1
+    when 'yellow'  then 2
+    when 'unknown' then 3
+    else 4 end;
+$$;
+
 -- 13.7 執行初診 ------------------------------------------------
 create or replace function public.run_screening(
   p_from uuid, p_to uuid, p_app uuid default null, p_audience text default 'member'
@@ -2106,8 +2189,8 @@ create or replace function public.run_screening(
 declare
   a jsonb; b jsonb; r public.screening_rules%rowtype;
   ref text; miss boolean; outc text; ms int;
-  findings jsonb := '[]'::jsonb;
-  unknown_topics text[] := '{}';
+  findings jsonb := '[]'::jsonb; hits jsonb := '[]'::jsonb;
+  unknown_topics text[] := '{}'; miss_topics text[] := '{}';
   n_green int := 0; n_yellow int := 0; n_red int := 0; n_safety int := 0;
   seen int := 0; rid bigint;
 begin
@@ -2137,7 +2220,7 @@ begin
       if public.screening_ref(ref, a, b, '{}'::jsonb) is null then miss := true; exit; end if;
     end loop;
     if miss then
-      if not (r.topic = any(unknown_topics)) then unknown_topics := unknown_topics || r.topic; end if;
+      if not (r.topic = any(miss_topics)) then miss_topics := miss_topics || r.topic; end if;
       continue;
     end if;
 
@@ -2151,20 +2234,43 @@ begin
     end if;
 
     ms := public.screening_min_stage(r, a, b);
-    findings := findings || jsonb_build_array(jsonb_build_object(
+    hits := hits || jsonb_build_array(jsonb_build_object(
       'code', r.code, 'topic', r.topic, 'category', r.category, 'outcome', outc,
       'min_stage', ms, 'priority', r.priority, 'reason_code', r.reason_code,
       'title', r.title, 'body', r.body, 'ask', r.ask
     ));
-
-    if    outc = 'green'  then n_green  := n_green + 1;
-    elsif outc = 'yellow' then n_yellow := n_yellow + 1;
-    elsif outc = 'red'    then n_red    := n_red + 1;
-    elsif outc = 'safety' then n_safety := n_safety + 1;
-    elsif outc = 'unknown' and not (r.topic = any(unknown_topics)) then
-      unknown_topics := unknown_topics || r.topic;
-    end if;
   end loop;
+
+  -- 同一個題組只報最嚴重的那一層。
+  -- 例：關係期待同時命中 R007（🔴 雙方都不可妥協）與 R006（🟡 方向不同）時，
+  -- 兩個一起顯示等於把同一件事講兩次，而且會讓「🟡 N 項」變得沒有意義。
+  select coalesce(jsonb_agg(h order by (h->>'priority')::int, h->>'code'), '[]'::jsonb)
+    into findings
+    from jsonb_array_elements(hits) h
+   where public.screening_severity(h->>'outcome') = (
+     select min(public.screening_severity(k->>'outcome'))
+       from jsonb_array_elements(hits) k where k->>'topic' = h->>'topic');
+
+  select
+    count(*) filter (where f->>'outcome' = 'green'),
+    count(*) filter (where f->>'outcome' = 'yellow'),
+    count(*) filter (where f->>'outcome' = 'red'),
+    count(*) filter (where f->>'outcome' = 'safety')
+    into n_green, n_yellow, n_red, n_safety
+    from jsonb_array_elements(findings) f;
+
+  -- ⚪ 是以「題組」計數，不是以規則計數：
+  -- 一個題組有東西沒填，就算一項資料不足，不管底下有幾條規則跳過。
+  -- 但如果那個題組最後有別的燈亮著，就不算資料不足了。
+  select array(
+    select distinct t from (
+      select f->>'topic' as t from jsonb_array_elements(findings) f where f->>'outcome' = 'unknown'
+      union
+      select m from unnest(miss_topics) m
+       where not exists (select 1 from jsonb_array_elements(findings) f
+                          where f->>'topic' = m and f->>'outcome' <> 'unknown')
+    ) u where t is not null
+  ) into unknown_topics;
 
   -- 有申請關係時，初診也留一筆時間軸（CRM 上會看到「主治醫師初診：2 黃燈」）。
   -- plpgsql 的函式本體是執行當下才解析，所以這裡可以呼叫第 14 節才定義的函式。
@@ -2889,3 +2995,548 @@ $$;
 
 revoke all on function public.list_reason_codes() from public, anon;
 grant execute on function public.list_reason_codes() to authenticated;
+
+-- ============================================================
+-- 17) 四個新題組（規格第 6.3 節）＋ Dealbreaker 嚴重度表單所需欄位
+--
+--     ⚠️ 每加一個欄位都要問一次「它該在第幾層」。
+--     get_visible_match_profiles() 的遮罩是 to_jsonb(p) - array[...] 的
+--     **黑名單**制，所以任何新欄位預設都是公開的——漏掉一個就是一次洩漏。
+--     下面每個欄位都同時做兩件事：宣告 ＋ 進第 17.2 節的遮罩清單。
+-- ============================================================
+
+-- 欄位本身宣告在第 1 節——get_visible_match_profiles() 在第 2 節就會引用它們，
+-- 而 SQL 函式在建立當下就驗證函式本體，欄位必須先存在。
+-- （這是第三次踩到同一個坑了：match_user_blocks、weekly_work_hours，現在是這四個題組。）
+
+
+-- ============================================================
+-- 18) 規則庫 V1 其餘 41 條（規格第 5 節 B～S）
+--
+--     🔴 的通則：**雙方都把這個題組標成 non_negotiable 才成立**。
+--     只有一方堅持是 🟡「值得問」，不是「不適合」——那是當事人自己要判斷的事。
+--     「🟡／🔴 依重要性」用 escalate 表達：對方標成不可妥協才升級。
+-- ============================================================
+
+insert into public.screening_rules
+  (code, topic, category, outcome, priority, min_stage, cond, requires, reason_code, title, body, ask, enabled) values
+
+-- ── B. 關係期待（R006、R007）────────────────────────────────
+  ('R006','relationship_goal','life_plan','yellow',20,0,
+   '{"any":[
+      {"all":[{"field":"applicant.relationship_goal","op":"in","value":["以結婚為前提的長期穩定關係","長期交往，順其自然發展"]},
+              {"field":"recipient.relationship_goal","op":"in","value":["先以朋友身分互相了解","目前不尋找長期關係"]}]},
+      {"all":[{"field":"recipient.relationship_goal","op":"in","value":["以結婚為前提的長期穩定關係","長期交往，順其自然發展"]},
+              {"field":"applicant.relationship_goal","op":"in","value":["先以朋友身分互相了解","目前不尋找長期關係"]}]}
+    ]}'::jsonb,
+   '{applicant.relationship_goal,recipient.relationship_goal}',
+   'R_REL_GOAL_DIFF','目前對關係方向的期待不同',
+   '一方想往長期走，另一方還在觀望或暫時不找長期關係。這不代表不適合，但值得先聊清楚。',
+   '["你現在想要的關係，跟一年後想要的會一樣嗎？"]'::jsonb, true),
+
+  ('R007','relationship_goal','life_plan','red',5,0,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.relationship_goal","op":"eq","value":"以結婚為前提的長期穩定關係"},
+                {"field":"recipient.relationship_goal","op":"eq","value":"目前不尋找長期關係"}]},
+        {"all":[{"field":"recipient.relationship_goal","op":"eq","value":"以結婚為前提的長期穩定關係"},
+                {"field":"applicant.relationship_goal","op":"eq","value":"目前不尋找長期關係"}]}]},
+      {"field":"applicant.dealbreakers.relationship_goal","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.relationship_goal","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   '{applicant.relationship_goal,recipient.relationship_goal}',
+   'H_REL_GOAL','一方一定要長期伴侶，另一方明確不尋找長期關係',
+   '雙方都把這件事標為不可妥協。','[]'::jsonb, true),
+
+-- ── C. 結婚意願（R008、R009）────────────────────────────────
+  ('R008','marriage_intent','life_plan','yellow',22,1,
+   '{"all":[
+      {"field":"applicant.marriage_intent","op":"differs","value":"recipient.marriage_intent"},
+      {"field":"applicant.marriage_intent","op":"not_in","value":["一定要結婚","不打算結婚"]},
+      {"field":"recipient.marriage_intent","op":"not_in","value":["一定要結婚","不打算結婚"]}
+    ]}'::jsonb,
+   '{applicant.marriage_intent,recipient.marriage_intent}',
+   'R_MARRIAGE_DIFF','婚姻期待不同，但雙方都說可以討論',
+   '建議在關係深入之前確認，不要放到最後才發現。',
+   '["結婚對你來說，是必要的形式還是可有可無？"]'::jsonb, true),
+
+  ('R009','marriage_intent','life_plan','red',5,1,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.marriage_intent","op":"eq","value":"一定要結婚"},
+                {"field":"recipient.marriage_intent","op":"eq","value":"不打算結婚"}]},
+        {"all":[{"field":"recipient.marriage_intent","op":"eq","value":"一定要結婚"},
+                {"field":"applicant.marriage_intent","op":"eq","value":"不打算結婚"}]}]},
+      {"field":"applicant.dealbreakers.marriage_intent","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.marriage_intent","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   '{applicant.marriage_intent,recipient.marriage_intent}',
+   'H_MARRIAGE','一方一定要結婚，另一方終身不婚',
+   '雙方都把這件事標為不可妥協，屬於核心人生規劃差異。','[]'::jsonb, true),
+
+-- ── D. 生育（R012）──────────────────────────────────────────
+  ('R012','kids_plan','life_plan','red',5,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.kids_plan","op":"eq","value":"想要小孩"},
+                {"field":"recipient.kids_plan","op":"in","value":["不想要小孩","已有小孩，不打算再生"]}]},
+        {"all":[{"field":"recipient.kids_plan","op":"eq","value":"想要小孩"},
+                {"field":"applicant.kids_plan","op":"in","value":["不想要小孩","已有小孩，不打算再生"]}]}]},
+      {"field":"applicant.dealbreakers.kids_plan","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.kids_plan","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   '{applicant.kids_plan,recipient.kids_plan}',
+   'H_CHILD_PLAN','雙方生育規劃存在不可妥協的差異',
+   '兩邊都把生育規劃標為不可妥協，而方向相反。','[]'::jsonb, true),
+
+-- ── F. 寵物（R015、R016）────────────────────────────────────
+  ('R015','pets','pets','yellow',30,0,
+   '{"all":[{"field":"applicant.has_pets","op":"in","value":["有，可以一起照顧","有，不能放棄"]},
+            {"field":"recipient.pet_acceptance","op":"is_null"}]}'::jsonb,
+   '{applicant.has_pets}',
+   'R_PET_UNKNOWN','對方目前有寵物，你還沒填寵物接受度',
+   '建議先確認自己能不能與寵物共同生活，再決定要不要往下走。','[]'::jsonb, true),
+
+  ('R016','pets','pets','red',6,0,
+   '{"all":[{"field":"applicant.has_pets","op":"eq","value":"有，不能放棄"},
+            {"field":"recipient.pet_acceptance","op":"eq","value":"過敏或無法與寵物共同生活"}]}'::jsonb,
+   '{applicant.has_pets,recipient.pet_acceptance}',
+   'H_PET','一方的寵物不可放棄，另一方無法與寵物共同生活',
+   '這一項不需要雙方都標不可妥協——「過敏或無法共同生活」本身就是事實限制，不是偏好。','[]'::jsonb, true),
+
+-- ── G. 居住（R017–R020）─────────────────────────────────────
+  ('R017','living','home','yellow',35,2,
+   '{"all":[{"field":"applicant.living","op":"eq","value":"與父母同住"},
+            {"field":"recipient.req_living","op":"eq","value":"希望對方獨立居住"}]}'::jsonb,
+   '{applicant.living,recipient.req_living}',
+   'R_RESIDENCE_NOW','對方目前與父母同住，而你希望伴侶獨立居住',
+   '「目前住哪」不等於「以後住哪」，建議先問未來的打算再判斷。',
+   '["未來如果同居或結婚，你會想住在哪裡？"]'::jsonb, true),
+
+  ('R018','cohabit_with_parents','home','red',7,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.cohabit_with_parents","op":"eq","value":"婚後必須與父母同住"},
+                {"field":"recipient.cohabit_with_parents","op":"eq","value":"無法接受與長輩同住"}]},
+        {"all":[{"field":"recipient.cohabit_with_parents","op":"eq","value":"婚後必須與父母同住"},
+                {"field":"applicant.cohabit_with_parents","op":"eq","value":"無法接受與長輩同住"}]}]},
+      {"field":"applicant.dealbreakers.cohabit_with_parents","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.cohabit_with_parents","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   '{applicant.cohabit_with_parents,recipient.cohabit_with_parents}',
+   'H_COHABIT','一方婚後必須與父母同住，另一方無法接受',
+   '雙方都把這件事標為不可妥協。','[]'::jsonb, true),
+
+  ('R019','relocation','home','green',72,2,
+   '{"all":[{"field":"applicant.area","op":"differs","value":"recipient.area"},
+            {"field":"applicant.relocation","op":"eq","value":"願意搬遷"},
+            {"field":"recipient.relocation","op":"eq","value":"願意搬遷"}]}'::jsonb,
+   '{applicant.area,recipient.area,applicant.relocation,recipient.relocation}',
+   null,'雖然在不同地區，但雙方都願意搬遷',
+   '距離目前不是障礙。','[]'::jsonb, true),
+
+  ('R020','relocation','home','yellow',26,2,
+   '{"all":[{"field":"applicant.area","op":"differs","value":"recipient.area"},
+            {"field":"applicant.relocation","op":"eq","value":"不願意搬遷"},
+            {"field":"recipient.relocation","op":"eq","value":"不願意搬遷"}]}'::jsonb,
+   '{applicant.area,recipient.area,applicant.relocation,recipient.relocation}',
+   'R_RESIDENCE_UNKNOWN','雙方在不同地區，而且都不願意搬遷',
+   '這件事沒辦法靠感情解決，建議早一點談。',
+   '["如果關係穩定下來，你會怎麼考量工作與居住地？"]'::jsonb, true),
+
+-- ── H. 遠距（R021、R022）────────────────────────────────────
+  ('R021','long_distance','home','unknown',45,2,
+   '{"all":[{"field":"applicant.long_distance_ok","op":"not_null"},
+            {"field":"recipient.long_distance_ok","op":"is_null"}]}'::jsonb,
+   '{applicant.long_distance_ok}',
+   'R_LONG_DISTANCE_UNKNOWN','你還沒填對遠距的接受度',
+   '對方已經填了，建議你也填一下，初診才判斷得出來。','[]'::jsonb, true),
+
+  ('R022','long_distance','home','red',8,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.long_distance_ok","op":"eq","value":"可以接受遠距"},
+                {"field":"applicant.relocation","op":"eq","value":"不願意搬遷"},
+                {"field":"applicant.area","op":"differs","value":"recipient.area"},
+                {"field":"recipient.long_distance_ok","op":"eq","value":"不接受遠距"}]},
+        {"all":[{"field":"recipient.long_distance_ok","op":"eq","value":"可以接受遠距"},
+                {"field":"recipient.relocation","op":"eq","value":"不願意搬遷"},
+                {"field":"applicant.area","op":"differs","value":"recipient.area"},
+                {"field":"applicant.long_distance_ok","op":"eq","value":"不接受遠距"}]}]},
+      {"field":"applicant.dealbreakers.long_distance","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.long_distance","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   '{applicant.long_distance_ok,recipient.long_distance_ok,applicant.area,recipient.area}',
+   'H_LONG_DISTANCE','一方目前只能遠距，另一方明確不接受遠距',
+   '雙方都把這件事標為不可妥協。','[]'::jsonb, true)
+
+on conflict (code) do update set
+  topic = excluded.topic, category = excluded.category, outcome = excluded.outcome,
+  priority = excluded.priority, min_stage = excluded.min_stage, cond = excluded.cond,
+  requires = excluded.requires, reason_code = excluded.reason_code,
+  title = excluded.title, body = excluded.body, ask = excluded.ask, enabled = excluded.enabled;
+
+insert into public.screening_rules
+  (code, topic, category, outcome, priority, min_stage, cond, escalate, requires, reason_code, title, body, ask, enabled) values
+
+-- ── I. 財務（R025、R026、R027）──────────────────────────────
+--     R023 收入差距、R024 有負債本身：不觸發任何規則，見第 18.2 節。
+  ('R025','partner_debt','finance','yellow',28,2,
+   '{"all":[{"field":"recipient.req_partner_debt","op":"in","value":["希望對方沒有負債","不接受伴侶有負債"]},
+            {"field":"applicant.debt","op":"in","value":["有，可負擔範圍內","有，目前壓力較大"]}]}'::jsonb,
+   '{"field":"recipient.dealbreakers.partner_debt","op":"eq","value":"non_negotiable"}'::jsonb,
+   '{applicant.debt,recipient.req_partner_debt}',
+   'R_PARTNER_DEBT','對方自願揭露了負債，而你在條件裡寫了不接受',
+   '房貸、學貸與高風險債務完全不是同一件事，建議先問是哪一種再判斷。',
+   '["方便說一下是哪一種負債嗎？（例如房貸、學貸、信用貸款）"]'::jsonb, true),
+
+  ('R026','finance','finance','green',72,2,
+   '{"all":[{"field":"applicant.finance_style","op":"eq","value":"完全獨立"},
+            {"field":"recipient.finance_style","op":"eq","value":"完全獨立"}]}'::jsonb,
+   null,
+   '{applicant.finance_style,recipient.finance_style}',
+   null,'雙方都偏好財務完全獨立','這件事上是一致的。','[]'::jsonb, true),
+
+  ('R027','finance','finance','red',9,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.finance_style","op":"eq","value":"完全共同財務"},
+                {"field":"recipient.finance_style","op":"eq","value":"完全獨立"}]},
+        {"all":[{"field":"recipient.finance_style","op":"eq","value":"完全共同財務"},
+                {"field":"applicant.finance_style","op":"eq","value":"完全獨立"}]}]},
+      {"field":"applicant.dealbreakers.finance","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.finance","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   null,
+   '{applicant.finance_style,recipient.finance_style}',
+   'H_FINANCE','一方要求完全共同財務，另一方要求完全獨立',
+   '雙方都把這件事標為不可妥協。','[]'::jsonb, true),
+
+-- ── J. 作息（R029）──────────────────────────────────────────
+--     R028 早睡 vs 夜貓本身：不觸發，見第 18.2 節。
+  ('R029','chronotype','rhythm','yellow',34,1,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.chronotype","op":"eq","value":"早鳥型"},
+                {"field":"recipient.chronotype","op":"eq","value":"夜貓型"}]},
+        {"all":[{"field":"recipient.chronotype","op":"eq","value":"早鳥型"},
+                {"field":"applicant.chronotype","op":"eq","value":"夜貓型"}]}]},
+      {"field":"applicant.daily_together_need","op":"eq","value":"每天要有固定相處時間"},
+      {"field":"recipient.daily_together_need","op":"eq","value":"每天要有固定相處時間"}
+    ]}'::jsonb,
+   null,
+   '{applicant.chronotype,recipient.chronotype,applicant.daily_together_need,recipient.daily_together_need}',
+   'R_RHYTHM','作息相反，而且雙方都希望每天有固定的相處時間',
+   '可以共同安排的時間可能比想像中少。單純作息不同不會提醒，是加上「都要固定相處」才值得談。',
+   '["如果作息對不上，你會希望怎麼安排固定的相處時間？"]'::jsonb, true),
+
+-- ── K. 聯絡頻率（R030、R031）────────────────────────────────
+  ('R030','contact_frequency','rhythm','yellow',32,1,
+   '{"any":[
+      {"all":[{"field":"applicant.contact_frequency","op":"in","value":["每天多次","每天一次"]},
+              {"field":"recipient.contact_frequency","op":"in","value":["幾天一次","不固定"]}]},
+      {"all":[{"field":"recipient.contact_frequency","op":"in","value":["每天多次","每天一次"]},
+              {"field":"applicant.contact_frequency","op":"in","value":["幾天一次","不固定"]}]}
+    ]}'::jsonb,
+   null,
+   '{applicant.contact_frequency,recipient.contact_frequency}',
+   'R_CONTACT_FREQ','習慣的聯絡頻率不同',
+   '這通常不是不適合，而是要說清楚——不然容易被解讀成「不在乎」。',
+   '["多久聯絡一次，對你來說會覺得剛剛好？"]'::jsonb, true),
+
+  ('R031','contact_frequency','rhythm','red',12,1,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.contact_frequency","op":"eq","value":"每天多次"},
+                {"field":"recipient.contact_frequency","op":"eq","value":"不固定"}]},
+        {"all":[{"field":"recipient.contact_frequency","op":"eq","value":"每天多次"},
+                {"field":"applicant.contact_frequency","op":"eq","value":"不固定"}]}]},
+      {"field":"applicant.dealbreakers.contact_frequency","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.contact_frequency","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   null,
+   '{applicant.contact_frequency,recipient.contact_frequency}',
+   'H_CONTACT_FREQ','一方把每天固定聯絡列為必要，另一方不希望每日聯絡',
+   '雙方都把這件事標為不可妥協。','[]'::jsonb, true),
+
+-- ── L. 獨處需求（R032）──────────────────────────────────────
+  ('R032','alone_time','rhythm','yellow',36,1,
+   '{"any":[
+      {"all":[{"field":"applicant.alone_time_need","op":"eq","value":"需要很多獨處時間"},
+              {"field":"recipient.daily_together_need","op":"eq","value":"每天要有固定相處時間"}]},
+      {"all":[{"field":"recipient.alone_time_need","op":"eq","value":"需要很多獨處時間"},
+              {"field":"applicant.daily_together_need","op":"eq","value":"每天要有固定相處時間"}]}
+    ]}'::jsonb,
+   null,
+   '{applicant.alone_time_need,recipient.alone_time_need,applicant.daily_together_need,recipient.daily_together_need}',
+   'R_ALONE_TIME','親密與個人空間的需求可能不同',
+   '一方需要較多獨處時間，另一方希望每天有固定相處。這不是「不適合」，是需要各自說清楚界線。',
+   '["你需要獨處的時候，希望對方怎麼做比較好？"]'::jsonb, true),
+
+-- ── O. 原生家庭（R038、R039）────────────────────────────────
+--     R037 回家頻率差異本身：不觸發，見第 18.2 節。
+  ('R038','family_involvement','family','yellow',38,2,
+   '{"any":[
+      {"all":[{"field":"applicant.req_family_involvement","op":"eq","value":"希望對方每週參與家庭活動"},
+              {"field":"recipient.family_visit_freq","op":"in","value":["幾個月一次","很少"]}]},
+      {"all":[{"field":"recipient.req_family_involvement","op":"eq","value":"希望對方每週參與家庭活動"},
+              {"field":"applicant.family_visit_freq","op":"in","value":["幾個月一次","很少"]}]}
+    ]}'::jsonb,
+   null,
+   '{applicant.family_visit_freq,recipient.family_visit_freq}',
+   'R_FAMILY_INVOLVE','一方期待伴侶每週參與家庭活動，另一方很少回原生家庭',
+   '建議先確認彼此對「家庭參與」的想像。',
+   '["你希望另一半多常一起回你家？"]'::jsonb, true),
+
+  ('R039','parents_in_decisions','family','red',10,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.parents_in_decisions","op":"eq","value":"父母會參與重大決定"},
+                {"field":"recipient.parents_in_decisions","op":"eq","value":"伴侶關係完全獨立"}]},
+        {"all":[{"field":"recipient.parents_in_decisions","op":"eq","value":"父母會參與重大決定"},
+                {"field":"applicant.parents_in_decisions","op":"eq","value":"伴侶關係完全獨立"}]}]},
+      {"field":"applicant.dealbreakers.parents_in_decisions","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.parents_in_decisions","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   null,
+   '{applicant.parents_in_decisions,recipient.parents_in_decisions}',
+   'H_PARENTS','一方的父母會參與重大決定，另一方要求伴侶關係完全獨立',
+   '雙方都把這件事標為不可妥協。','[]'::jsonb, true),
+
+-- ── Q. 關係結構（R042）──────────────────────────────────────
+  ('R042','relationship_structure','life_plan','red',4,2,
+   '{"all":[
+      {"any":[
+        {"all":[{"field":"applicant.relationship_structure","op":"eq","value":"單偶關係"},
+                {"field":"recipient.relationship_structure","op":"eq","value":"開放式關係"}]},
+        {"all":[{"field":"recipient.relationship_structure","op":"eq","value":"單偶關係"},
+                {"field":"applicant.relationship_structure","op":"eq","value":"開放式關係"}]}]},
+      {"field":"applicant.dealbreakers.relationship_structure","op":"eq","value":"non_negotiable"},
+      {"field":"recipient.dealbreakers.relationship_structure","op":"eq","value":"non_negotiable"}
+    ]}'::jsonb,
+   null,
+   '{applicant.relationship_structure,recipient.relationship_structure}',
+   'H_REL_STRUCTURE','核心關係結構衝突：單偶 vs 開放式',
+   '雙方都把這件事標為不可妥協。','[]'::jsonb, true),
+
+-- ── S. 衝突節奏（R045、R046）────────────────────────────────
+  ('R045','conflict_style','rhythm','yellow',33,1,
+   '{"any":[
+      {"all":[{"field":"applicant.conflict_style","op":"eq","value":"當下就想處理"},
+              {"field":"recipient.conflict_style","op":"eq","value":"需要冷靜一段時間"}]},
+      {"all":[{"field":"recipient.conflict_style","op":"eq","value":"當下就想處理"},
+              {"field":"applicant.conflict_style","op":"eq","value":"需要冷靜一段時間"}]}
+    ]}'::jsonb,
+   null,
+   '{applicant.conflict_style,recipient.conflict_style}',
+   'R_CONFLICT_STYLE','衝突處理的節奏不同',
+   '一方想當下處理，另一方需要先冷靜。兩種都沒有錯，但沒說清楚很容易被誤會成逃避。',
+   '["需要冷靜的時候，你希望怎麼讓另一半知道你不是在逃避？"]'::jsonb, true),
+
+  ('R046','conflict_style','rhythm','green',71,1,
+   '{"all":[{"field":"applicant.conflict_style","op":"eq","value":"會先說一聲再暫停，之後回來處理"},
+            {"field":"recipient.conflict_style","op":"eq","value":"會先說一聲再暫停，之後回來處理"}]}'::jsonb,
+   null,
+   '{applicant.conflict_style,recipient.conflict_style}',
+   null,'雙方都會先告知再暫停溝通',
+   '這跟冷暴力是完全相反的兩件事——先說一聲再暫停，是有在處理，不是消失。','[]'::jsonb, true),
+
+-- ── 先關起來的四條（規格第 6.4 節）──────────────────────────
+--     不是做不出來，是「放在表單上問不到真話」。等第二階段題庫有結構化答案再打開。
+  ('R034','guests_at_home','social','yellow',40,2,
+   '{"all":[{"field":"applicant.guests_at_home","op":"eq","value":"常帶朋友回家"},
+            {"field":"recipient.req_guests","op":"eq","value":"不接受陌生人常進住家"}]}'::jsonb,
+   null, '{applicant.guests_at_home,recipient.req_guests}',
+   'R_GUESTS','帶朋友回家的頻率與對方的界線可能衝突','','[]'::jsonb, false),
+
+  ('R035','housework','home','yellow',40,2,
+   '{"all":[{"field":"applicant.housework_split","op":"differs","value":"recipient.housework_split"}]}'::jsonb,
+   null, '{applicant.housework_split,recipient.housework_split}',
+   'R_HOUSEWORK','家務期待不同','表單上人人都會選「平均分攤」，所以這條先關著。','[]'::jsonb, false),
+
+  ('R036','housework','home','red',11,2,
+   '{"all":[{"field":"applicant.housework_gendered","op":"eq","value":"應由特定性別主要負責"},
+            {"field":"recipient.dealbreakers.housework","op":"eq","value":"non_negotiable"}]}'::jsonb,
+   null, '{applicant.housework_gendered}',
+   'H_HOUSEWORK','家務的性別分工立場與對方的平等要求衝突','','[]'::jsonb, false),
+
+  ('R041','religion','values','red',11,2,
+   '{"all":[{"field":"applicant.req_conversion","op":"eq","value":"伴侶必須改宗"},
+            {"field":"recipient.conversion_ok","op":"eq","value":"不願改變宗教"},
+            {"field":"recipient.dealbreakers.religion","op":"eq","value":"non_negotiable"}]}'::jsonb,
+   null, '{applicant.req_conversion,recipient.conversion_ok}',
+   'H_RELIGION','一方要求伴侶改宗，另一方不願改變宗教',
+   '極少數案例，但問卷上出現會讓所有人不舒服，所以先關著。','[]'::jsonb, false),
+
+  ('R044','ex_contact','boundaries','yellow',40,2,
+   '{"all":[{"field":"applicant.ex_contact_freq","op":"eq","value":"每天密切互動"},
+            {"field":"recipient.req_ex_contact","op":"eq","value":"列為紅線"}]}'::jsonb,
+   null, '{applicant.ex_contact_freq,recipient.req_ex_contact}',
+   'R_EX_CONTACT','與前任的互動頻率與對方的紅線衝突',
+   '沒有人會在表單上誠實填這題，所以先關著，留給第二階段與付費 AI。','[]'::jsonb, false)
+
+on conflict (code) do update set
+  topic = excluded.topic, category = excluded.category, outcome = excluded.outcome,
+  priority = excluded.priority, min_stage = excluded.min_stage, cond = excluded.cond,
+  escalate = excluded.escalate, requires = excluded.requires, reason_code = excluded.reason_code,
+  title = excluded.title, body = excluded.body, ask = excluded.ask, enabled = excluded.enabled;
+
+-- 18.2 「刻意不觸發」的那幾條 ----------------------------------
+-- 這些不是漏掉，是判斷過之後決定不做成規則。存成 outcome='never' 讓它們
+-- 留在規則庫裡看得到，才不會有人以為是忘記寫。
+-- （prohibits 留空——這幾條限制的是「這個組合不成立規則」，不是「這個欄位不得使用」。）
+insert into public.screening_rules (code, topic, category, outcome, priority, cond, title, body) values
+  ('R023','income','prohibition','never',99,'{"prohibits":[]}'::jsonb,
+   '年收入差距不觸發任何規則','收入差距不是風險。做成規則會讓系統變成階級評分。'),
+  ('R024','debt','prohibition','never',99,'{"prohibits":[]}'::jsonb,
+   '「有負債」本身不觸發黃燈','房貸、學貸與高風險債務完全不是同一件事。只有在對方明確表示不接受時（R025）才提醒。'),
+  ('R028','chronotype','prohibition','never',99,'{"prohibits":[]}'::jsonb,
+   '早睡型 vs 夜貓型本身不觸發黃燈','要再加上「雙方都要求每天固定相處」（R029）才值得提醒。'),
+  ('R033','social','prohibition','never',99,'{"prohibits":[]}'::jsonb,
+   '社交頻率差異本身不觸發黃燈','一個愛聚會、一個愛在家，這件事本身不構成問題。'),
+  ('R037','family_involvement','prohibition','never',99,'{"prohibits":[]}'::jsonb,
+   '回原生家庭的頻率差異本身不觸發黃燈','要加上一方明確期待伴侶參與（R038）才提醒。'),
+  ('R040','religion','prohibition','never',99,'{"prohibits":[]}'::jsonb,
+   '宗教不同不觸發黃燈','只有「要求對方改宗」才是衝突（R041），信什麼本身不是。'),
+  ('R043','ex_contact','prohibition','never',99,'{"prohibits":[]}'::jsonb,
+   '與前任仍有聯繫不觸發黃燈','有聯繫不等於有問題。')
+on conflict (code) do update set
+  topic = excluded.topic, category = excluded.category, outcome = excluded.outcome,
+  priority = excluded.priority, cond = excluded.cond, title = excluded.title, body = excluded.body;
+
+-- ============================================================
+-- 19) 安全規則 R056–R058：只進管理後台
+--
+--     這三條跟其他 55 條的形狀不一樣：它們是「關於某一個人」，不是
+--     「關於某一對配對」，所以不走 run_screening() 的成對模型，
+--     也不會出現在任何會員看得到的初診結果裡。
+--
+--     三個硬規定（規格第 1.3 節）：
+--       ・被標記的人不會知道自己被標記（跟封鎖不通知對方一致）
+--       ・🚨 的效果是「提高人工審查優先順序」，不是自動處分
+--       ・R058 的自由文字偵測只能輸出 ⚪，永遠不得判定使用者有那些行為
+-- ============================================================
+
+-- 19.1 檢舉要分類，R056 才做得出來 -----------------------------
+alter table public.reports add column if not exists category text not null default 'other';
+alter table public.reports drop constraint if exists reports_category_check;
+alter table public.reports add constraint reports_category_check check (category in
+  ('violence','harassment','fraud','fake','spam','other'));
+create index if not exists reports_target_open_idx on public.reports(target_id) where not done;
+
+insert into public.screening_rules (code, topic, category, outcome, priority, audience, cond, title, body) values
+  ('R056','safety','safety','safety',1,'admin','{}'::jsonb,
+   '收到暴力／恐嚇／騷擾類別的檢舉','轉人工安全審查。不進配對評分，也不會通知被檢舉的人。'),
+  ('R057','safety','safety','safety',2,'admin','{}'::jsonb,
+   '多位互不相關的會員檢舉了相似的重大行為',
+   '不讓系統自動判罪，只提高人工審查的優先順序。「互不相關」＝檢舉人之間沒有申請關係、也沒有互相封鎖。'),
+  ('R058','safety','safety','unknown',3,'admin','{}'::jsonb,
+   '自由文字裡出現可能涉及安全或界線的詞',
+   '「我無法接受冷暴力」跟「我生氣就會冷暴力」在關鍵字比對下完全一樣——規則引擎不該分辨，也不該假裝分辨得出來。這裡只負責把這筆排到人工前面。')
+on conflict (code) do update set
+  topic = excluded.topic, category = excluded.category, outcome = excluded.outcome,
+  priority = excluded.priority, audience = excluded.audience,
+  title = excluded.title, body = excluded.body;
+
+-- 19.2 R058 的關鍵詞：存成資料，管理員可以改 --------------------
+create table if not exists public.safety_keywords (
+  word    text primary key,
+  note    text not null default '',
+  enabled boolean not null default true
+);
+insert into public.safety_keywords (word, note) values
+  ('暴力','肢體或言語暴力'), ('動手','肢體暴力'), ('恐嚇','威脅'),
+  ('冷暴力','情緒隔離'), ('情緒勒索','關係控制'),
+  ('毒品','違法物質'), ('賭博','成癮行為'),
+  ('跟蹤','騷擾'), ('偷拍','隱私侵害')
+on conflict (word) do nothing;
+
+-- 19.3 安全佇列 ------------------------------------------------
+create or replace function public.admin_safety_queue()
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare me uuid := auth.uid(); out_rows jsonb;
+begin
+  if me is null or not public.match_is_admin(me) then
+    raise exception '只有管理員可以查看安全佇列';
+  end if;
+
+  select coalesce(jsonb_agg(x order by (x->>'priority')::int, x->>'name'), '[]'::jsonb) into out_rows
+  from (
+    select jsonb_build_object(
+      'user_id',  p.id,
+      'name',     coalesce(nullif(p.name,''), '（未命名）'),
+      'account_status', p.account_status,
+      'posting_locked', p.posting_locked,
+      -- 1 = 有 🚨，2 = 只有 ⚪。排序用，不是分數。
+      'priority', case when sev.n > 0 then 1 else 2 end,
+      'flags',    sev.flags
+    ) as x
+    from public.match_profiles p
+    join lateral (
+      select
+        count(*) filter (where f->>'outcome' = 'safety') as n,
+        jsonb_agg(f order by f->>'outcome') as flags
+      from (
+        -- R056：暴力／恐嚇／騷擾類別的未處理檢舉
+        select jsonb_build_object(
+                 'code','R056','outcome','safety',
+                 'title','收到暴力／恐嚇／騷擾類別的檢舉',
+                 'detail', jsonb_build_object('count', count(*))) as f
+          from public.reports r
+         where r.target_id = p.id and not r.done
+           and r.category in ('violence','harassment')
+         having count(*) > 0
+
+        union all
+
+        -- R057：多位「互不相關」的會員檢舉。互不相關＝檢舉人之間
+        -- 沒有申請關係、也沒有互相封鎖，避免一群朋友互相拉幫結派。
+        select jsonb_build_object(
+                 'code','R057','outcome','safety',
+                 'title','多位互不相關的會員提出檢舉',
+                 'detail', jsonb_build_object('reporters', count(distinct r.by_id))) as f
+          from public.reports r
+         where r.target_id = p.id and not r.done and r.by_id is not null
+        having count(distinct r.by_id) >= 2
+           and not exists (
+             select 1 from public.reports r1, public.reports r2
+              where r1.target_id = p.id and r2.target_id = p.id
+                and not r1.done and not r2.done and r1.by_id < r2.by_id
+                and (exists (select 1 from public.applications a
+                              where (a.from_user = r1.by_id and a.to_user = r2.by_id)
+                                 or (a.from_user = r2.by_id and a.to_user = r1.by_id))
+                  or exists (select 1 from public.match_user_blocks b
+                              where (b.blocker_id = r1.by_id and b.blocked_id = r2.by_id)
+                                 or (b.blocker_id = r2.by_id and b.blocked_id = r1.by_id)))
+           )
+
+        union all
+
+        -- R058：自由文字偵測。輸出一律是 ⚪，而且措辭永遠是「可能涉及」，
+        -- 不得寫成「這個人有這些行為」。
+        select jsonb_build_object(
+                 'code','R058','outcome','unknown',
+                 'title','自由文字中出現可能涉及安全／界線的詞',
+                 'detail', jsonb_build_object('words', jsonb_agg(distinct k.word))) as f
+          from public.safety_keywords k
+         where k.enabled
+           and (coalesce(p.bio,'') || ' ' || coalesce(p.wants,'') || ' ' || coalesce(p.taboo,''))
+               like '%' || k.word || '%'
+        having count(*) > 0
+      ) s(f)
+    ) sev on sev.flags is not null
+    where p.account_status <> 'deleted'
+  ) t;
+
+  return out_rows;
+end $$;
+
+revoke all on function public.admin_safety_queue() from public, anon;
+grant execute on function public.admin_safety_queue() to authenticated;
+
+alter table public.safety_keywords enable row level security;
+drop policy if exists "safety_keywords_admin_only" on public.safety_keywords;
+create policy "safety_keywords_admin_only" on public.safety_keywords for all
+  to authenticated using (public.match_is_admin(auth.uid()))
+  with check (public.match_is_admin(auth.uid()));
+grant select, insert, update, delete on table public.safety_keywords to authenticated;

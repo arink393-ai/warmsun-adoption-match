@@ -307,9 +307,11 @@
   .google-btn:hover{background:var(--paper-2);border-color:var(--rule)}
   .or{display:flex;align-items:center;gap:10px;color:var(--ink-soft);font-size:12px;margin:14px 0}
   .or::before,.or::after{content:'';flex:1;height:1px;background:var(--rule)}
-  #chatDialog,#safetyDialog,#reallyDialog{width:min(620px,calc(100vw - 24px));border:1px solid var(--rule);
-    border-radius:8px;padding:0;background:var(--paper);color:var(--ink)}
-  #safetyDialog::backdrop,#reallyDialog::backdrop{background:rgba(28,23,18,.48)}
+  /* .safetyDialog 是動態建立的檢舉視窗，沿用同一套外框 */
+  #chatDialog,#safetyDialog,#reallyDialog,.safetyDialog{width:min(620px,calc(100vw - 24px));
+    border:1px solid var(--rule);border-radius:8px;padding:0;background:var(--paper);color:var(--ink)}
+  #safetyDialog::backdrop,#reallyDialog::backdrop,.safetyDialog::backdrop{background:rgba(28,23,18,.48)}
+  .safetyDialog form{padding:20px 22px}
   #reallyDialog{width:min(460px,calc(100vw - 24px))}
   #chatDialog::backdrop{background:rgba(28,23,18,.48)}
   .chatHead{padding:14px 16px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;gap:12px;align-items:center}
@@ -695,6 +697,8 @@
     <div class="row" id="mHabits" style="flex-wrap:wrap;gap:6px 16px"></div>
     <input id="mHabitsOther" placeholder="其他習慣（選填）" style="margin-top:8px">
 
+    <div id="grpTier1"></div>
+
     <div class="hint" style="margin:20px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 第二階段後開放 —</div>
     <div class="row">
       <div><label>年收入區間</label>
@@ -717,6 +721,8 @@
       真的很難估就先留白（初診會顯示「尚未提供」而不是亂猜）。
     </p>
 
+    <div id="grpTier2"></div>
+
     <div class="hint" style="margin:20px 0 6px;font-weight:600;letter-spacing:.05em;color:var(--ink)">— 由你自己決定開放時機 —</div>
     <div class="row">
       <div><label>負債狀況</label>
@@ -730,7 +736,8 @@
       <div><label>關係期待</label>
         <select id="mRelGoal"><option value="" disabled selected>請選擇</option>
           <option>以結婚為前提的長期穩定關係</option><option>長期交往，順其自然發展</option>
-          <option>先以朋友身分互相了解</option><option>其他</option></select></div>
+          <option>先以朋友身分互相了解</option><option>目前不尋找長期關係</option>
+          <option>其他</option></select></div>
       <div><label>MBTI（選填）</label>
         <select id="mMbti"><option value="">請選擇</option>
           <option>INTJ</option><option>INTP</option><option>ENTJ</option><option>ENTP</option>
@@ -739,6 +746,8 @@
           <option>ISTP</option><option>ISFP</option><option>ESTP</option><option>ESFP</option>
         </select></div>
     </div>
+    <div id="grpTier0"></div>
+
     <label>興趣與休閒活動（可複選，選填）</label>
     <div class="row" id="mInterests" style="flex-wrap:wrap;gap:6px 16px"></div>
     <label>個性介紹（可複選，選填）</label>
@@ -762,6 +771,8 @@
     </div>
     <label>孩子要求</label>
     <select id="mReqKids"><option value="">不限</option><option>需沒有小孩</option><option>可接受已有小孩</option></select>
+    <div id="grpReq"></div>
+
     <label>生活習慣要求（可複選）</label>
     <div class="row" id="mReqHabits" style="flex-wrap:wrap;gap:6px 16px"></div>
 
@@ -771,6 +782,18 @@
       <input type="checkbox" id="mConsent" style="width:auto;margin:4px 0 0">
       <span style="font-size:13px;color:var(--ink)">我已閱讀並同意「<a href="#" data-goto="privacy">隱私權政策</a>」與「<a href="#" data-goto="terms">服務條款</a>」，了解照片與資料的蒐集目的、保存期限、刪除方式，以及帳號規範與退費規則。</span>
     </label>
+    </div>
+
+    <!-- ── 第 6 步：你的不可妥協（全部選填，可以整步跳過）─────── -->
+    <div class="wizPanel" data-step="6">
+    <div class="notice" style="margin-top:0">
+      <b>這一步可以整個跳過。</b>下面每一題都預設「沒特別意見」，不填不會影響送審。<br>
+      跳過的代價是：主治醫師初診只能給你 ⚪「資料不足」，看不出核心衝突——
+      因為<b>只有雙方都標成「不可妥協」，初診才會亮 🔴</b>。單方堅持只會是 🟡「值得問」，
+      那是你自己要判斷的事，系統不會替你判定不適合。
+    </div>
+    <p class="hint">這些設定<b>不會公開細項</b>，別人只看得到「這個人有幾項不可妥協條件」。</p>
+    <div id="grpDealbreakers"></div>
     </div>
 
     <!-- 上一步／下一步；儲存永遠看得到，任何一步都可以先存起來 -->
@@ -1561,6 +1584,7 @@ async function fillMe(){
   mDebtWhen.value = myProfile.debt_when||'stage2';
   mRelGoal.value = myProfile.relationship_goal||''; mKidsPlan.value = myProfile.kids_plan||''; mMbti.value = myProfile.mbti||'';
   /* 舊帳號的 work_hours 可能是「45 小時」這種文字，取第一個數字回填到數值欄 */
+  fillExtraFields(myProfile);
   mWorkHours.value = myProfile.weekly_work_hours != null ? myProfile.weekly_work_hours
     : (String(myProfile.work_hours||'').match(/\d+/) || [''])[0];
   setCheckGroup('mInterests', myProfile.interests);
@@ -1620,12 +1644,129 @@ function renderCompleteness(){
 }
 
 /* ── 登記精靈：一次只顯示一段，減少「四十幾個欄位一次攤開」的疲勞感 ── */
+/* ── 四個新題組與 Dealbreaker 嚴重度 ────────────────────────────
+   選項字串必須跟 supabase-schema.sql 第 18 節的規則條件「逐字相同」——
+   差一個字，那條規則就永遠不會命中，而且畫面上完全看不出來。
+   所以整份選項只在這裡定義一次，表單、載入、儲存都從這裡長出來。 */
+const EXTRA_FIELDS = [
+  /* ① 生活節奏（第 1 層） */
+  {col:'chronotype',          grp:'grpTier1', label:'作息型態',
+   opts:['早鳥型','中間型','夜貓型']},
+  {col:'contact_frequency',   grp:'grpTier1', label:'習慣的聯絡頻率',
+   opts:['每天多次','每天一次','幾天一次','不固定']},
+  {col:'daily_together_need', grp:'grpTier1', label:'希望的相處頻率',
+   opts:['每天要有固定相處時間','大部分日子','一週幾次','不需要固定']},
+  {col:'alone_time_need',     grp:'grpTier1', label:'需要多少獨處時間',
+   opts:['需要很多獨處時間','需要一些','普通','不太需要']},
+  {col:'conflict_style',      grp:'grpTier1', label:'意見不同時你會怎麼處理',
+   opts:['當下就想處理','會先說一聲再暫停，之後回來處理','需要冷靜一段時間','看情況'],
+   hint:'「會先說一聲再暫停」跟冷暴力是相反的兩件事，所以刻意分成兩個選項。'},
+  {col:'marriage_intent',     grp:'grpTier1', label:'結婚意願',
+   opts:['一定要結婚','想結婚，可討論','順其自然','不打算結婚'],
+   hint:'這跟上面的「婚姻狀態」是兩件事：一個是現在，一個是打算。'},
+
+  /* ② 家庭與居住 ＋ ③ 關係結構 ＋ ④ 財務（第 2 層） */
+  {col:'relocation',             grp:'grpTier2', label:'願不願意為了關係搬遷',
+   opts:['願意搬遷','可討論','不願意搬遷']},
+  {col:'long_distance_ok',       grp:'grpTier2', label:'對遠距的接受度',
+   opts:['可以接受遠距','短期可以','不接受遠距']},
+  {col:'cohabit_with_parents',   grp:'grpTier2', label:'婚後與長輩同住的想法',
+   opts:['婚後必須與父母同住','可以與長輩同住','希望不要','無法接受與長輩同住']},
+  {col:'family_visit_freq',      grp:'grpTier2', label:'多常回原生家庭',
+   opts:['每週','每月幾次','幾個月一次','很少']},
+  {col:'parents_in_decisions',   grp:'grpTier2', label:'父母在重大決定裡的角色',
+   opts:['父母會參與重大決定','會參考但自己決定','伴侶關係完全獨立']},
+  {col:'relationship_structure', grp:'grpTier2', label:'希望的關係結構',
+   opts:['單偶關係','開放式關係','可討論']},
+  {col:'finance_style',          grp:'grpTier2', label:'偏好的財務模式',
+   opts:['完全共同財務','部分共同','完全獨立']},
+
+  /* ④ 寵物（第 0 層：這是認養比喻的站，寵物本來就該公開） */
+  {col:'has_pets',       grp:'grpTier0', label:'目前有沒有養寵物',
+   opts:['沒有','有，可以一起照顧','有，不能放棄']},
+  {col:'pet_acceptance', grp:'grpTier0', label:'能不能跟寵物共同生活',
+   opts:['可以一起照顧','可以但不能同房','過敏或無法與寵物共同生活']},
+
+  /* 希望對方的條件（跟其他 req_* 一樣公開） */
+  {col:'req_living',             grp:'grpReq', label:'居住要求',
+   opts:['希望對方獨立居住'], any:'不限'},
+  {col:'req_family_involvement', grp:'grpReq', label:'家庭參與要求',
+   opts:['希望對方每週參與家庭活動','希望對方少參與'], any:'不限'},
+  {col:'req_partner_debt',       grp:'grpReq', label:'對伴侶負債的接受度',
+   opts:['希望對方沒有負債','不接受伴侶有負債'], any:'不限'}
+];
+
+/* 只列出「真的有一條 🔴 規則在等它」的題組——沒有規則會讀的題目不該出現在表單上。
+   key 必須跟規則裡的 dealbreakers.<key> 一致。 */
+const DEALBREAKER_TOPICS = [
+  {k:'relationship_goal',      label:'關係方向（長期 vs 不找長期）'},
+  {k:'marriage_intent',        label:'結不結婚'},
+  {k:'kids_plan',              label:'生不生小孩'},
+  {k:'pets',                   label:'寵物'},
+  {k:'cohabit_with_parents',   label:'婚後與長輩同住'},
+  {k:'long_distance',          label:'遠距'},
+  {k:'relocation',             label:'搬遷'},
+  {k:'finance',                label:'財務模式'},
+  {k:'partner_debt',           label:'伴侶的負債'},
+  {k:'contact_frequency',      label:'聯絡頻率'},
+  {k:'relationship_structure', label:'單偶／開放式'},
+  {k:'parents_in_decisions',   label:'父母參與重大決定'}
+];
+const DEALBREAKER_LEVELS = [
+  {v:'none',           t:'沒特別意見'},
+  {v:'discussable',    t:'在意，可討論'},
+  {v:'non_negotiable', t:'不可妥協'}
+];
+
+function fieldId(col){ return 'x_' + col; }
+function renderExtraFields(){
+  const groups = {};
+  EXTRA_FIELDS.forEach(f => { (groups[f.grp] = groups[f.grp] || []).push(f); });
+  Object.entries(groups).forEach(([g, list]) => {
+    const host = $(g); if(!host) return;
+    host.innerHTML = list.map(f => `
+      <label>${esc(f.label)}（選填）</label>
+      <select id="${fieldId(f.col)}">
+        <option value="">${esc(f.any || '請選擇')}</option>
+        ${f.opts.map(o => `<option>${esc(o)}</option>`).join('')}
+      </select>
+      ${f.hint ? `<p class="hint" style="margin:4px 0 0">${esc(f.hint)}</p>` : ''}`).join('');
+  });
+
+  const db = $('grpDealbreakers');
+  if(db) db.innerHTML = DEALBREAKER_TOPICS.map(t => `
+    <label>${esc(t.label)}</label>
+    <select id="db_${esc(t.k)}">
+      ${DEALBREAKER_LEVELS.map(l => `<option value="${l.v}">${esc(l.t)}</option>`).join('')}
+    </select>`).join('');
+}
+function fillExtraFields(p){
+  EXTRA_FIELDS.forEach(f => { const el = $(fieldId(f.col)); if(el) el.value = p[f.col] || ''; });
+  const d = (p && typeof p.dealbreakers === 'object' && p.dealbreakers) ? p.dealbreakers : {};
+  DEALBREAKER_TOPICS.forEach(t => {
+    const el = $('db_' + t.k); if(el) el.value = d[t.k] || 'none';
+  });
+}
+function collectExtraFields(){
+  const out = {};
+  EXTRA_FIELDS.forEach(f => { const el = $(fieldId(f.col)); if(el) out[f.col] = el.value; });
+  const d = {};
+  DEALBREAKER_TOPICS.forEach(t => {
+    const el = $('db_' + t.k);
+    /* 只存有意見的，'none' 不佔位置——預設就是沒意見 */
+    if(el && el.value && el.value !== 'none') d[t.k] = el.value;
+  });
+  out.dealbreakers = d;
+  return out;
+}
+
 const WIZ_STEPS = [
   {n:1, t:'你是誰'},
   {n:2, t:'照片與驗證'},
   {n:3, t:'自我介紹'},
   {n:4, t:'分階段資料'},
-  {n:5, t:'希望遇到誰'}
+  {n:5, t:'希望遇到誰'},
+  {n:6, t:'你的不可妥協（選填）'}
 ];
 let wizCur = 1;
 function gotoWizStep(n){
@@ -1645,6 +1786,9 @@ function gotoWizStep(n){
   const box = $('pane-me'); if(box && box.scrollIntoView) box.scrollIntoView({block:'start', behavior:'smooth'});
 }
 function initWizard(){
+  /* 四個新題組與不可妥協都是從 EXTRA_FIELDS／DEALBREAKER_TOPICS 長出來的，
+     選項只有那一份，表單跟規則條件才不會慢慢走鐘 */
+  renderExtraFields();
   $('wizSteps').innerHTML = WIZ_STEPS.map(s =>
     `<button type="button" class="wizStep" data-step="${s.n}" title="第 ${s.n} 步・${s.t}">
        <span class="bar2"></span><span class="wizN">${s.n}.</span> <span class="wizT">${s.t}</span>
@@ -1732,6 +1876,8 @@ $('mSave').onclick = async () => {
       req_kids: mReqKids.value, req_habits: getCheckGroup('mReqHabits'),
       consent: true
     };
+    /* 四個新題組 ＋ dealbreakers。全部選填，沒填就是空字串／空物件 */
+    Object.assign(patch, collectExtraFields());
     if(!myProfile.consent) patch.consent_at = new Date().toISOString();
     myProfile = await DB.saveMyProfile(patch);
     if(!newPhoto && previousAvatarKind !== patch.avatar_kind){
@@ -2248,11 +2394,22 @@ async function renderBoard(){
     showScreening(b.dataset.id, host);
   });
 }
+/* 檢舉分類是 R056（暴力／恐嚇／騷擾自動轉人工審查）唯一的依據，
+   所以不能再只用一個 prompt 收自由文字。 */
+const REPORT_CATEGORIES = [
+  {v:'violence',   t:'暴力、恐嚇或威脅'},
+  {v:'harassment', t:'騷擾、跟蹤或性騷擾'},
+  {v:'fraud',      t:'金錢詐騙或不當索求'},
+  {v:'fake',       t:'資料造假、盜用他人照片'},
+  {v:'spam',       t:'廣告或推銷'},
+  {v:'other',      t:'其他'}
+];
 async function reportProfile(id){
-  const why = prompt('請說明檢舉原因（例如：疑似盜圖、資料造假、騷擾訊息）');
-  if(!why) return;
+  const picked = await openReportDialog();
+  if(!picked) return;
+  const { why, category } = picked;
   try{
-    await DB.submitReport(id, why);
+    await DB.submitReport(id, why, category);
     alert('已收到檢舉，我們會在 3 個工作日內回覆處理進度。\n\n如果你不想再看到這個人，也可以在卡片上按「🚫 封鎖」。');
   }catch(e){ alert(e.message || '送出失敗'); }
 }
@@ -2552,6 +2709,38 @@ function bindOutbox(){
 
 /* ── 我收到的申請 ── */
 let inboxFromProfiles = {};
+/* 檢舉對話框：先選類別再寫原因。暴力／騷擾類別會直接進管理後台的安全佇列。 */
+function openReportDialog(){
+  return new Promise(resolve => {
+    const d = document.createElement('dialog');
+    d.className = 'safetyDialog';
+    d.innerHTML = `<form method="dialog">
+      <h3 style="margin:0 0 8px;font-size:16px">檢舉這個人</h3>
+      <p class="hint" style="margin:0 0 10px">選一個最接近的類別。
+        <b>暴力、恐嚇、騷擾</b>會直接排進人工安全審查，不會等排隊。</p>
+      <label>類別</label>
+      <select id="rptCat">${REPORT_CATEGORIES.map(c =>
+        `<option value="${c.v}">${esc(c.t)}</option>`).join('')}</select>
+      <label>發生了什麼事</label>
+      <textarea id="rptWhy" rows="3" placeholder="請具體描述，例如時間、對話內容"></textarea>
+      <p class="hint" style="margin:8px 0 0">我們不會告訴對方是誰檢舉的。
+        如果你不想再看到這個人，也可以直接封鎖。</p>
+      <div class="bar">
+        <button value="send" id="rptSend">送出檢舉</button>
+        <button class="ghost" value="cancel">取消</button>
+      </div>
+    </form>`;
+    document.body.appendChild(d);
+    d.addEventListener('close', () => {
+      const why = (d.querySelector('#rptWhy').value || '').trim();
+      const category = d.querySelector('#rptCat').value;
+      d.remove();
+      resolve(d.returnValue === 'send' && why ? { why, category } : null);
+    });
+    d.showModal();
+  });
+}
+
 /* ── 認養看板 ────────────────────────────────────────────────
    九個分格「刻意會重疊」——一筆送出三週沒人理的新申請，同時屬於
    📨 新申請 與 💤 逾期。分格是鏡頭，不是互斥的抽屜；志工要問的是
@@ -3407,6 +3596,55 @@ async function renderAudit(){
   });
 }
 
+/* ── 安全佇列（R056–R058）──────────────────────────────────────
+   三個硬規定，每一個都反映在畫面上：
+     ・這裡的東西完全不進會員看得到的初診結果
+     ・被標記的人不會知道自己被標記
+     ・R058 只能寫「可能涉及」，不得寫成「這個人有這些行為」 */
+const SAFETY_ICON = {safety:'🚨', unknown:'⚪'};
+function safetyFlagHTML(f){
+  const d = f.detail || {};
+  const extra = f.code === 'R056' ? `${d.count || 0} 筆未處理的檢舉`
+    : f.code === 'R057' ? `${d.reporters || 0} 位不同的檢舉人`
+    : f.code === 'R058' ? `出現的詞：${(d.words || []).join('、')}`
+    : '';
+  return `<div class="screenItem o-${f.outcome === 'safety' ? 'red' : 'unknown'}">
+    <b>${SAFETY_ICON[f.outcome] || ''} ${esc(f.title || f.code)}</b>
+    ${extra ? `<div class="hint">${esc(extra)}</div>` : ''}
+    ${f.code === 'R058' ? '<div class="hint">關鍵詞比對分不出「我無法接受冷暴力」'
+      + '跟「我生氣就會冷暴力」，所以這只是排序用的提示，不是判定。</div>' : ''}
+  </div>`;
+}
+async function renderSafetyQueue(){
+  const host = $('safetyQueue'); if(!host) return;
+  let rows = [];
+  try{ rows = await DB.adminSafetyQueue(); }
+  catch(e){ host.innerHTML = `<p class="err">讀不到安全佇列：${esc(e.message || '未知錯誤')}</p>`; return; }
+  if(!rows.length){ host.innerHTML = '<div class="empty">目前沒有需要人工看的項目。</div>'; return; }
+  host.innerHTML = rows.map(r => `<div class="tplCard">
+    <div class="tplCardHead">
+      <b>${esc(r.name)}${r.priority === 1 ? ' 🚨' : ''}</b>
+      <span class="hint">${esc(r.account_status)}${r.posting_locked ? '・已限制發文' : ''}</span>
+    </div>
+    ${(r.flags || []).map(safetyFlagHTML).join('')}
+    <div class="bar">
+      <button class="ghost sqLock" data-id="${esc(r.user_id)}">限制發文</button>
+      <button class="ghost sqBan" data-id="${esc(r.user_id)}">永久封鎖（停用登入）</button>
+    </div>
+  </div>`).join('');
+
+  host.querySelectorAll('.sqLock').forEach(b => b.onclick = () => safetyAction('posting_lock', b.dataset.id));
+  host.querySelectorAll('.sqBan').forEach(b => b.onclick = () => safetyAction('suspend', b.dataset.id));
+}
+async function safetyAction(action, id){
+  if(action === 'suspend' && !confirm('確定要永久封鎖這個帳號嗎？對方將無法再用同一帳號登入。')) return;
+  const why = prompt('請填寫處理原因（會記錄在管理紀錄裡）');
+  if(why === null){ alert('已取消，尚未執行。'); return; }
+  if(!why.trim()){ alert('沒有填寫原因，尚未執行。'); return; }
+  try{ await DB.adminUserAction(action, id, why.trim()); renderAdminHome(); renderBoard(); }
+  catch(e){ alert(e.message || '操作失敗'); }
+}
+
 /* ── 罐頭中心 ────────────────────────────────────────────────
    「黃燈 → 理由碼 → 罐頭」這條鏈上最容易壞掉的地方是理由碼打錯字：
    打錯的罐頭永遠不會被推薦，而且畫面上完全看不出來——不會有人發現。
@@ -3521,6 +3759,11 @@ async function renderAdminHome(){
         </div>
         <div class="bar"><button class="ghost" id="grantGo">送出</button><span class="msg" id="grantMsg"></span></div>
       </fieldset>
+      <fieldset><legend>🚨 安全佇列（R056–R058）</legend>
+        <p class="hint" style="margin-top:0">這裡的東西<b>完全不進任何會員看得到的初診結果</b>，
+          被標記的人也不會知道自己被標記。🚨 的意思是「提高人工審查順序」，不是系統判定有罪。</p>
+        <div id="safetyQueue"><p class="hint">讀取中⋯⋯</p></div>
+      </fieldset>
       <fieldset><legend>檢舉處理</legend><div id="reportList"><p class="hint">讀取中⋯⋯</p></div></fieldset>
       <fieldset><legend>會員管理</legend>
         <p class="hint">限制發文只會禁止送申請、聊天與 AI 功能；停用登入會封鎖帳號；永久刪除會連同驗證帳號與相關資料移除。</p>
@@ -3588,6 +3831,7 @@ async function renderAdminHome(){
         </div>` : ''}
     </div>`).join('') : '<div class="empty">目前沒有檢舉。</div>';
 
+  renderSafetyQueue();
   renderTplMaster();
 
   $('reportList').querySelectorAll('.mark').forEach(b => b.onclick = async () => {

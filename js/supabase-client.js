@@ -245,6 +245,14 @@
     return data || [];
   }
 
+  // 安全佇列（只有管理員叫得動）。R056–R058 完全不進會員看得到的初診結果，
+  // 被標記的人也不會知道自己被標記——效果是提高人工審查順序，不是自動處分。
+  async function adminSafetyQueue() {
+    const { data, error } = await sb.rpc('admin_safety_queue');
+    if (error) throw error;
+    return data || [];
+  }
+
   // ── 認養看板（收件方視角）────────────────────────────
   // 整個看板只打這一次：初診燈號存在 screening_results，而那張表刻意不開放
   // 給前端直接查，所以一封一封問的話，124 封申請就是 124 次往返。
@@ -472,10 +480,12 @@
   }
 
   // ── 檢舉 ──────────────────────────────────────────────
-  async function submitReport(targetId, why) {
+  // category 是 R056（暴力／恐嚇／騷擾轉人工）判斷的依據，所以檢舉一定要分類
+  async function submitReport(targetId, why, category) {
     const user = await getUser();
     if (!user) throw new Error('尚未登入');
-    const { error } = await sb.from('reports').insert({ target_id: targetId, by_id: user.id, why });
+    const { error } = await sb.from('reports')
+      .insert({ target_id: targetId, by_id: user.id, why, category: category || 'other' });
     if (error) {
       if (error.code === '23505') throw new Error('你已經檢舉過這個人了，正在等待管理員處理');
       throw error;
@@ -546,7 +556,7 @@
     hasClaudeProxy, askClaude, askClaudeRaw, spendCreditFor,
     avatarUrl, uploadAvatar, uploadVerifyPhoto, getVerifySignedUrl, deleteVerifyPhoto,
     uploadStagePhoto, getStagePhotoSignedUrl,
-    submitReport, adminListReports, adminMarkReportDone,
+    submitReport, adminListReports, adminMarkReportDone, adminSafetyQueue,
     getTemplateMaster, adminSaveTemplateMaster, listReasonCodes,
     ownerKvGet, ownerKvSet, ownerKvDelete
   };
