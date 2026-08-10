@@ -262,6 +262,18 @@
   .companionBar.on{background:var(--brand-tint)}
   .companionBar .bar{margin-top:6px}
   .companionBar b{font-family:var(--font-heading)}
+  /* 🌱 陪伴紀錄：時間線是一條線，不是一排卡片。
+     卡片會讓人想比較哪一張比較「豐富」，線只是照時間排。 */
+  .jrHead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:10px 0 6px}
+  .jrHead b{font-family:var(--font-heading);font-size:16px}
+  .jrItem{display:flex;gap:12px;padding:10px 0;border-bottom:1px dotted var(--rule)}
+  .jrItem:last-child{border-bottom:0}
+  .jrWhen{flex:0 0 84px;font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+  .jrBodyTxt{white-space:pre-wrap;font-size:13.5px;margin-top:3px;color:var(--ink)}
+  .jrTag{display:inline-block;font-size:11.5px;border:1px dotted var(--rule);border-radius:999px;
+        padding:0 8px;margin-left:6px;color:var(--ink-soft)}
+  .jrPre{white-space:pre-wrap;word-break:break-all;font-size:11.5px;max-height:260px;
+        overflow:auto;background:var(--paper);border:1px solid var(--rule);padding:8px;margin:6px 0 0}
   /* 檢舉時效：逾期用紅色的線，不是紅色的塊 */
   .slaBar{font-size:13px;border-bottom:1px dotted var(--rule);padding-bottom:8px;margin-bottom:10px}
   .slaTag{display:inline-block;font-size:12px;border:1px solid var(--rule);border-radius:999px;
@@ -978,6 +990,14 @@
     <legend>我送出過的</legend>
     <div id="fbMine"><p class="hint">讀取中⋯⋯</p></div>
   </fieldset>
+</div>
+
+<!-- 🌱 陪伴紀錄：只有已經建立過陪伴紀錄的人看得到這個子分頁。
+     還沒建立的人不會看到一個空的、寫著「你還沒有陪伴紀錄」的分頁——
+     那會把它變成一件沒完成的事。 -->
+<div class="pane" id="pane-journal">
+  <div id="jrTop"></div>
+  <div id="jrBody"><p class="hint">讀取中⋯⋯</p></div>
 </div>
 
 <div class="pane" id="pane-clinic">
@@ -1806,7 +1826,8 @@ const PANES = [
 ];
 const SUBS = [
   {k:'me', t:'我的資料'}, {k:'in', t:'我的收件匣'}, {k:'out', t:'我的申請'},
-  {k:'tpl', t:'我的回覆範本'}, {k:'clinic', t:'點數'}, {k:'fb', t:'意見回饋'}
+  {k:'tpl', t:'我的回覆範本'}, {k:'journal', t:'🌱 陪伴紀錄'},
+  {k:'clinic', t:'點數'}, {k:'fb', t:'意見回饋'}
 ];
 let curSub = 'me';
 function gotoTab(k){
@@ -1865,6 +1886,10 @@ function initCenter(){
   };
   $('pane-me').addEventListener('input', () => renderCompleteness());
   $('pane-me').addEventListener('change', () => renderCompleteness());
+  /* 🌱 陪伴紀錄的分頁先藏起來，等確認這個人真的有陪伴紀錄再顯示。
+     沒有的人看到一個空分頁，會以為那是一件還沒完成的事。 */
+  const jb = $('subbar').querySelector('.tabbtn[data-k="journal"]');
+  if(jb) jb.hidden = true;
   showSub(curSub);
 }
 let meFormLoaded = false;
@@ -1882,6 +1907,7 @@ function showSub(k){
   if(k === 'tpl') renderTpl();
   if(k === 'clinic') renderClinic();
   if(k === 'fb') renderFeedback();
+  if(k === 'journal') renderJournal();
 }
 /* 私人工具連結：只有站長本人（js/config.js 的 OWNER_EMAIL）看得到 */
 function showMyLinks(){
@@ -3933,8 +3959,559 @@ function renderCompanion(){
       這裡不記錄連續天數，也不會為你們的關係打分數。</p>`;
   $('companionBtn').onclick = async () => {
     $('companionBtn').disabled = true;
-    try{ companion = await DB.setCompanionAgree(activeChat, !companion.mine); renderCompanion(); }
+    try{
+      companion = await DB.setCompanionAgree(activeChat, !companion.mine);
+      renderCompanion();
+      refreshJournalTab();   // 剛成立的話，個人中心那個分頁要跟著出現
+    }
     catch(e){ flash('chatMsg', e.message || '操作失敗'); $('companionBtn').disabled = false; }
+  };
+}
+
+/* ══════════════════════════════════════════════════════════
+   🌱 陪伴紀錄（規格第 3～8 步）
+   資料層在 schema 第 28～31 節，權限全部在那邊擋，這裡只負責畫面。
+   ══════════════════════════════════════════════════════════ */
+const MEM_TYPES = [
+  {v:'moment',   icon:'🌤️', label:'一個瞬間'},
+  {v:'together', icon:'🚶', label:'一起做的事'},
+  {v:'words',    icon:'💬', label:'對方說過的話'},
+  {v:'feeling',  icon:'🫙', label:'我當時的心情'},
+  {v:'other',    icon:'📎', label:'其他'}
+];
+/* 里程碑刻意不編號、不排順序。這串只是提示詞，
+   真正常用的是「自己寫」——關係不是一條大家都該照走的階梯。 */
+const MILESTONES = [
+  {v:'first_meet',  label:'第一次見面'},
+  {v:'first_trip',  label:'第一次一起出遠門'},
+  {v:'met_family',  label:'見了對方的家人'},
+  {v:'moved_in',    label:'開始住在一起'},
+  {v:'anniversary', label:'紀念日'},
+  {v:'made_up',     label:'吵完之後和好了'},
+  {v:'custom',      label:'自己寫'}
+];
+const GOAL_CATS = [
+  {v:'travel', label:'一起去的地方'}, {v:'money', label:'錢'},
+  {v:'home',   label:'生活與住的地方'}, {v:'health', label:'身體'},
+  {v:'family', label:'家人'}, {v:'learn', label:'想學的事'},
+  {v:'other',  label:'其他'}
+];
+const GOAL_STATUS = [
+  {v:'idle',   label:'還沒開始'}, {v:'doing', label:'進行中'},
+  {v:'done',   label:'完成了'},
+  /* paused 一定要在。只給「未開始／進行中／完成」，
+     「這件事我們現在不想推」就只能留在未開始裡看起來像拖延。 */
+  {v:'paused', label:'先放著'}
+];
+const BM_ICON = {love:'💛', milestone:'🌱', promise:'📝', memory:'🎁'};
+
+let jrLinks = [], jrLink = null, jrPerm = null, jrTab = 'timeline';
+const jrLabel = (arr, v) => (arr.find(x => x.v === v) || {}).label || v;
+
+async function refreshJournalTab(){
+  const btn = $('subbar') && $('subbar').querySelector('.tabbtn[data-k="journal"]');
+  if(!btn) return;
+  try{ jrLinks = await DB.myCompanionLinks(); }catch(e){ jrLinks = []; }
+  // 沒有陪伴紀錄的人不會看到一個空分頁——那會把它變成一件沒完成的事
+  btn.hidden = jrLinks.length === 0;
+  if(btn.hidden && curSub === 'journal') showSub('me');
+}
+
+async function renderJournal(){
+  try{ jrLinks = await DB.myCompanionLinks(); }
+  catch(e){ $('jrBody').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; return; }
+  if(!jrLinks.length){ $('jrTop').innerHTML = ''; $('jrBody').innerHTML =
+    '<p class="hint">還沒有陪伴紀錄。交換聯絡方式之後，可以在對話室裡建立。</p>'; return; }
+  if(!jrLink || !jrLinks.some(l => l.link_id === jrLink)) jrLink = jrLinks[0].link_id;
+  const L = jrLinks.find(l => l.link_id === jrLink);
+
+  $('jrTop').innerHTML = `
+    ${jrLinks.length > 1 ? `<label for="jrPick">哪一段</label><select id="jrPick">${
+      jrLinks.map(l => `<option value="${l.link_id}"${l.link_id === jrLink ? ' selected' : ''}>${
+        esc(l.other_name)}${l.status === 'ended' ? '（已結束）' : ''}</option>`).join('')}</select>` : ''}
+    <div class="jrHead">
+      <b>🌱 與 ${esc(L.other_name)} 的陪伴紀錄</b>
+      <span class="hint">${
+        L.status === 'active'
+          ? (L.days != null ? `第 ${Number(L.days) + 1} 天` : '進行中')
+          : (L.status === 'paused' ? '目前暫停中，可以讀，共同的內容先不能新增'
+                                   : '已經結束，只能閱讀')}</span>
+    </div>
+    <div class="tabbar" id="jrTabs">${
+      [['timeline','🕰️ 時間線'],['goals','🎯 共同目標'],['checkin','🩺 關係健康檢查'],
+       ['clinic','🩺 診療室'],['capsule','✉️ 回憶膠囊'],['end','⚙️ 這段紀錄']]
+      .map(([k,t]) => `<button class="tabbtn${k === jrTab ? ' on' : ''}" data-j="${k}">${t}</button>`).join('')}</div>`;
+  if($('jrPick')) $('jrPick').onchange = e => { jrLink = e.target.value; renderJournal(); };
+  $('jrTabs').onclick = e => {
+    const b = e.target.closest('.tabbtn'); if(!b) return;
+    jrTab = b.dataset.j; renderJournal();
+  };
+
+  const ro = L.status !== 'active';   // 共同的內容能不能寫
+  $('jrBody').innerHTML = '<p class="hint">讀取中⋯⋯</p>';
+  try{
+    if(jrTab === 'timeline') await jrTimeline(L, ro);
+    if(jrTab === 'goals')    await jrGoals(L, ro);
+    if(jrTab === 'checkin')  await jrCheckin(L);
+    if(jrTab === 'clinic')   await jrClinic(L);
+    if(jrTab === 'capsule')  await jrCapsule(L);
+    if(jrTab === 'end')      await jrEnd(L);
+  }catch(e){ $('jrBody').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; }
+}
+
+/* ── 🕰️ 時間線 ─────────────────────────────────────────── */
+async function jrTimeline(L, ro){
+  const rows = await DB.companionTimeline(L.link_id);
+  const item = r => {
+    const icon = r.kind === 'bookmark' ? (BM_ICON[r.type] || '🔖')
+               : r.kind === 'milestone' ? '🌱'
+               : ((MEM_TYPES.find(t => t.v === r.type) || {}).icon || '🌤️');
+    const head = r.kind === 'milestone' ? jrLabel(MILESTONES, r.type)
+               : r.kind === 'bookmark' ? `「${r.title}」`
+               : r.title;
+    return `<div class="jrItem" data-kind="${r.kind}" data-id="${r.id}">
+      <div class="jrWhen">${esc(String(r.at || '').slice(0,10))}</div>
+      <div><b>${icon} ${esc(head)}</b>
+        ${r.visibility === 'private' ? '<span class="jrTag">只有我看得到</span>' : ''}
+        ${r.mine ? '' : '<span class="jrTag">對方寫的</span>'}
+        ${r.body ? `<div class="jrBodyTxt">${esc(r.body)}</div>` : ''}
+        ${r.mine && r.kind !== 'bookmark'
+          ? `<div class="bar"><button class="ghost jrDel" data-kind="${r.kind}" data-id="${r.id}">刪除</button></div>`
+          : ''}</div>
+    </div>`;
+  };
+  $('jrBody').innerHTML = `
+    ${ro ? `<p class="notice">${L.status === 'paused'
+        ? '目前暫停中：可以讀，也可以寫只有自己看得到的，但共同的內容先不能新增。'
+        : '這本紀錄已經結束，只能閱讀。'}</p>` : ''}
+    ${L.status !== 'ended' ? `<fieldset><legend>記一件事</legend>
+      <label for="jrmTitle">一句話</label>
+      <input id="jrmTitle" maxlength="80" placeholder="例：第一次一起吃那間拉麵">
+      <label for="jrmBody">想多寫一點（選填）</label>
+      <textarea id="jrmBody" rows="3" maxlength="4000"></textarea>
+      <label for="jrmType">這是</label>
+      <select id="jrmType">${MEM_TYPES.map(t =>
+        `<option value="${t.v}">${t.icon} ${t.label}</option>`).join('')}</select>
+      <label for="jrmVis">誰看得到</label>
+      <select id="jrmVis">
+        <option value="both"${ro ? ' disabled' : ''}>兩個人都看得到</option>
+        <option value="private"${ro ? ' selected' : ''}>只有我看得到</option>
+      </select>
+      <label for="jrmAt">日期</label><input id="jrmAt" type="date">
+      <div class="bar"><button id="jrmSave">記下來</button>
+        ${ro ? '' : `<button class="ghost" id="jrsAdd">改成記一個里程碑</button>`}
+        <span class="msg" id="jrmMsg"></span></div>
+    </fieldset>` : ''}
+    <fieldset><legend>時間線</legend>
+      ${rows.length ? rows.map(item).join('')
+        : '<p class="hint">還沒有東西。在對話裡按 🔖 收藏的句子也會出現在這裡。</p>'}
+    </fieldset>`;
+  const at = $('jrmAt'); if(at) at.value = new Date().toISOString().slice(0,10);
+  if($('jrmSave')) $('jrmSave').onclick = async () => {
+    $('jrmSave').disabled = true;
+    try{
+      await DB.addMemory(L.link_id, $('jrmTitle').value.trim(), $('jrmBody').value.trim(),
+                         $('jrmType').value, $('jrmAt').value || null, $('jrmVis').value);
+      renderJournal();
+    }catch(e){ flash('jrmMsg', e.message || '存不起來'); $('jrmSave').disabled = false; }
+  };
+  if($('jrsAdd')) $('jrsAdd').onclick = () => jrMilestoneDialog(L);
+  $('jrBody').querySelectorAll('.jrDel').forEach(b => b.onclick = async () => {
+    if(!confirm('刪掉之後就找不回來了，確定嗎？')) return;
+    try{
+      if(b.dataset.kind === 'memory') await DB.deleteMemory(b.dataset.id);
+      else await DB.deleteMilestone(b.dataset.id);
+      renderJournal();
+    }catch(e){ alert(e.message || '刪不掉'); }
+  });
+}
+function jrMilestoneDialog(L){
+  const t = prompt('記一個里程碑。要哪一種？\n' +
+    MILESTONES.map((m,i) => `${i+1}. ${m.label}`).join('\n'), String(MILESTONES.length));
+  const idx = parseInt(t, 10) - 1;
+  if(isNaN(idx) || !MILESTONES[idx]) return;
+  const note = prompt('想寫一句話嗎？（選填）') || '';
+  DB.addMilestone(L.link_id, MILESTONES[idx].v, note, null)
+    .then(renderJournal).catch(e => alert(e.message || '存不起來'));
+}
+
+/* ── 🎯 共同目標 ────────────────────────────────────────── */
+async function jrGoals(L, ro){
+  const gs = await DB.companionGoals(L.link_id);
+  /* 這裡刻意沒有「完成 3/8」也沒有進度條。
+     一份共同目標清單長出完成率，就變成一份考核表了。 */
+  $('jrBody').innerHTML = `
+    ${ro ? '' : `<fieldset><legend>加一件想一起做的事</legend>
+      <label for="jrgTitle">是什麼</label>
+      <input id="jrgTitle" maxlength="80" placeholder="例：存一筆一起去日本的錢">
+      <label for="jrgCat">分類</label>
+      <select id="jrgCat">${GOAL_CATS.map(c =>
+        `<option value="${c.v}">${c.label}</option>`).join('')}</select>
+      <div class="bar"><button id="jrgAdd">加進去</button><span class="msg" id="jrgMsg"></span></div>
+    </fieldset>`}
+    <fieldset><legend>共同目標</legend>
+      <p class="hint" style="margin-top:0">「先放著」不是失敗，只是現在不想推。
+        狀態兩個人都可以改；刪除只有提出的人可以。</p>
+      ${gs.length ? gs.map(g => `<div class="jrItem">
+        <div class="jrWhen">${esc(jrLabel(GOAL_CATS, g.category))}</div>
+        <div><b>${esc(g.title)}</b>
+          ${g.mine ? '' : '<span class="jrTag">對方提的</span>'}
+          <div class="bar">
+            <select class="jrgSt" data-id="${g.id}"${ro ? ' disabled' : ''}>${
+              GOAL_STATUS.map(s => `<option value="${s.v}"${
+                s.v === g.status ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
+            ${g.mine && !ro ? `<button class="ghost jrgDel" data-id="${g.id}">刪除</button>` : ''}
+          </div></div></div>`).join('')
+        : '<p class="hint">還沒有共同目標。</p>'}
+    </fieldset>`;
+  if($('jrgAdd')) $('jrgAdd').onclick = async () => {
+    try{ await DB.addGoal(L.link_id, $('jrgTitle').value.trim(), $('jrgCat').value); renderJournal(); }
+    catch(e){ flash('jrgMsg', e.message || '存不起來'); }
+  };
+  $('jrBody').querySelectorAll('.jrgSt').forEach(s => s.onchange = async () => {
+    try{ await DB.setGoalStatus(s.dataset.id, s.value); renderJournal(); }
+    catch(e){ alert(e.message || '改不了'); }
+  });
+  $('jrBody').querySelectorAll('.jrgDel').forEach(b => b.onclick = async () => {
+    if(!confirm('刪掉這個目標嗎？')) return;
+    try{ await DB.deleteGoal(b.dataset.id); renderJournal(); }
+    catch(e){ alert(e.message || '刪不掉'); }
+  });
+}
+
+/* ── 🩺 關係健康檢查 ────────────────────────────────────── */
+async function jrCheckin(L){
+  const [qs, sum] = await Promise.all([DB.checkinQuestions(), DB.checkinSummary(L.link_id)]);
+  const canSubmit = !sum.can_submit_after || new Date(sum.can_submit_after) <= new Date();
+  $('jrBody').innerHTML = `
+    <fieldset><legend>本次回診摘要</legend>
+      ${sum.has_mine ? `
+        <p class="hint" style="margin-top:0">你上次填的時間：${
+          esc(new Date(sum.mine_at).toLocaleDateString('zh-TW'))}</p>
+        ${sum.both_shared && (sum.shared_observations || []).length
+          ? `<p><b>你們兩個都提到的：</b></p><ul>${
+              sum.shared_observations.map(o =>
+                `<li>${esc(o.label)}：${esc(o.value)}</li>`).join('')}</ul>
+             <p class="hint">這裡只列兩個人答案一樣的部分。
+               不一樣的地方不會被列出來——差異不是一件要被指出來處理的事。</p>`
+          : `<p class="hint">${sum.mine_shared
+              ? '你選擇了分享。等對方也選擇分享時，這裡才會出現你們兩個都提到的事。'
+              : '你這次沒有分享。共同觀察要兩個人都選擇分享才會出現。'}</p>`}
+        ${sum.next_question ? `<div class="notice"><b>一個可以談的方向</b>
+          <div>${esc(sum.next_question)}</div></div>` : ''}
+        <div class="bar">
+          <button class="ghost" id="jrcShare">${sum.mine_shared ? '取消分享這一次' : '分享這一次給對方'}</button>
+        </div>
+        <p class="hint">分享隨時可以反悔。收回之後，共同觀察就會跟著消失。</p>
+      ` : '<p class="hint" style="margin-top:0">還沒填過。這是完全選填的，不填也不會怎麼樣。</p>'}
+    </fieldset>
+    <fieldset><legend>填一次</legend>
+      <p class="hint" style="margin-top:0">每 30 天最多一次，全部選填。
+        <b>沒有分數</b>——這裡不會算出一個「關係健康度」，那種數字沒有校準基礎，只會被當成結論。</p>
+      ${canSubmit ? `
+        ${qs.map(q => q.free
+          ? `<label for="jrq_${q.key}">${esc(q.label)}</label>
+             <textarea id="jrq_${q.key}" data-k="${q.key}" data-free="1" rows="2" maxlength="500"></textarea>`
+          : `<label>${esc(q.label)}</label>
+             <div class="s2Multi" data-k="${q.key}" data-multi="${q.multi ? 1 : 0}">${
+               q.options.map(o => `<label class="s2Chk">
+                 <input type="${q.multi ? 'checkbox' : 'radio'}" name="jrq_${q.key}" value="${esc(o)}">
+                 <span>${esc(o)}</span></label>`).join('')}</div>`).join('')}
+        <label class="s2Chk" style="margin-top:10px">
+          <input type="checkbox" id="jrcShareNew">
+          <span>把這一次分享給對方</span></label>
+        <p class="hint" style="margin:4px 0 0">預設不分享。系統不會告訴對方你填了什麼，
+          也不會告訴他你填了但沒分享。</p>
+        <div class="bar"><button id="jrcSave">送出</button><span class="msg" id="jrcMsg"></span></div>
+      ` : `<p class="hint">下一次可以填的時間：${
+            esc(new Date(sum.can_submit_after).toLocaleDateString('zh-TW'))}。</p>`}
+    </fieldset>`;
+  if($('jrcShare')) $('jrcShare').onclick = async () => {
+    try{ await DB.setCheckinShare(sum.mine_id, !sum.mine_shared); renderJournal(); }
+    catch(e){ alert(e.message || '改不了'); }
+  };
+  if($('jrcSave')) $('jrcSave').onclick = async () => {
+    const ans = {};
+    $('jrBody').querySelectorAll('[data-k]').forEach(el => {
+      const k = el.dataset.k;
+      if(el.dataset.free){ if(el.value.trim()) ans[k] = el.value.trim(); return; }
+      const picked = [...el.querySelectorAll('input:checked')].map(i => i.value);
+      if(!picked.length) return;
+      ans[k] = el.dataset.multi === '1' ? picked : picked[0];
+    });
+    if(!Object.keys(ans).length){ flash('jrcMsg','至少回答一題吧'); return; }
+    try{ await DB.submitCheckin(L.link_id, ans, $('jrcShareNew').checked); renderJournal(); }
+    catch(e){ flash('jrcMsg', e.message || '送不出去'); }
+  };
+}
+
+/* ── 🩺 診療室 ──────────────────────────────────────────
+   規格第 3 節開頭寫著「這是最容易做錯的地方」。
+   所有授權都在伺服器端擋（schema 第 30 節），這裡多做一件事：
+   **把「這一次會給主治醫師看什麼」原封不動列出來給人看過再送。** */
+const CLINIC_PERMS = [
+  {k:'allow_profile',      label:'我的病歷卡（自介、興趣、個性）'},
+  {k:'allow_dealbreakers', label:'我的不可妥協項目'},
+  {k:'allow_stage2',       label:'第二階段的回答'},
+  {k:'allow_checkins',     label:'我過去的關係健康檢查'},
+  {k:'allow_sessions',     label:'我過去的診療紀錄'},
+  {k:'allow_goals',        label:'我們的共同目標'}
+];
+/* 四段固定：事實／感受／需求／下一個問題。
+   主治醫師不判誰有理——不寫「A 比較合理」「B 應該道歉」。 */
+function clinicPrompt(ctx, topic, input, mode){
+  return `你是「暖陽動物之家」的主治醫師，正在做關係協調。
+
+【你不可以做的事】
+- 不判斷誰對誰錯，不寫「你比較合理」「他應該道歉」這類話。
+- 不給任何百分比、分數、契合度、關係健康度。
+- 不替沒有在場的那一方建立人格診斷或貼標籤。
+- 不猜測資料裡沒有的事。看不到的就說看不到。
+- 不使用「各退一步」「試著理解彼此的需求」這種要求雙方折衷的說法作為結論。
+
+【輸出格式】固定四段，每段一到三句，用繁體中文：
+事實：發生了什麼（只寫使用者說的，不加推論）
+感受：各自在意什麼
+需求：可能需要什麼
+下一個問題：現在最值得談的是什麼（寫成一個問句）
+
+【模式】${mode === 'joint' ? '共同關係分析（雙方都已同意）' : '只幫這一位使用者整理感受，輸出不對另一方下判斷'}
+【使用者說的主題】${topic || '（未填）'}
+【使用者寫的內容】
+${input}
+
+【使用者這一次授權可以看的資料】
+${JSON.stringify(ctx)}`;
+}
+const CLINIC_SAFETY_TEXT =
+  '這件事情涉及人身安全，不適合當成一般伴侶衝突協調。\n' +
+  '暖陽會優先協助你整理安全選項，而不是要求你和對方折衷。';
+
+async function jrClinic(L){
+  jrPerm = await DB.clinicPermissions(L.link_id);
+  const past = await DB.listClinicSessions(L.link_id);
+  const joint = jrPerm.allow_joint && jrPerm.other_allow_joint;
+  $('jrBody').innerHTML = `
+    <fieldset><legend>這一次要讓主治醫師看什麼</legend>
+      <p class="hint" style="margin-top:0"><b>預設全部不給看。</b>
+        每一次要讀什麼，都是你當下勾的；取消勾選之後下一次就讀不到了。</p>
+      <div class="s2Multi" id="jrpBox">${CLINIC_PERMS.map(p => `<label class="s2Chk">
+        <input type="checkbox" class="jrp" data-k="${p.k}"${jrPerm[p.k] ? ' checked' : ''}>
+        <span>${esc(p.label)}</span></label>`).join('')}</div>
+    </fieldset>
+    <fieldset><legend>共同關係分析</legend>
+      <p class="hint" style="margin-top:0">只幫你整理自己的感受，不需要對方同意。
+        但如果要讓輸出談到你們兩個人，<b>兩個人都要各自同意</b>——
+        單方面把一段關係交給 AI 分析，等於替另一個人決定他要不要被分析。</p>
+      <label class="s2Chk">
+        <input type="checkbox" id="jrpJoint"${jrPerm.allow_joint ? ' checked' : ''}>
+        <span>我同意做共同關係分析</span></label>
+      <p class="hint" style="margin:4px 0 0">${jrPerm.other_allow_joint
+        ? '對方也已經同意了。' : '對方還沒有同意，所以現在只能做「只幫我整理」。'}</p>
+      ${joint ? `<label for="jrpDays">這一次讓主治醫師讀最近幾天的對話</label>
+        <select id="jrpDays">
+          <option value="0">不讀對話</option><option value="7">最近 7 天</option>
+          <option value="30">最近 30 天</option><option value="90">最近 90 天</option>
+        </select>
+        <p class="hint" style="margin:4px 0 0"><b>這個授權只算這一次。</b>
+          下一次進來會回到「不讀對話」，不會記住。</p>` : ''}
+    </fieldset>
+    <fieldset><legend>想談的事</legend>
+      <label for="jrxTopic">一句話的主題</label>
+      <input id="jrxTopic" maxlength="120" placeholder="例：關於家事分工">
+      <label for="jrxInput">發生了什麼、你怎麼想</label>
+      <textarea id="jrxInput" rows="6" maxlength="8000"
+        placeholder="寫下你想整理的事。主治醫師不會判誰有理。"></textarea>
+      <div class="bar">
+        <button class="ghost" id="jrxPreview">先看這一次會送出什麼</button>
+        <button id="jrxGo">開始</button><span class="msg" id="jrxMsg"></span></div>
+      <div id="jrxCtx"></div>
+      <div id="jrxOut"></div>
+    </fieldset>
+    <fieldset><legend>過去的診療紀錄</legend>
+      <p class="hint" style="margin-top:0">只有你自己看得到。就算兩個人都同意共同分析，
+        對方也翻不到你的診療紀錄。</p>
+      ${past.length ? past.map(s => `<div class="jrItem">
+        <div class="jrWhen">${esc(new Date(s.at).toLocaleDateString('zh-TW'))}</div>
+        <div><b>${esc(s.topic || '（未命名）')}</b>
+          ${s.safety_mode ? '<span class="jrTag">安全模式</span>' : ''}
+          <div class="jrBodyTxt">${esc(clinicSummaryText(s.summary))}</div>
+          <div class="bar"><button class="ghost jrxDel" data-id="${s.id}">刪除</button></div>
+        </div></div>`).join('') : '<p class="hint">還沒有紀錄。</p>'}
+    </fieldset>`;
+  $('jrBody').querySelectorAll('.jrp').forEach(c => c.onchange = async () => {
+    try{ jrPerm = await DB.setClinicPermission(L.link_id, c.dataset.k, c.checked); }
+    catch(e){ alert(e.message || '改不了'); c.checked = !c.checked; }
+  });
+  $('jrpJoint').onchange = async () => {
+    try{ await DB.setClinicPermission(L.link_id, 'allow_joint', $('jrpJoint').checked); renderJournal(); }
+    catch(e){ alert(e.message || '改不了'); }
+  };
+  $('jrxPreview').onclick = async () => {
+    try{
+      const ctx = await DB.buildClinicContext(L.link_id, joint ? 'joint' : 'solo', jrChatDays());
+      $('jrxCtx').innerHTML = `<div class="notice"><b>這一次會送出的資料</b>
+        <pre class="jrPre">${esc(JSON.stringify(ctx, null, 2))}</pre></div>`;
+    }catch(e){ flash('jrxMsg', e.message || '組不出來'); }
+  };
+  $('jrxGo').onclick = () => jrClinicRun(L, joint);
+  $('jrBody').querySelectorAll('.jrxDel').forEach(b => b.onclick = async () => {
+    if(!confirm('刪掉這份診療紀錄嗎？')) return;
+    try{ await DB.deleteClinicSession(b.dataset.id); renderJournal(); }
+    catch(e){ alert(e.message || '刪不掉'); }
+  });
+}
+function jrChatDays(){ return $('jrpDays') ? parseInt($('jrpDays').value, 10) || 0 : 0; }
+function clinicSummaryText(s){
+  if(!s) return '';
+  if(typeof s === 'string') return s;
+  if(s.safety) return s.safety;
+  return ['事實','感受','需求','下一個問題'].filter(k => s[k]).map(k => `${k}：${s[k]}`).join('\n');
+}
+function parseClinicOutput(text){
+  const out = {};
+  ['事實','感受','需求','下一個問題'].forEach(k => {
+    const m = text.match(new RegExp(k + '\\s*[：:]\\s*([\\s\\S]*?)(?=\\n\\s*(?:事實|感受|需求|下一個問題)\\s*[：:]|$)'));
+    if(m) out[k] = m[1].trim();
+  });
+  return Object.keys(out).length ? out : {事實: text.trim()};
+}
+async function jrClinicRun(L, joint){
+  const input = $('jrxInput').value.trim();
+  if(!input){ flash('jrxMsg','先寫下想談的事'); return; }
+  $('jrxGo').disabled = true; $('jrxOut').innerHTML = '<p class="hint">主治醫師閱讀中⋯⋯</p>';
+  try{
+    /* 安全判定走伺服器（schema 第 30.2 節），跟對話室同一組偵測。
+       放前端判的話，改一下 devtools 就沒有了。 */
+    const safe = await DB.clinicSafetyMode(input);
+    if(safe.safety){
+      /* 這裡**不呼叫 AI**。在有人身安全疑慮的情境裡，
+         把它交給一個關係協調的 prompt，最好的結果也只是勸和，
+         而「各退一步」會把責任推回受害的一方。 */
+      $('jrxOut').innerHTML = `<div class="safeNote danger">
+        <b>🔴 暖陽安全提醒</b>
+        <div style="white-space:pre-wrap">${esc(CLINIC_SAFETY_TEXT)}</div>
+        <div class="bar">
+          <button class="ghost" id="jrxSafety">去安全中心</button>
+          <button class="ghost" id="jrxReport">我要檢舉</button>
+        </div></div>`;
+      $('jrxSafety').onclick = () => gotoTab('safety');
+      $('jrxReport').onclick = () => { if(L.other_id) reportProfile(L.other_id); };
+      await DB.saveClinicSession(L.link_id, $('jrxTopic').value.trim(), input,
+        {safety: CLINIC_SAFETY_TEXT}, joint ? 'joint' : 'solo', true);
+      $('jrxGo').disabled = false;
+      return;
+    }
+    const ctx = await DB.buildClinicContext(L.link_id, joint ? 'joint' : 'solo', jrChatDays());
+    const text = await DB.askClaude(clinicPrompt(ctx, $('jrxTopic').value.trim(), input,
+                                                 joint ? 'joint' : 'solo'));
+    const parsed = parseClinicOutput(text);
+    $('jrxOut').innerHTML = `<div class="vetSec"><b>主治醫師的整理</b>
+      ${['事實','感受','需求','下一個問題'].filter(k => parsed[k]).map(k =>
+        `<div class="screenItem"><b>${k}</b><div style="white-space:pre-wrap">${esc(parsed[k])}</div></div>`).join('')}
+      <p class="hint">這是一份整理，不是判斷。暖陽不會說誰比較有道理。</p></div>`;
+    await DB.saveClinicSession(L.link_id, $('jrxTopic').value.trim(), input, parsed,
+                               joint ? 'joint' : 'solo', false);
+  }catch(e){ $('jrxOut').innerHTML = `<p class="err">${esc(e.message || '失敗了')}</p>`; }
+  $('jrxGo').disabled = false;
+}
+
+/* ── ✉️ 回憶膠囊 ────────────────────────────────────────── */
+async function jrCapsule(L){
+  const cs = await DB.listCapsules(L.link_id);
+  $('jrBody').innerHTML = `
+    ${L.status !== 'ended' ? `<fieldset><legend>封一封信給以後的自己</legend>
+      <p class="hint" style="margin-top:0">只有你自己讀得到，對方連「有這封信」都看不到。</p>
+      <label for="jrkTitle">標題（選填）</label><input id="jrkTitle" maxlength="80">
+      <label for="jrkAt">什麼時候可以打開</label><input id="jrkAt" type="date">
+      <label for="jrkBody">想說的話</label><textarea id="jrkBody" rows="5" maxlength="8000"></textarea>
+      <div class="bar"><button id="jrkSave">封起來</button><span class="msg" id="jrkMsg"></span></div>
+    </fieldset>` : ''}
+    <fieldset><legend>已經封起來的</legend>
+      ${cs.length ? cs.map(c => `<div class="jrItem">
+        <div class="jrWhen">${esc(String(c.open_at).slice(0,10))}</div>
+        <div><b>${esc(c.title || '（沒有標題）')}</b>
+          ${c.opened ? '<span class="jrTag">開過了</span>' : ''}
+          <div class="bar">${c.due
+            ? `<button class="ghost jrkOpen" data-id="${c.id}" data-auto="${c.auto_open ? 1 : 0}">打開</button>`
+            : '<span class="hint">還沒到時間</span>'}</div></div></div>`).join('')
+        : '<p class="hint">還沒有。</p>'}
+      ${cs.some(c => c.due && !c.auto_open && !c.opened)
+        /* 半年後自動跳出來的那封信，如果那時候兩個人已經分開了，它會變成傷害。 */
+        ? `<p class="hint">有信到期了，但這段關係目前不是進行中，所以暖陽不會自動打開它。
+             要不要看，由你自己決定。</p>` : ''}
+    </fieldset>
+    <div id="jrkOut"></div>`;
+  const at = $('jrkAt');
+  if(at){ const d = new Date(); d.setFullYear(d.getFullYear() + 1);
+          at.value = d.toISOString().slice(0,10); }
+  if($('jrkSave')) $('jrkSave').onclick = async () => {
+    try{ await DB.writeCapsule(L.link_id, $('jrkAt').value, $('jrkBody').value.trim(),
+                               $('jrkTitle').value.trim()); renderJournal(); }
+    catch(e){ flash('jrkMsg', e.message || '封不起來'); }
+  };
+  $('jrBody').querySelectorAll('.jrkOpen').forEach(b => b.onclick = async () => {
+    // 非自動開的情況（關係不是進行中）點之前先問一次
+    if(b.dataset.auto !== '1' &&
+       !confirm('這是你以前寫給自己的信。現在要打開嗎？')) return;
+    try{
+      const c = await DB.openCapsule(b.dataset.id);
+      $('jrkOut').innerHTML = `<div class="notice"><b>✉️ ${esc(c.title || '（沒有標題）')}</b>
+        <div class="hint">${esc(String(c.open_at).slice(0,10))}</div>
+        <div style="white-space:pre-wrap;margin-top:6px">${esc(c.body)}</div></div>`;
+      $('jrkOut').scrollIntoView({behavior:'smooth', block:'nearest'});
+    }catch(e){ alert(e.message || '打不開'); }
+  });
+}
+
+/* ── ⚙️ 這段紀錄：結束與處置 ─────────────────────────────── */
+const DISPOSITIONS = [
+  {v:'delete',    label:'🗑️ 全部刪除', note:'我在這段關係裡寫的東西全部刪掉。'},
+  {v:'archive',   label:'📦 封存唯讀', note:'保留，但誰都不能再新增或修改。'},
+  {v:'mine_only', label:'✍️ 只留我自己寫的', note:'我寫的留著，對方寫的從我這邊移除。'}
+];
+async function jrEnd(L){
+  const st = L.status === 'ended' ? await DB.dispositionState(L.link_id) : null;
+  $('jrBody').innerHTML = L.status !== 'ended' ? `
+    <fieldset><legend>結束這段陪伴紀錄</legend>
+      <p class="hint" style="margin-top:0">結束之後這本紀錄變成唯讀，然後你可以選擇怎麼處置
+        你在裡面寫的東西。對方也會各自選他自己的，你們不需要選一樣的。</p>
+      <p class="hint">如果只是最近不想寫，用對話室裡的「暫停」就好，不必結束。</p>
+      <div class="bar"><button class="ghost" id="jrEndBtn">結束這段陪伴紀錄</button>
+        <span class="msg" id="jrEndMsg"></span></div>
+    </fieldset>` : `
+    <fieldset><legend>你想怎麼處置你寫的東西</legend>
+      <p class="hint" style="margin-top:0">這段紀錄在
+        ${esc(new Date(st.ended_at).toLocaleDateString('zh-TW'))} 結束。
+        <b>選了就立刻執行</b>，不用等。</p>
+      ${st.mine ? `<p><b>你選的是：</b>${esc(jrLabel(DISPOSITIONS, st.mine))}</p>`
+        : `<div class="s2Multi">${DISPOSITIONS.map(d => `<label class="s2Chk">
+             <input type="radio" name="jrDisp" value="${d.v}">
+             <span>${d.label}<span class="hint"> — ${esc(d.note)}</span></span></label>`).join('')}</div>
+           <div class="bar"><button id="jrDispSave">就這樣做</button>
+             <span class="msg" id="jrDispMsg"></span></div>`}
+      <p class="hint">${
+        /* 排程還沒接上（schema 第 31 節）。承諾「30 天後自動刪除」卻沒有東西在執行，
+           比不承諾更糟，所以這裡照實說。 */
+        '目前<b>沒有</b>自動清理在跑：不選的話，東西會留著。'
+        + '如果你希望它消失，請自己選一次「全部刪除」。'}</p>
+      ${(st.tombstones || []).length ? `<p class="hint">${st.tombstones.map(t =>
+        `${t.mine ? '你' : '對方'}刪掉了 ${t.n} 則${
+          {memory:'回憶', milestone:'里程碑', goal:'共同目標'}[t.kind] || t.kind}。`).join('')}
+        這一行是刻意留著的——不然另一方會以為自己記錯了。</p>` : ''}
+      <p class="hint">對方選了什麼，這裡不會顯示。那是他自己的決定。</p>
+    </fieldset>`;
+  if($('jrEndBtn')) $('jrEndBtn').onclick = async () => {
+    if(!confirm('結束之後這本紀錄就不能再新增了。確定嗎？')) return;
+    try{ await DB.endCompanionLink(L.link_id); jrLinks = []; renderJournal(); }
+    catch(e){ flash('jrEndMsg', e.message || '失敗'); }
+  };
+  if($('jrDispSave')) $('jrDispSave').onclick = async () => {
+    const p = $('jrBody').querySelector('input[name="jrDisp"]:checked');
+    if(!p){ flash('jrDispMsg','先選一個'); return; }
+    if(p.value === 'delete' && !confirm('這會立刻把你在這段關係裡寫的東西刪掉，而且找不回來。確定嗎？')) return;
+    try{ await DB.setDisposition(L.link_id, p.value); jrLinks = []; renderJournal(); }
+    catch(e){ flash('jrDispMsg', e.message || '失敗'); }
   };
 }
 
@@ -4943,6 +5520,7 @@ async function boot(){
   if(!templateMaster.length){ try{ templateMaster = await DB.getTemplateMaster(); }catch(e){} }
   if(!reasonCodes.length){ try{ reasonCodes = await DB.listReasonCodes(); }catch(e){ reasonCodes = []; } }
   await fillMe(); renderBoard(); showMyLinks(); renderStage3Notice();
+  refreshJournalTab();
 }
 
 /* 登入後提示：有申請進入第三階段、但你還沒付費解鎖的話，在頂部提醒 */

@@ -6000,3 +6000,31 @@ begin
 end $$;
 revoke all on function public.companion_timeline(uuid,int) from public, anon;
 grant execute on function public.companion_timeline(uuid,int) to authenticated;
+
+-- 31.4 我的陪伴紀錄清單 ----------------------------------------
+--      個人中心那個分頁要靠它。已結束的也列出來——處置方式要在那裡選。
+create or replace function public.my_companion_links()
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  if auth.uid() is null then raise exception '請先登入'; end if;
+  return (select coalesce(jsonb_agg(x order by x->>'started_at' desc), '[]'::jsonb) from (
+    select jsonb_build_object(
+      'link_id', l.id,
+      'status',  l.status,
+      'started_at', l.started_at,
+      'ended_at', l.ended_at,
+      'days', case when l.status = 'active'
+                   then greatest(0, (current_date - l.started_at::date)) else null end,
+      'other_name', coalesce(nullif(p.name,''), '對方'),
+      'other_id', p.id,
+      /* 處置方式只回自己那一格。對方選了什麼不揭露。 */
+      'my_disposition', case when auth.uid() = l.user_a then l.disposition_a else l.disposition_b end,
+      'purge_at', l.purge_at) as x
+      from public.companion_links l
+      join public.match_profiles p
+        on p.id = case when auth.uid() = l.user_a then l.user_b else l.user_a end
+     where auth.uid() in (l.user_a, l.user_b)
+       and l.status <> 'pending') s);
+end $$;
+revoke all on function public.my_companion_links() from public, anon;
+grant execute on function public.my_companion_links() to authenticated;

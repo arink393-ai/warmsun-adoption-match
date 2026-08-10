@@ -499,6 +499,7 @@
   const deleteClinicSession = (id)    => rpc('delete_clinic_session', { p_id: id });
 
   // ── 回憶膠囊與結束處置（見 schema 第 31 節）──────────────
+  const myCompanionLinks = ()   => rpc('my_companion_links');
   const listCapsules = (linkId) => rpc('list_capsules', { p_link_id: linkId });
   const writeCapsule = (linkId, openAt, body, title) =>
     rpc('write_capsule', { p_link_id: linkId, p_open_at: openAt, p_body: body, p_title: title || '' });
@@ -722,7 +723,7 @@
     checkinQuestions, checkinSummary, submitCheckin, setCheckinShare,
     clinicPermissions, setClinicPermission, clinicSafetyMode, buildClinicContext,
     saveClinicSession, listClinicSessions, deleteClinicSession,
-    listCapsules, writeCapsule, openCapsule,
+    myCompanionLinks, listCapsules, writeCapsule, openCapsule,
     endCompanionLink, dispositionState, setDisposition,
     submitFeedback, listMyFeedback, feedbackLooksPersonal,
     adminFeedbackList, adminSetFeedbackStatus,
