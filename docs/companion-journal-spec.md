@@ -41,14 +41,26 @@
 兩者的主體不同（申請會結案，關係不會）。
 
 ```sql
--- 哪兩個人建立了陪伴關係
+-- 哪兩個人建立了陪伴關係　※ 已實作（schema 第 27 節），實際欄位如下
 companion_links(
-  id uuid pk, user_a uuid, user_b uuid,
+  id uuid pk, user_a uuid, user_b uuid,   -- check (user_a < user_b)，寫入前先排序
   application_id uuid,          -- 從哪一份申請走過來的（可為 null，之後可能有別的入口）
-  started_at timestamptz,
-  status text check (status in ('active','paused','ended')),
-  -- 單方面就能建立嗎？見第 7 節的待決事項
-  unique (least(user_a,user_b), greatest(user_a,user_b))
+  started_at timestamptz,       -- 只在 pending → active 那一次寫入，暫停再回來不重算
+  status text check (status in ('pending','active','paused','ended')),
+  agreed_a boolean, agreed_b boolean,     -- 兩個都 true 才會變成 active（見第 7 節第 1 題）
+  ended_at timestamptz, purge_at timestamptz,
+  disposition_a text, disposition_b text, -- 見 6.1
+  unique (user_a, user_b)
+)
+
+-- 🔖 記住這句：聊天與陪伴紀錄之間的橋　※ 已實作
+message_bookmarks(
+  id uuid pk, application_id uuid, message_id bigint, user_id uuid,
+  kind text check (kind in ('love','milestone','promise','memory')),
+  note text,                    -- 只有自己看得到，改成 both 也不會分享出去
+  visibility text check (visibility in ('private','both')) default 'private',
+  created_at timestamptz,
+  unique (message_id, user_id)  -- 一則訊息一個人一個書籤
 )
 
 companion_memories(
@@ -213,10 +225,18 @@ alter table companion_links
 
 ## 7. 還需要你決定的分岔點
 
-1. **單方面可以建立陪伴紀錄嗎？** 一個人想留回憶、另一個人不想，怎麼辦？
-   選項：(a) 必須雙方同意才建立；(b) 可以單方面建立但只有自己看得到，
-   對方同意後才合併。我傾向 (b)——回憶是自己的，不需要對方批准。
-   但 (b) 的資料模型比較複雜（要處理「兩本各自的紀錄後來合併」）。
+1. ~~**單方面可以建立陪伴紀錄嗎？**~~ **已決定（實作第 1、2 步時）**：拆成兩件事，
+   兩個選項各取一半，順便避開了 (b) 的「兩本紀錄後來要合併」。
+
+   - **共同的那本**（`companion_links`）走 (a)：兩個人各自按下才成立，
+     跟 Consent Mode 同一個模式。一本關於兩個人的紀錄不該由一個人替兩個人決定，
+     而且未經邀請的「某某想跟你建立陪伴紀錄」本身就是一種壓力。
+   - **書籤走 (b) 的精神**：`message_bookmarks` 預設 `private`，
+     留一句話不需要對方批准，也不會通知對方；想分享再自己改成 `both`，
+     而且共同的是那個標記，不是備註裡那段心情。
+
+   於是「回憶是自己的」與「共同的東西要雙方同意」同時成立，
+   而且不必合併兩本紀錄——書籤從一開始就掛在同一段對話上，只是可見範圍不同。
 
 2. **照片存哪裡。** 陪伴紀錄的照片是私密內容，不能放公開 bucket。
    但也不像驗證照那樣審完就刪。需要第三種 bucket 與對應的清理政策，
@@ -231,8 +251,8 @@ alter table companion_links
 
 | # | 做什麼 | 為什麼排這裡 |
 |---|---|---|
-| 1 | `companion_links` ＋ 建立／關閉的 RPC ＋ RLS | 沒有它其他五張表都沒有歸屬 |
-| 2 | 對話書籤（🔖 記住這句）四種類型 | 它是聊天與陪伴紀錄之間的橋，而且可以先接在現有對話室上 |
+| 1 | ✅ `companion_links` ＋ 建立／關閉的 RPC ＋ RLS | 沒有它其他五張表都沒有歸屬 |
+| 2 | ✅ 對話書籤（🔖 記住這句）四種類型 | 它是聊天與陪伴紀錄之間的橋，而且可以先接在現有對話室上 |
 | 3 | `companion_memories` ＋ `companion_milestones` ＋ 時間線畫面 | 第一個真正有回訪價值的東西 |
 | 4 | `companion_goals`（含 `paused`） | 純資料，可以獨立做 |
 | 5 | `relationship_checkins` ＋ 不自動互通的分享模型 | 要先有第 4 節那條規則才能動 |

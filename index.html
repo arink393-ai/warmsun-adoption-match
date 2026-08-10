@@ -244,6 +244,24 @@
   .consentBar{padding:10px 16px;border-top:1px solid var(--rule);font-size:12.5px}
   .consentBar.on{background:var(--brand-tint)}
   .consentBar .bar{margin-top:6px}
+  /* 🔖 記住這句：平常只是一條淡淡的線，收藏了才有顏色。
+     收藏一句話是很小的動作，按鈕不該比那句話還大聲。 */
+  .bmRow{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+  .bmBtn{padding:2px 8px;font-size:11.5px;min-height:0;border-radius:999px;
+        border:1px dotted var(--rule);background:none;color:var(--ink-soft);cursor:pointer}
+  .bmBtn:hover{border-style:solid;border-color:var(--brand);color:var(--brand)}
+  .bmMark{display:inline-block;font-size:11.5px;border:1px solid var(--brand);
+        border-radius:999px;padding:1px 9px;color:var(--brand-dk);background:var(--brand-tint)}
+  .bmMark.other{border-style:dotted;background:none;color:var(--ink-soft)}
+  .bmNote{font-size:12px;color:var(--ink-soft);margin-top:3px;white-space:pre-wrap}
+  .bmKinds{display:flex;flex-direction:column;gap:2px;margin:6px 0}
+  .bmKinds label{display:flex;align-items:center;gap:8px;padding:7px 2px;margin:0;cursor:pointer}
+  /* 🌱 陪伴紀錄的邀請：是一句問句，不是一個未完成的進度條。
+     不用 ⚠️、不用紅點、不寫「還沒建立」——不建立完全沒有損失。 */
+  .companionBar{padding:10px 16px;border-top:1px solid var(--rule);font-size:12.5px}
+  .companionBar.on{background:var(--brand-tint)}
+  .companionBar .bar{margin-top:6px}
+  .companionBar b{font-family:var(--font-heading)}
   /* 檢舉時效：逾期用紅色的線，不是紅色的塊 */
   .slaBar{font-size:13px;border-bottom:1px dotted var(--rule);padding-bottom:8px;margin-bottom:10px}
   .slaTag{display:inline-block;font-size:12px;border:1px solid var(--rule);border-radius:999px;
@@ -402,6 +420,7 @@
 <dialog id="chatDialog" aria-labelledby="chatTitle">
   <div class="chatHead"><strong id="chatTitle">第二階段對話</strong><button class="ghost" id="chatClose">關閉</button></div>
   <div id="chatMessages" aria-live="polite"></div>
+  <div id="chatCompanion" class="companionBar" hidden></div>
   <div id="chatConsent" class="consentBar"></div>
   <div style="padding:12px 16px">
     <p class="hint" style="margin-top:0">可直接聊天，或把訊息標記為「客製化感情問題」。不舒服時可立即結束對話並檢舉。</p>
@@ -412,6 +431,31 @@
       <button class="ghost" id="chatBlockUser">封鎖這個人</button><span class="msg" id="chatMsg"></span>
     </div>
   </div>
+</dialog>
+
+<!-- 🔖 記住這句：收藏一則訊息。預設只有自己看得到。 -->
+<dialog id="bmDialog" aria-labelledby="bmTitle">
+  <form method="dialog" style="padding:16px">
+    <strong id="bmTitle">🔖 記住這句</strong>
+    <blockquote id="bmQuote" class="hint"
+      style="margin:8px 0;padding-left:10px;border-left:2px solid var(--rule);white-space:pre-wrap"></blockquote>
+    <div class="bmKinds" id="bmKinds"></div>
+    <label for="bmNote">想寫點什麼嗎？（選填）</label>
+    <textarea id="bmNote" rows="2" maxlength="500"
+      placeholder="為什麼想記住這句話…"></textarea>
+    <label for="bmVis">誰看得到</label>
+    <select id="bmVis">
+      <option value="private">只有我看得到</option>
+      <option value="both">兩個人都看得到</option>
+    </select>
+    <p class="hint" style="margin:6px 0 0">預設只有你自己看得到，也不會通知對方。</p>
+    <div class="bar" style="margin-top:10px">
+      <button type="button" id="bmSave">儲存</button>
+      <button type="button" class="ghost" id="bmRemove" hidden>取消收藏</button>
+      <button type="button" class="ghost" id="bmCancel">關閉</button>
+      <span class="msg" id="bmMsg"></span>
+    </div>
+  </form>
 </dialog>
 
 <!-- 交換聯絡方式前的安全提醒：這是整個流程風險最高的一步 -->
@@ -3736,11 +3780,43 @@ function chatSafetyHTML(m){
     </div>`}
   </div>`;
 }
+/* ── 🔖 記住這句（見 schema 第 27 節）──────────────────
+   四種書籤。預設 private——收藏對方說過的一句話是很個人的事，
+   不需要對方批准，也不會變成一個對方看得到的表態。 */
+const BOOKMARK_KINDS = [
+  {v:'love',      icon:'💛', label:'喜歡的話'},
+  {v:'milestone', icon:'🌱', label:'關係里程碑'},
+  {v:'promise',   icon:'📝', label:'重要約定'},
+  {v:'memory',    icon:'🎁', label:'想保存的回憶'}
+];
+let chatBookmarks = [];
+function bookmarkKind(v){ return BOOKMARK_KINDS.find(k => k.v === v) || BOOKMARK_KINDS[0]; }
+function myBookmark(mid){
+  return chatBookmarks.find(b => String(b.message_id) === String(mid) && b.mine) || null;
+}
+function theirBookmark(mid){
+  return chatBookmarks.find(b => String(b.message_id) === String(mid) && !b.mine) || null;
+}
+function bookmarkRowHTML(m){
+  const mine = myBookmark(m.id), theirs = theirBookmark(m.id);
+  const k = mine ? bookmarkKind(mine.kind) : null;
+  return `<div class="bmRow">
+    ${mine ? `<span class="bmMark">${k.icon} ${esc(k.label)}${
+        mine.visibility === 'both' ? '・共同' : ''}</span>` : ''}
+    ${theirs ? `<span class="bmMark other">${bookmarkKind(theirs.kind).icon} 對方也記住了這句</span>` : ''}
+    <button class="bmBtn" data-mid="${m.id}">${mine ? '修改' : '🔖 記住這句'}</button>
+  </div>${mine && mine.note ? `<div class="bmNote">${esc(mine.note)}</div>` : ''}`;
+}
 function renderChatMessages(rows){
   $('chatMessages').innerHTML = rows.length ? rows.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">
     <div class="hint">${m.kind === 'question' ? '感情問題・' : ''}${new Date(m.created_at).toLocaleString('zh-TW')}</div>
     <div style="white-space:pre-wrap">${esc(m.body)}</div>
+    ${bookmarkRowHTML(m)}
     ${chatSafetyHTML(m)}</div>`).join('') : '<div class="empty">還沒有訊息，從一個真誠的問題開始吧。</div>';
+  $('chatMessages').querySelectorAll('.bmBtn').forEach(b => b.onclick = () => {
+    const m = rows.find(r => String(r.id) === b.dataset.mid);
+    if(m) openBookmark(m);
+  });
   $('chatMessages').querySelectorAll('.safeUncomfy').forEach(b => b.onclick = () => {
     /* 「我覺得不舒服」不是一個檢舉動作，是一句可以直接送出去的話——
        很多時候需要的只是把界線講出來，而不是立刻把事情鬧大。 */
@@ -3752,6 +3828,114 @@ function renderChatMessages(rows){
     if(activeChatOther && activeChatOther.id) reportProfile(activeChatOther.id);
   });
   $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+}
+
+let bmTarget = null;
+function openBookmark(m){
+  bmTarget = m;
+  const mine = myBookmark(m.id);
+  $('bmQuote').textContent = m.body.length > 120 ? m.body.slice(0, 120) + '⋯' : m.body;
+  $('bmKinds').innerHTML = BOOKMARK_KINDS.map(k => `<label>
+    <input type="radio" name="bmKind" value="${k.v}"${
+      (mine ? mine.kind : 'love') === k.v ? ' checked' : ''}>
+    <span>${k.icon} ${esc(k.label)}</span></label>`).join('');
+  $('bmNote').value = mine ? (mine.note || '') : '';
+  $('bmVis').value = mine ? mine.visibility : 'private';
+  $('bmRemove').hidden = !mine;
+  $('bmMsg').textContent = '';
+  $('bmDialog').showModal();
+}
+function bmSelectedKind(){
+  const el = $('bmKinds').querySelector('input[name="bmKind"]:checked');
+  return el ? el.value : 'love';
+}
+async function reloadBookmarks(){
+  try{ chatBookmarks = await DB.listBookmarks(activeChat); }
+  catch(e){ chatBookmarks = []; }
+}
+$('bmCancel').onclick = () => $('bmDialog').close();
+$('bmSave').onclick = async () => {
+  if(!bmTarget) return;
+  $('bmSave').disabled = true;
+  try{
+    await DB.toggleBookmark(bmTarget.id, bmSelectedKind(), $('bmNote').value.trim(), $('bmVis').value);
+    await reloadBookmarks();
+    renderChatMessages(await DB.listMessages(activeChat));
+    $('bmDialog').close();
+  }catch(e){ flash('bmMsg', e.message || '儲存失敗'); }
+  $('bmSave').disabled = false;
+};
+$('bmRemove').onclick = async () => {
+  if(!bmTarget) return;
+  const mine = myBookmark(bmTarget.id); if(!mine) return;
+  $('bmRemove').disabled = true;
+  /* 取消是「同一種再按一次」，而且備註要清空——
+     留著備註的話伺服器那邊會判定成「補上備註」而不是取消。 */
+  try{
+    await DB.toggleBookmark(bmTarget.id, mine.kind, '', mine.visibility);
+    await reloadBookmarks();
+    renderChatMessages(await DB.listMessages(activeChat));
+    $('bmDialog').close();
+  }catch(e){ flash('bmMsg', e.message || '操作失敗'); }
+  $('bmRemove').disabled = false;
+};
+
+/* ── 🌱 陪伴紀錄的邀請（見 schema 第 27 節）────────────
+   這裡的每一句話都要守住三條規則：
+   (1) 不建立也能解鎖聯絡方式——所以文案裡不能有任何「還沒完成」的暗示。
+   (2) 使用者離開不算失敗——所以沒有連續天數、沒有簽到、沒有催促。
+   (3) 不打分數。
+   共同的那本要兩個人各自按下，跟 Consent Mode 同一個模式。 */
+let companion = {eligible:false, exists:false, status:'none', mine:false, other:false};
+function renderCompanion(){
+  const box = $('chatCompanion'); if(!box) return;
+  const c = companion;
+  // 還沒到第三階段就完全不提。先吊胃口等於把它變成一個關卡。
+  if(!c.eligible){ box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  const active = c.status === 'active';
+  box.className = 'companionBar' + (active ? ' on' : '');
+  let head, note, btn;
+  if(active){
+    head = '🌱 你們的陪伴紀錄已經開始';
+    note = (c.days != null ? `從第 1 天到今天，第 ${Number(c.days) + 1} 天。` : '')
+         + '想暫停隨時可以暫停，紀錄會留著，起算日也不會被重算。';
+    btn = '暫停陪伴紀錄';
+  /* 暫停要分清楚是誰按的。把自己按的暫停寫成「對方想建立」，
+     等於把使用者自己的決定退回給他當成一個新的邀請。 */
+  }else if(c.status === 'paused' && !c.mine){
+    head = '🌱 你暫停了這本陪伴紀錄';
+    note = '寫下的東西都留著。隨時可以繼續，起算日也不會被重算。';
+    btn = '繼續';
+  }else if(c.status === 'paused' && c.mine){
+    head = '🌱 陪伴紀錄目前暫停中';
+    note = '對方按了暫停。你們寫下的東西都留著，起算日也不會被重算，隨時可以再開始。';
+    btn = '我這邊也暫停';
+  }else if(c.mine){
+    head = '🌱 已經送出，等對方也決定';
+    note = '對方沒有按下也沒關係——你們已經交換的聯絡方式不會因此改變，'
+         + '這裡也不會去催他。';
+    btn = '收回我的邀請';
+  }else if(c.other){
+    head = '🌱 對方想為這段相遇留下紀錄';
+    note = '你可以自己決定要不要。不建立不會有任何損失，也不會有人被通知你拒絕了。';
+    btn = '我也想建立';
+  }else{
+    head = '🌱 要為這段相遇建立陪伴紀錄嗎？';
+    note = '一個只有你們兩個看得到的地方，可以記下重要的話、約定與回憶。'
+         + '完全是選配的——聯絡方式已經交換了，這裡不做也不影響任何事。';
+    btn = '我想建立';
+  }
+  box.innerHTML = `<div><b>${esc(head)}</b>
+      <span class="hint">${esc(note)}</span></div>
+    <div class="bar"><button class="ghost" id="companionBtn">${esc(btn)}</button></div>
+    <p class="hint" style="margin:6px 0 0">兩個人各自按下才會成立，任何一方都可以隨時暫停。
+      這裡不記錄連續天數，也不會為你們的關係打分數。</p>`;
+  $('companionBtn').onclick = async () => {
+    $('companionBtn').disabled = true;
+    try{ companion = await DB.setCompanionAgree(activeChat, !companion.mine); renderCompanion(); }
+    catch(e){ flash('chatMsg', e.message || '操作失敗'); $('companionBtn').disabled = false; }
+  };
 }
 
 /* Consent Mode：兩個成年人真的想談性話題時，不該一看到性詞就一直跳警告。
@@ -3783,14 +3967,21 @@ async function openChat(appId, name, otherId){
   activeChat = appId; activeChatOther = {id: otherId || null, name: name || '對方'};
   $('chatTitle').textContent = `與 ${name} 的第二階段對話`;
   $('chatDialog').showModal(); $('chatMessages').innerHTML = '<p class="hint">讀取對話中⋯⋯</p>';
+  chatBookmarks = []; await reloadBookmarks();
   try{ renderChatMessages(await DB.listMessages(appId)); }
   catch(e){ $('chatMessages').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; }
   try{ chatConsent = await DB.chatConsentState(appId); }
   catch(e){ chatConsent = {mine:false, other:false, both:false}; }
   renderChatConsent();
+  try{ companion = await DB.companionState(appId); }
+  catch(e){ companion = {eligible:false, exists:false, status:'none', mine:false, other:false}; }
+  renderCompanion();
   if(stopChatSubscription) stopChatSubscription();
   stopChatSubscription = DB.subscribeMessages(appId, async () => {
-    if(activeChat === appId) renderChatMessages(await DB.listMessages(appId));
+    if(activeChat !== appId) return;
+    // 對方也可能剛把某個書籤改成共同，所以一起重讀
+    await reloadBookmarks();
+    renderChatMessages(await DB.listMessages(appId));
   });
 }
 async function sendChat(kind){

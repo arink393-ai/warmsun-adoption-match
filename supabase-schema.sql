@@ -4666,3 +4666,235 @@ begin
 end $$;
 revoke all on function public.popular_custom_tags(text,int) from public, anon;
 grant execute on function public.popular_custom_tags(text,int) to authenticated;
+
+-- ============================================================
+-- 27) 🌱 暖陽陪伴紀錄（第 1、2 步）：companion_links ＋ 對話書籤
+--
+--     規格見 docs/companion-journal-spec.md。這一節只做前兩步：
+--     關係本身，以及聊天與陪伴紀錄之間的那座橋（🔖 記住這句）。
+--
+--     ── 三條寫死的產品規則 ──────────────────────────────────
+--     (1) **不建立陪伴紀錄也能解鎖聯絡方式。** 配對功能在第三階段就完成了。
+--         這裡沒有任何函式會擋住解鎖——放成條件的話，陪伴紀錄就從
+--         「值得回來的理由」變成「不做就拿不到東西的關卡」。
+--     (2) **使用者離開不算失敗。** 兩個人交換聯絡方式後再也沒登入，
+--         可能代表暖陽已經完成它的工作。所以這裡沒有連續登入、沒有簽到、
+--         沒有「你已經 N 天沒有記錄了」。看到有人想加那種東西，回來讀這一行。
+--     (3) **不打分數。** 這一節不存任何關係評分，之後也不會加。
+--
+--     ── 規格第 7.1 節那個沒有答案的分岔（單方面可不可以建立）──
+--     這裡的解法是把它拆成兩件事：
+--       ・**共同的那本**（companion_links）要兩個人各自按下才成立，
+--         跟 Consent Mode 同一個模式。一本關於兩個人的紀錄，不該由一個人
+--         替兩個人決定；而且未經邀請的「某某想跟你建立陪伴紀錄」本身就是壓力。
+--       ・**書籤是個人的，預設只有自己看得到。** 想留一句話不需要對方批准，
+--         也不會通知對方。要分享再自己改成共同。
+--     這樣就同時有了「回憶是自己的」跟「共同的東西要雙方同意」。
+-- ============================================================
+
+create table if not exists public.companion_links (
+  id             uuid primary key default gen_random_uuid(),
+  user_a         uuid not null references auth.users(id) on delete cascade,
+  user_b         uuid not null references auth.users(id) on delete cascade,
+  application_id uuid references public.applications(id) on delete set null,
+  started_at     timestamptz not null default now(),
+  status         text not null default 'pending',
+  -- 關係結束之後的處置（規格第 6.1 節）：各自選各自的
+  ended_at       timestamptz,
+  purge_at       timestamptz,
+  disposition_a  text,
+  disposition_b  text,
+  -- 誰按過「建立」。兩個都 true 才會變成 active。
+  agreed_a       boolean not null default false,
+  agreed_b       boolean not null default false,
+  constraint companion_links_pair check (user_a < user_b)
+);
+-- 這些 check 獨立成 alter：之後加值時才會在既有資料庫上生效（見第 26 節的教訓）
+alter table public.companion_links drop constraint if exists companion_links_status_check;
+alter table public.companion_links add constraint companion_links_status_check
+  check (status in ('pending','active','paused','ended'));
+alter table public.companion_links drop constraint if exists companion_links_disp_a_check;
+alter table public.companion_links add constraint companion_links_disp_a_check
+  check (disposition_a is null or disposition_a in ('delete','archive','mine_only'));
+alter table public.companion_links drop constraint if exists companion_links_disp_b_check;
+alter table public.companion_links add constraint companion_links_disp_b_check
+  check (disposition_b is null or disposition_b in ('delete','archive','mine_only'));
+create unique index if not exists companion_links_pair_idx
+  on public.companion_links(user_a, user_b);
+
+alter table public.companion_links enable row level security;
+drop policy if exists "companion_links_participant" on public.companion_links;
+create policy "companion_links_participant" on public.companion_links
+  for select to authenticated using (auth.uid() in (user_a, user_b));
+grant select on public.companion_links to authenticated;
+
+-- 27.1 對話書籤（🔖 記住這句）--------------------------------
+--      四種：💛 喜歡的話／🌱 關係里程碑／📝 重要約定／🎁 想保存的回憶。
+--      預設 private——收藏一句話是很個人的事，不該自動變成一個公開的表態。
+create table if not exists public.message_bookmarks (
+  id             uuid primary key default gen_random_uuid(),
+  application_id uuid not null references public.applications(id) on delete cascade,
+  message_id     bigint not null references public.match_messages(id) on delete cascade,
+  user_id        uuid not null references auth.users(id) on delete cascade,
+  kind           text not null default 'love',
+  note           text not null default '',
+  visibility     text not null default 'private',
+  created_at     timestamptz not null default now(),
+  unique (message_id, user_id)
+);
+alter table public.message_bookmarks drop constraint if exists message_bookmarks_kind_check;
+alter table public.message_bookmarks add constraint message_bookmarks_kind_check
+  check (kind in ('love','milestone','promise','memory'));
+alter table public.message_bookmarks drop constraint if exists message_bookmarks_vis_check;
+alter table public.message_bookmarks add constraint message_bookmarks_vis_check
+  check (visibility in ('private','both'));
+create index if not exists message_bookmarks_app_idx
+  on public.message_bookmarks(application_id, created_at desc);
+
+alter table public.message_bookmarks enable row level security;
+drop policy if exists "message_bookmarks_read" on public.message_bookmarks;
+-- 自己的永遠讀得到；對方的只有他自己改成「共同」才讀得到
+create policy "message_bookmarks_read" on public.message_bookmarks
+  for select to authenticated using (
+    user_id = auth.uid()
+    or (visibility = 'both' and exists (
+      select 1 from public.applications a
+       where a.id = application_id and auth.uid() in (a.from_user, a.to_user))));
+grant select on public.message_bookmarks to authenticated;
+
+-- 27.2 收藏／取消收藏 ------------------------------------------
+create or replace function public.toggle_message_bookmark(
+  p_message_id bigint, p_kind text default 'love',
+  p_note text default '', p_visibility text default 'private'
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_msg public.match_messages; v_app public.applications; v_existing public.message_bookmarks;
+begin
+  if auth.uid() is null then raise exception '請先登入'; end if;
+  select * into v_msg from public.match_messages where id = p_message_id;
+  if v_msg.id is null then raise exception '找不到這則訊息'; end if;
+  select * into v_app from public.applications where id = v_msg.application_id;
+  if auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這個對話';
+  end if;
+  if p_kind not in ('love','milestone','promise','memory') then raise exception '不支援的書籤類型'; end if;
+  if p_visibility not in ('private','both') then raise exception '不支援的可見範圍'; end if;
+
+  select * into v_existing from public.message_bookmarks
+   where message_id = p_message_id and user_id = auth.uid();
+
+  if v_existing.id is not null then
+    /* 同一種再按一次＝取消；換一種＝改類型。
+       這樣一顆按鈕就夠了，不必為了取消再多一個垃圾桶。 */
+    if v_existing.kind = p_kind and coalesce(p_note,'') = '' then
+      delete from public.message_bookmarks where id = v_existing.id;
+      return jsonb_build_object('state','removed');
+    end if;
+    update public.message_bookmarks
+       set kind = p_kind, note = left(coalesce(p_note, note), 500), visibility = p_visibility
+     where id = v_existing.id returning * into v_existing;
+    return jsonb_build_object('state','updated','kind',v_existing.kind,
+                              'visibility',v_existing.visibility,'note',v_existing.note);
+  end if;
+
+  insert into public.message_bookmarks(application_id, message_id, user_id, kind, note, visibility)
+    values (v_msg.application_id, p_message_id, auth.uid(), p_kind,
+            left(coalesce(p_note,''), 500), p_visibility)
+    returning * into v_existing;
+  return jsonb_build_object('state','added','kind',v_existing.kind,
+                            'visibility',v_existing.visibility,'note',v_existing.note);
+end $$;
+revoke all on function public.toggle_message_bookmark(bigint,text,text,text) from public, anon;
+grant execute on function public.toggle_message_bookmark(bigint,text,text,text) to authenticated;
+
+-- 27.3 一段對話裡的書籤 ----------------------------------------
+--      RLS 已經過濾過了，這裡拿到什麼就是該看到什麼。
+create or replace function public.list_message_bookmarks(p_app_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_app public.applications; out_rows jsonb;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app.id is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這個對話';
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', b.id, 'message_id', b.message_id, 'kind', b.kind, 'note', b.note,
+           'visibility', b.visibility, 'mine', b.user_id = auth.uid(),
+           'created_at', b.created_at) order by b.created_at), '[]'::jsonb)
+    into out_rows
+    from public.message_bookmarks b
+   where b.application_id = p_app_id
+     and (b.user_id = auth.uid() or b.visibility = 'both');
+  return out_rows;
+end $$;
+revoke all on function public.list_message_bookmarks(uuid) from public, anon;
+grant execute on function public.list_message_bookmarks(uuid) to authenticated;
+
+-- 27.4 建立／查詢陪伴紀錄 --------------------------------------
+create or replace function public.companion_state(p_app_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_app public.applications; v_link public.companion_links; v_a uuid; v_b uuid; v_me_is_a boolean;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app.id is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這份申請';
+  end if;
+  v_a := least(v_app.from_user, v_app.to_user);
+  v_b := greatest(v_app.from_user, v_app.to_user);
+  v_me_is_a := (auth.uid() = v_a);
+  select * into v_link from public.companion_links where user_a = v_a and user_b = v_b;
+  return jsonb_build_object(
+    /* 有沒有資格建立：第三階段而且雙方都已經解鎖。
+       注意這是「陪伴紀錄的資格」，不是解鎖的條件——解鎖不看這個。 */
+    'eligible', (v_app.stage >= 3 and v_app.unlock_from and v_app.unlock_to),
+    'exists',   v_link.id is not null,
+    'status',   coalesce(v_link.status, 'none'),
+    'mine',     coalesce(case when v_me_is_a then v_link.agreed_a else v_link.agreed_b end, false),
+    'other',    coalesce(case when v_me_is_a then v_link.agreed_b else v_link.agreed_a end, false),
+    'started_at', v_link.started_at,
+    'days',     case when v_link.status = 'active'
+                     then greatest(0, (current_date - v_link.started_at::date)) else null end,
+    'link_id',  v_link.id);
+end $$;
+revoke all on function public.companion_state(uuid) from public, anon;
+grant execute on function public.companion_state(uuid) to authenticated;
+
+-- 各自表態。兩個人都按下才會變成 active。
+create or replace function public.set_companion_agree(p_app_id uuid, p_on boolean)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_app public.applications; v_a uuid; v_b uuid; v_me_is_a boolean; v_link public.companion_links;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app.id is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這份申請';
+  end if;
+  if not (v_app.stage >= 3 and v_app.unlock_from and v_app.unlock_to) then
+    raise exception '要雙方都完成第三階段解鎖之後才能建立陪伴紀錄';
+  end if;
+  v_a := least(v_app.from_user, v_app.to_user);
+  v_b := greatest(v_app.from_user, v_app.to_user);
+  v_me_is_a := (auth.uid() = v_a);
+
+  insert into public.companion_links(user_a, user_b, application_id, status)
+    values (v_a, v_b, p_app_id, 'pending')
+    on conflict (user_a, user_b) do nothing;
+  select * into v_link from public.companion_links where user_a = v_a and user_b = v_b;
+
+  /* 只動自己那一格。替對方按下同意是最不能允許的事——
+     這跟第 24 節 Consent Mode 是同一條規則。 */
+  if v_me_is_a then update public.companion_links set agreed_a = p_on where id = v_link.id;
+  else               update public.companion_links set agreed_b = p_on where id = v_link.id; end if;
+
+  /* started_at 只在「第一次成立」時寫進去。
+     暫停之後再回來不重算——把「你們的陪伴紀錄從 X 開始」洗掉，
+     等於把暫停講成一次失敗，而規則 (2) 就是為了不要那樣。 */
+  update public.companion_links
+     set status = case when agreed_a and agreed_b then 'active'
+                       when status = 'active' then 'paused' else status end,
+         started_at = case when agreed_a and agreed_b and status = 'pending'
+                           then now() else started_at end
+   where id = v_link.id;
+
+  return public.companion_state(p_app_id);
+end $$;
+revoke all on function public.set_companion_agree(uuid, boolean) from public, anon;
+grant execute on function public.set_companion_agree(uuid, boolean) to authenticated;

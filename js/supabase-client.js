@@ -421,6 +421,34 @@
     return data || [];
   }
 
+  // ── 🌱 陪伴紀錄與對話書籤（見 schema 第 27 節）──────────
+  // 書籤預設 private：收藏對方說過的一句話是很個人的事，
+  // 不通知對方，也不會變成一個對方看得到的表態。要分享得自己改。
+  async function toggleBookmark(messageId, kind, note, visibility) {
+    const { data, error } = await sb.rpc('toggle_message_bookmark', {
+      p_message_id: messageId, p_kind: kind || 'love',
+      p_note: note || '', p_visibility: visibility || 'private'
+    });
+    if (error) throw error;
+    return data;
+  }
+  async function listBookmarks(appId) {
+    const { data, error } = await sb.rpc('list_message_bookmarks', { p_app_id: appId });
+    if (error) throw error;
+    return data || [];
+  }
+  async function companionState(appId) {
+    const { data, error } = await sb.rpc('companion_state', { p_app_id: appId });
+    if (error) throw error;
+    return data || { eligible: false, exists: false, status: 'none', mine: false, other: false };
+  }
+  // 兩個人各自按下才會成立。這裡永遠只動呼叫者自己那一格。
+  async function setCompanionAgree(appId, on) {
+    const { data, error } = await sb.rpc('set_companion_agree', { p_app_id: appId, p_on: !!on });
+    if (error) throw error;
+    return data;
+  }
+
   // ── 意見回饋（見 schema 第 25 節）──────────────────────
   // 跟檢舉刻意分開：檢舉是關於某個人、有安全含意；意見回饋是關於產品。
   async function submitFeedback(category, body, page, env) {
@@ -629,6 +657,7 @@
     listOutbox, listInbox, findApplicationTo, updateApplication,
     listMessages, sendMessage, closeChat, subscribeMessages,
     chatConsentState, setChatConsent, adminChatDangerCounts,
+    toggleBookmark, listBookmarks, companionState, setCompanionAgree,
     submitFeedback, listMyFeedback, feedbackLooksPersonal,
     adminFeedbackList, adminSetFeedbackStatus,
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
