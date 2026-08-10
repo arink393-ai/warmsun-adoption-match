@@ -2166,6 +2166,13 @@ begin
     end if;
   end loop;
 
+  -- 有申請關係時，初診也留一筆時間軸（CRM 上會看到「主治醫師初診：2 黃燈」）。
+  -- plpgsql 的函式本體是執行當下才解析，所以這裡可以呼叫第 14 節才定義的函式。
+  if p_app is not null then
+    perform public.log_application_event(p_app, 'screened', null,
+      jsonb_build_object('green', n_green, 'yellow', n_yellow, 'red', n_red), 'recipient');
+  end if;
+
   insert into public.screening_results
     (app_id, from_user, to_user, audience, ran_at, inputs_seen,
      green, yellow, red, unknown, safety, findings)
@@ -2189,6 +2196,7 @@ returns jsonb language plpgsql security definer set search_path = public, pg_tem
 declare
   me uuid := auth.uid(); rel int := 0; res public.screening_results%rowtype;
   newest timestamptz; shown jsonb := '[]'::jsonb; item jsonb; hidden int := 0;
+  rel_app uuid;
 begin
   if me is null then raise exception '請先登入'; end if;
   if p_other = me then raise exception '不能對自己做初診'; end if;
@@ -2201,6 +2209,10 @@ begin
    where (a.from_user = me and a.to_user = p_other)
       or (a.to_user = me and a.from_user = p_other);
 
+  select a.id into rel_app from public.applications a
+   where a.from_user = p_other and a.to_user = me
+   order by a.updated_at desc limit 1;
+
   select greatest(max(p.updated_at), max(r.updated_at)) into newest
     from public.match_profiles p, public.screening_rules r
    where p.id in (me, p_other);
@@ -2209,7 +2221,7 @@ begin
    where s.from_user = p_other and s.to_user = me and s.audience = 'member'
      and s.ran_at >= newest;
   if not found then
-    perform public.run_screening(p_other, me);
+    perform public.run_screening(p_other, me, rel_app);
     select * into res from public.screening_results s
      where s.from_user = p_other and s.to_user = me and s.audience = 'member';
   end if;
@@ -2246,6 +2258,11 @@ create policy "screening_rules_write_admin" on public.screening_rules for all
 drop policy if exists "screening_results_no_client_access" on public.screening_results;
 create policy "screening_results_no_client_access" on public.screening_results for all
   to anon, authenticated using (false) with check (false);
+
+-- 規則庫的文案要顯示在畫面上，所以開放 select（RLS 已經限制只有管理員能寫）。
+-- screening_results 刻意「不」開放：直接查得到就等於可以繞過 min_stage 的分層，
+-- 唯一的讀取路徑是 get_screening_for()。
+grant select on table public.screening_rules to authenticated;
 
 revoke all on function public.run_screening(uuid,uuid,uuid,text) from public, anon, authenticated;
 grant execute on function public.run_screening(uuid,uuid,uuid,text) to postgres, service_role;
@@ -2401,3 +2418,247 @@ update public.screening_rules set cond = '{"any":[
 
 -- R055 的揭露時機跟著本人自選的 health_when 走
 update public.screening_rules set min_stage_ref = 'applicant.health_when' where code = 'R055';
+
+-- ============================================================
+-- 14) 申請者 CRM：病例時間軸與看板欄位
+--
+--     規格見 docs/screening-crm-spec.md 第 4 節，這一節實作第 3 步。
+--
+--     跟規格的一處出入：規格說「由既有的 RPC 在成功之後寫入」，實作改成
+--     **資料庫 trigger**。原因是婉拒根本不走 RPC——它是前端直接對
+--     applications 下 update（RLS 只開放給收件方）。靠 RPC 補寫會漏掉
+--     整條婉拒路徑，而婉拒正是漏斗上最需要記錄的一步。trigger 也擋得住
+--     「有人繞過前端直接改資料」的情況，稽核價值才成立。
+-- ============================================================
+
+-- 14.1 applications 補四個欄位 --------------------------------
+alter table public.applications add column if not exists opened_at        timestamptz;
+alter table public.applications add column if not exists last_activity_at timestamptz;
+alter table public.applications add column if not exists closed_reason    text;
+alter table public.applications add column if not exists crm_tags         jsonb not null default '[]'::jsonb;
+
+-- 既有資料先用 updated_at 當作最後活動時間，逾期統計才不會一開始全部歸零
+update public.applications
+   set last_activity_at = coalesce(updated_at, created_at)
+ where last_activity_at is null;
+
+-- opened_at 與 closed_reason 交給函式與 trigger 寫，前端不能自己填：
+-- 前者是「志工什麼時候真的打開這封申請」，後者是漏斗統計的依據，
+-- 讓收件方隨手填會直接汙染資料。crm_tags 是收件方自己貼的標籤，不受限。
+create or replace function public.guard_application_privileged()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if auth.role() = 'authenticated'
+     and coalesce(current_setting('app.bypass_app_guard', true), '') <> 'on'
+     and not public.match_is_admin(auth.uid()) then
+    new.from_user   := old.from_user;
+    new.to_user     := old.to_user;
+    new.stage       := old.stage;
+    new.a1_unlocked := old.a1_unlocked;
+    new.stage2_paid := old.stage2_paid;
+    new.paid        := old.paid;
+    new.refunded    := old.refunded;
+    new.consent_at  := old.consent_at;
+    new.unlock_from := old.unlock_from;
+    new.unlock_to   := old.unlock_to;
+    new.skipped     := old.skipped;
+    new.fast_invite_from := old.fast_invite_from;
+    new.fast_invite_to := old.fast_invite_to;
+    new.priority_invite := old.priority_invite;
+    new.priority_note := old.priority_note;
+    new.opened_at     := old.opened_at;
+    new.closed_reason := old.closed_reason;
+  end if;
+  return new;
+end $$;
+
+-- 14.2 病例時間軸 ---------------------------------------------
+create table if not exists public.application_events (
+  id         bigserial primary key,
+  app_id     uuid not null references public.applications(id) on delete cascade,
+  at         timestamptz not null default clock_timestamp(),
+  actor      uuid references auth.users(id) on delete set null,   -- null = 系統
+  kind       text not null,
+  -- both      ：雙方都看得到（申請進度）
+  -- recipient ：只有收件方（志工筆記、初診結果）
+  -- admin     ：只有管理員（安全事件；被記錄的人不會知道）
+  visibility text not null default 'both' check (visibility in ('both','recipient','admin')),
+  detail     jsonb not null default '{}'::jsonb
+);
+create index if not exists application_events_app_at on public.application_events(app_id, at);
+
+-- 唯一的寫入路徑。前端沒有 insert 權限，時間軸才有稽核價值。
+create or replace function public.log_application_event(
+  p_app uuid, p_kind text, p_actor uuid default null,
+  p_detail jsonb default '{}'::jsonb, p_visibility text default 'both'
+) returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if p_app is null then return; end if;
+  insert into public.application_events(app_id, kind, actor, detail, visibility)
+  values (p_app, p_kind, p_actor, coalesce(p_detail, '{}'::jsonb), p_visibility);
+end $$;
+
+-- 14.3 自動記錄 -----------------------------------------------
+-- BEFORE：維護 last_activity_at 與 closed_reason。
+-- 名字刻意排在 trg_guard_application 後面（trigger 依名稱順序執行），
+-- 這樣 guard 先把前端亂填的 closed_reason revert 掉，再由這裡填上正確的值。
+create or replace function public.applications_crm_before()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  -- INSERT 也要設：新申請如果 last_activity_at 是 null，
+  -- 「逾期未處理」的查詢（last_activity_at < now() - 7 天）永遠不會命中它——
+  -- 結果就是最該被看到的那種申請（送出後三週沒人理）反而不會出現在逾期格。
+  new.last_activity_at := clock_timestamp();
+  if TG_OP = 'INSERT' then return new; end if;
+  if new.status = 'rejected' and old.status <> 'rejected' and new.closed_reason is null then
+    -- 只存申請人本來就看得到的資訊（他知道自己走到第幾階段、也知道被婉拒了），
+    -- 所以這一欄不需要另外遮。封鎖與安全事件「絕對不可以」寫進這裡——
+    -- 那會讓被封鎖的人推論出是誰封鎖了他。那些一律走 visibility='admin' 的事件。
+    new.closed_reason := case
+      when auth.uid() = new.from_user then 'withdrawn_by_applicant'
+      else 'declined_stage' || old.stage::text end;
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_z_applications_crm on public.applications;
+create trigger trg_z_applications_crm before insert or update on public.applications
+  for each row execute function public.applications_crm_before();
+
+-- AFTER：把狀態變化轉成時間軸事件。用 trigger 而不是在九支 RPC 裡各寫一行，
+-- 是因為婉拒走的是前端直接 update，RPC 補寫會整條漏掉。
+create or replace function public.applications_crm_after()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+declare who uuid := auth.uid();
+begin
+  if TG_OP = 'INSERT' then
+    perform public.log_application_event(new.id, 'applied', new.from_user,
+      jsonb_build_object('paid', new.paid));
+    return new;
+  end if;
+
+  if new.opened_at is not null and old.opened_at is null then
+    perform public.log_application_event(new.id, 'opened', new.to_user);
+  end if;
+  if new.stage2_paid and not old.stage2_paid then
+    perform public.log_application_event(new.id, 'sent_q2', new.to_user,
+      jsonb_build_object('questions', jsonb_array_length(coalesce(new.a2_questions, '[]'::jsonb))));
+  end if;
+  if new.stage is distinct from old.stage then
+    perform public.log_application_event(new.id, 'advanced_' || new.stage::text, who,
+      jsonb_build_object('from', old.stage, 'to', new.stage));
+  end if;
+  if new.priority_invite and not old.priority_invite then
+    perform public.log_application_event(new.id, 'priority_invite', new.from_user);
+  end if;
+  if new.unlock_from and not old.unlock_from then
+    perform public.log_application_event(new.id, 'unlocked_from', new.from_user);
+  end if;
+  if new.unlock_to and not old.unlock_to then
+    perform public.log_application_event(new.id, 'unlocked_to', new.to_user);
+  end if;
+  if (new.unlock_from and new.unlock_to) and not (old.unlock_from and old.unlock_to) then
+    perform public.log_application_event(new.id, 'exchanged', null);
+  end if;
+  if new.refunded and not old.refunded then
+    perform public.log_application_event(new.id, 'refunded', new.from_user,
+      jsonb_build_object('credits', new.paid));
+  end if;
+  if new.status = 'rejected' and old.status <> 'rejected' then
+    perform public.log_application_event(new.id, 'declined', who,
+      jsonb_build_object('stage', old.stage, 'reason', new.closed_reason));
+  end if;
+  if new.vet_at is distinct from old.vet_at and new.vet_at is not null then
+    perform public.log_application_event(new.id, 'ai_review', new.to_user, '{}'::jsonb, 'recipient');
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_z_applications_events on public.applications;
+create trigger trg_z_applications_events after insert or update on public.applications
+  for each row execute function public.applications_crm_after();
+
+-- 作答：第一階段在建立申請時一起寫入，第二階段是後來補上的
+create or replace function public.application_answers_crm_after()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if TG_OP = 'INSERT' then
+    if new.a1 is not null then
+      perform public.log_application_event(new.application_id, 'answered_1', null,
+        jsonb_build_object('count', jsonb_array_length(coalesce(new.a1, '[]'::jsonb))));
+    end if;
+    return new;
+  end if;
+  if new.a2 is not null and old.a2 is null then
+    perform public.log_application_event(new.application_id, 'answered_2', null,
+      jsonb_build_object('count', jsonb_array_length(coalesce(new.a2, '[]'::jsonb))));
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_z_answers_events on public.application_answers;
+create trigger trg_z_answers_events after insert or update on public.application_answers
+  for each row execute function public.application_answers_crm_after();
+
+-- 對話：訊息本身不進時間軸（會洗版），但要更新最後活動時間，
+-- 免得雙方聊得正熱烈卻被算成「逾期未處理」。
+create or replace function public.match_messages_touch_activity()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  update public.applications
+     set last_activity_at = clock_timestamp()
+   where id = new.application_id;
+  return new;
+end $$;
+drop trigger if exists trg_z_messages_activity on public.match_messages;
+create trigger trg_z_messages_activity after insert on public.match_messages
+  for each row execute function public.match_messages_touch_activity();
+
+-- 14.4 收件方按下「打開」------------------------------------
+-- 「新申請」與「第一階段待審」的差別就在這一欄：志工看過了沒。
+-- 收一個陣列而不是單筆：收件匣一次會顯示很多封，一封打一次 RPC 在
+-- 「124 封申請一個志工」的情境下就是 124 次往返。
+create or replace function public.mark_applications_opened(p_app_ids uuid[])
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare me uuid := auth.uid(); n int;
+begin
+  if me is null then raise exception '請先登入'; end if;
+  if p_app_ids is null or cardinality(p_app_ids) = 0 then return 0; end if;
+  perform set_config('app.bypass_app_guard', 'on', true);
+  update public.applications
+     set opened_at = clock_timestamp()
+   where id = any(p_app_ids) and to_user = me and opened_at is null;
+  get diagnostics n = row_count;
+  perform set_config('app.bypass_app_guard', '', true);
+  return n;
+end $$;
+
+-- 14.5 權限 ---------------------------------------------------
+alter table public.application_events enable row level security;
+
+drop policy if exists "application_events_select" on public.application_events;
+create policy "application_events_select" on public.application_events for select
+  to authenticated using (
+    public.match_is_admin(auth.uid())
+    or exists (
+      select 1 from public.applications a
+       where a.id = application_events.app_id
+         and (
+           (application_events.visibility = 'both'
+             and (a.from_user = auth.uid() or a.to_user = auth.uid()))
+           or (application_events.visibility = 'recipient' and a.to_user = auth.uid())
+         )
+    )
+  );
+
+-- 沒有 insert／update／delete policy：時間軸只能由 SECURITY DEFINER 的
+-- trigger 寫入，前端連補一筆假事件都做不到。
+drop policy if exists "application_events_no_client_write" on public.application_events;
+create policy "application_events_no_client_write" on public.application_events for insert
+  to anon, authenticated with check (false);
+
+-- RLS 只決定「哪些列」，GRANT 才決定「這個角色能不能碰這張表」。兩個都要給，
+-- 少了 GRANT 會直接 permission denied，連自己的那幾列都讀不到。
+grant select on table public.application_events to authenticated;
+
+revoke all on function public.log_application_event(uuid,text,uuid,jsonb,text) from public, anon, authenticated;
+grant execute on function public.log_application_event(uuid,text,uuid,jsonb,text) to postgres, service_role;
+revoke all on function public.mark_applications_opened(uuid[]) from public, anon;
+grant execute on function public.mark_applications_opened(uuid[]) to authenticated;

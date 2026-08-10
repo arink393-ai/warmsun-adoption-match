@@ -581,6 +581,45 @@ R047–R054 因此是會 load-bearing 的資料，不是文件。
 `dealbreakers` 完全不外流，只給 `dealbreaker_count`。
 以後每加一個欄位都要問一次「它該在第幾層」。
 
+## 6.7 已完成：第 3 步（CRM 時間軸與看板欄位）
+
+| # | 內容 | 狀態 |
+|---|---|---|
+| 3 | `application_events` ＋ `opened_at`／`last_activity_at`／`closed_reason`／`crm_tags` | ✅ 已實作 |
+
+跟規格的出入，同樣都是實作時才發現規格想得不夠細：
+
+**（a）事件用 trigger 記，不是「既有的 RPC 在成功之後寫入」。**
+規格原本寫要在九支 RPC 裡各補一行。實作時發現**婉拒根本不走 RPC**——它是前端直接對
+`applications` 下 `update`（RLS 只開放給收件方）。靠 RPC 補寫會整條漏掉婉拒，
+而婉拒正是漏斗上最需要記錄的一步。改成資料庫 trigger 之後，連「有人繞過前端直接改資料」
+都記得到，稽核價值才成立。
+
+**（b）`last_activity_at` 必須在 INSERT 時就設。**
+規格只說它是「任一方最後一次動作」，實作第一版只在 UPDATE 時維護，結果新申請的
+`last_activity_at` 是 null，而「逾期」的查詢是 `last_activity_at < now() - 7 天`——
+null 永遠不會命中。也就是**最該被看到的那種申請（送出後三週沒人理）反而不會出現在逾期格**。
+測試抓到的。
+
+**（c）`closed_reason` 不需要另外遮，但要規定它能存什麼。**
+規格說「這欄不給申請人看，RLS 要擋掉」。實際上 Postgres 沒辦法做欄位級的 RLS，
+而且仔細想，`declined_stage1` 沒有洩漏任何新資訊——申請人本來就看得到自己的 `stage`
+和 `status='rejected'`。所以改成：**這一欄只存申請人本來就知道的事**，由 trigger 自動填；
+真正敏感的封鎖與安全事件**絕對不可以**寫進來（那會讓被封鎖的人推論出是誰封鎖了他），
+一律走 `visibility='admin'` 的事件。
+
+**（d）`mark_applications_opened()` 收一個陣列。**
+收件匣一次顯示很多封，一封打一次 RPC 在「124 封申請一個志工」的情境下就是 124 次往返。
+
+**（e）RLS 之外還要 GRANT。**
+`application_events` 建好、RLS policy 也寫好，但沒有 `grant select ... to authenticated`，
+結果是 `permission denied for table`——連自己那幾列都讀不到。RLS 決定「哪些列」，
+GRANT 決定「能不能碰這張表」，兩個都要給。（`screening_results` 則刻意兩個都不給。）
+
+**「打開」目前的語意。** 收件匣是把每一封的完整回答直接攤開顯示的，所以「畫出來」就等於
+「志工看過了」，`mark_applications_opened()` 在收件匣渲染完之後送出一批。等第 4 步的 CRM
+看板做出來（點進去才看得到內容的清單），這個呼叫就會搬到「點進某一封」的時候。
+
 ## 7. 建議的實作順序
 
 | # | 做什麼 | 為什麼排這裡 |

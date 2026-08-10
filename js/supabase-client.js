@@ -219,6 +219,24 @@
     return flattenApp(data);
   }
 
+  // ── 申請者 CRM：病例時間軸 ──────────────────────────
+  // 事件只能由資料庫的 trigger 產生，前端沒有 insert 權限；
+  // RLS 也已經依 visibility 過濾過，這裡拿到什麼就畫什麼。
+  async function listApplicationEvents(appId) {
+    const { data, error } = await sb.from('application_events')
+      .select('*').eq('app_id', appId).order('at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+  // 收件匣一次顯示很多封，所以一次送一批 id，不要一封打一次 RPC
+  async function markApplicationsOpened(appIds) {
+    const ids = (appIds || []).filter(Boolean);
+    if (!ids.length) return 0;
+    const { data, error } = await sb.rpc('mark_applications_opened', { p_app_ids: ids });
+    if (error) throw error;
+    return data || 0;
+  }
+
   // ── 第二階段後的雙向對話 ────────────────────────────
   async function listMessages(appId) {
     const { data, error } = await sb.from('match_messages').select('*')
@@ -484,6 +502,7 @@
     sb,
     signUpEmail, signInEmail, signInGoogle, signOut, deleteMyAccount, getUser, onAuthChange,
     ensureProfile, getMyProfile, saveMyProfile, getProfile, listProfiles, getScreening,
+    listApplicationEvents, markApplicationsOpened,
     adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminUserAction,
     listOutbox, listInbox, findApplicationTo, updateApplication,
     listMessages, sendMessage, closeChat, subscribeMessages,

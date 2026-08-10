@@ -691,6 +691,45 @@ R055 健康自述、G001／G002 兩條綠燈）加 8 條禁止規則。
 沒有健康告知的內容」「寫入引用收入的規則被擋下來」「被對方封鎖後初診一併查不到」。
 前端另加 `smoketest-screening.js` **38 項**，連同既有七份共 **187 項**，全部通過。
 
+### 29. 申請者 CRM 的資料層（規格第 3 步）：病例時間軸與看板欄位
+
+規格見 [`docs/screening-crm-spec.md`](docs/screening-crm-spec.md) 第 4 節。跟規則引擎互不相依。
+
+**四個欄位就夠**：`opened_at`、`last_activity_at`、`closed_reason`、`crm_tags`。
+看板九格裡有七格完全從現有欄位算得出來，所以不新增任何狀態欄位——多存一份就多一份不同步的風險。
+
+**事件用資料庫 trigger 記，不是在 RPC 裡補寫。** 規格原本寫要在九支 RPC 裡各加一行，
+實作時發現**婉拒根本不走 RPC**——它是前端直接對 `applications` 下 `update`。靠 RPC 補寫會
+整條漏掉婉拒，而婉拒正是漏斗上最需要記錄的一步。改成 trigger 之後，連「有人繞過前端直接改
+資料」都記得到，稽核價值才成立。前端也**沒有 `application_events` 的 insert 權限**，
+唯一的寫入路徑是 SECURITY DEFINER 的 trigger。
+
+**時間軸有可見性分層**：`both`（雙方都看得到的申請進度）／`recipient`（志工筆記、AI 分析）／
+`admin`（安全事件，被記錄的人不會知道）。收件匣底下一個「🕐 病例時間軸」，**展開才載入**
+——收件匣可能有上百封，不該一進來就打上百次查詢。
+
+**`closed_reason` 自動填、而且只存申請人本來就知道的事。** 規格說要用 RLS 擋掉，但 Postgres
+沒有欄位級 RLS，而且 `declined_stage1` 其實沒有洩漏任何新資訊（申請人本來就看得到自己的
+`stage` 和 `status`）。所以改成前端寫不進去（進 guard trigger 的還原清單）、由 trigger 依
+狀態變化自動填；封鎖與安全事件**絕對不可以**寫進來，一律走 `visibility='admin'` 的事件。
+
+測試抓到兩個實作 bug：
+
+- **`last_activity_at` 只在 UPDATE 時維護**，所以新申請是 null，而「逾期」的查詢是
+  `last_activity_at < now() - 7 天` —— null 永遠不會命中。也就是**最該被看到的那種申請
+  （送出後三週沒人理）反而不會出現在逾期格**。改成 INSERT 也設。
+- **RLS 寫好了但沒 GRANT**，結果 `permission denied for table`，連自己那幾列都讀不到。
+  RLS 決定「哪些列」，GRANT 決定「能不能碰這張表」，兩個都要給。
+
+另外聊天訊息**不進時間軸**（會把病例洗版），但會更新 `last_activity_at` ——
+否則聊得正熱烈的申請會被算成「逾期未處理」。
+
+驗證：`tests/pgtest-crm.sql` 在真的 Postgres 16 上 **37 項**，含「婉拒是前端直接 update，
+trigger 仍然記到了」「前端叫不動 `log_application_event`」「申請人讀不到 recipient-only
+的事件」「無關的第三人什麼都看不到」「`exchanged` 只會發生一次」。
+前端 `smoketest-crm.js` **23 項**。連同既有兩份 SQL 共 **100 項**、八份瀏覽器測試共
+**210 項**，全部通過。
+
 ## 已知限制（原型階段）
 
 - 沒有忘記密碼／Email 驗證的介面，Supabase 預設行為（例如要求驗證信）會直接生效，

@@ -168,6 +168,15 @@
   .screenItem.o-unknown{border-left-style:dashed}
   .screenItem b{font-weight:600}
   .screenAsk{margin-top:5px;color:var(--brand-dk);font-size:12px}
+  /* 病例時間軸：左側一條線加圓點，時間與事件分兩欄 */
+  .timeline{list-style:none;margin:6px 0 0;padding:0 0 0 14px;border-left:1px solid var(--rule)}
+  .timeline li{position:relative;display:flex;gap:10px;align-items:baseline;
+        padding:3px 0;font-size:12.5px;line-height:1.7}
+  .timeline li::before{content:'';position:absolute;left:-18px;top:10px;width:5px;height:5px;
+        border-radius:50%;background:var(--brand)}
+  .tlAt{flex:none;width:76px;color:var(--ink-soft);font-size:11.5px;font-variant-numeric:tabular-nums}
+  .tlWhat{color:var(--ink)}
+  .tlExtra{margin-left:8px;color:var(--ink-soft);font-size:11.5px}
   .cardActions{margin-top:14px;padding-top:10px;border-top:1px solid var(--rule)}
   .cardActions .bar{margin-top:0}
   .cardActions .sub{margin-top:6px}
@@ -1891,6 +1900,68 @@ async function showScreening(targetId, host){
   }
 }
 
+/* ── 病例時間軸（申請者 CRM）──────────────────────────────────
+   事件全部由資料庫 trigger 產生，前端沒有寫入權限，所以這條時間軸
+   就是實際發生過的事，不是前端記帳。RLS 也已經依 visibility 過濾，
+   申請人看不到 recipient-only 的事件（例如志工備註、AI 分析）。 */
+const EVENT_LABEL = {
+  applied:        '提出認識邀請',
+  answered_1:     '完成第一階段問卷',
+  screened:       '主治醫師初診',
+  opened:         '收件方開啟了這封申請',
+  advanced_2:     '通過第一階段，進入第二階段',
+  advanced_3:     '通過第二階段，進入第三階段',
+  sent_q2:        '送出第二階段問診',
+  answered_2:     '完成第二階段回答',
+  unlocked_from:  '申請人同意交換聯絡方式',
+  unlocked_to:    '收件方同意交換聯絡方式',
+  exchanged:      '雙方完成交換，認養手續完成',
+  declined:       '婉拒',
+  refunded:       '退回點數',
+  priority_invite:'送出優先邀請信',
+  ai_review:      '使用了 AI 配對分析',
+  noted:          '志工備註'
+};
+function eventDetailText(e){
+  const d = e.detail || {};
+  if(e.kind === 'screened'){
+    const parts = [];
+    if(d.red)    parts.push(`🔴 ${d.red}`);
+    if(d.yellow) parts.push(`🟡 ${d.yellow}`);
+    if(d.green)  parts.push(`🟢 ${d.green}`);
+    return parts.length ? parts.join('　') : '沒有發現需要提醒的項目';
+  }
+  if(e.kind === 'declined' && d.stage) return `在第 ${d.stage} 階段`;
+  if(e.kind === 'answered_1' || e.kind === 'answered_2') return d.count ? `${d.count} 題` : '';
+  if(e.kind === 'sent_q2' && d.questions) return `${d.questions} 題`;
+  if(e.kind === 'refunded' && d.credits) return `${d.credits} 點`;
+  if(e.kind === 'applied' && d.paid) return `扣 ${d.paid} 點`;
+  return '';
+}
+function timelineHTML(events){
+  if(!events.length) return '<p class="hint" style="margin:0">目前沒有紀錄。</p>';
+  return '<ol class="timeline">' + events.map(e => {
+    const t = new Date(e.at);
+    const stamp = `${String(t.getMonth()+1).padStart(2,'0')}/${String(t.getDate()).padStart(2,'0')}` +
+      ` ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+    const extra = eventDetailText(e);
+    return `<li><span class="tlAt">${esc(stamp)}</span>
+      <span class="tlWhat">${esc(EVENT_LABEL[e.kind] || e.kind)}${
+        extra ? `<span class="tlExtra">${esc(extra)}</span>` : ''}</span></li>`;
+  }).join('') + '</ol>';
+}
+async function loadTimeline(appId, host){
+  if(!host || host.dataset.loaded) return;
+  host.dataset.loaded = '1';
+  host.innerHTML = '<p class="hint" style="margin:0">讀取中⋯⋯</p>';
+  try{
+    host.innerHTML = timelineHTML(await DB.listApplicationEvents(appId));
+  }catch(e){
+    host.dataset.loaded = '';
+    host.innerHTML = `<p class="err" style="margin:0">讀不到病例時間軸：${esc(e.message || '未知錯誤')}</p>`;
+  }
+}
+
 /* ── 佈告欄 ── */
 /* 病歷卡：把一份登記排版成收容所的動物病例表 */
 function caseNo(p){
@@ -2471,12 +2542,30 @@ async function renderInbox(){
         <div id="deep-${a.id}">${Array.isArray(a.a2_questions) && a.a2_questions.length
           ? '<div class="qa"><b>第二階段客製問題</b>' + a.a2_questions.map((q,i) => `${i+1}. ${esc(q)}`).join('<br>') + '</div>' : ''}</div>` : ''}
       ${(a.stage===3 && a.unlock_from && a.unlock_to) ? `<div class="lock open">🔓 ${esc(from.locked || '對方尚未填寫')}</div>` : ''}
+      <details class="tlBox" data-app="${a.id}">
+        <summary>🕐 病例時間軸</summary>
+        <div class="tlHost" data-app="${a.id}"></div>
+      </details>
       <p class="hint" style="margin-top:8px">想自訂第二階段題目、使用罐頭回覆，請到「<a href="dashboard.html">我的後台</a>」。</p>
     </fieldset>`;
   }).join('');
   bindInbox();
+  /* 收件匣是把每一封的完整回答直接攤開顯示的，所以「畫出來」就等於「志工看過了」。
+     一次送一批 id，不要一封打一次 RPC。等第 4 步的 CRM 看板做出來（點進去才看得到
+     內容的清單），這個呼叫就會搬到「點進某一封」的時候。 */
+  const unopened = list.filter(a => !a.opened_at).map(a => a.id);
+  if(unopened.length){
+    DB.markApplicationsOpened(unopened)
+      .then(() => list.forEach(a => { if(!a.opened_at) a.opened_at = new Date().toISOString(); }))
+      .catch(() => {});   /* 標記已讀失敗不該影響收件匣本身 */
+  }
 }
 function bindInbox(){
+  /* 時間軸展開才載入——收件匣可能有上百封，不該一進來就打上百次查詢 */
+  $('inbox').querySelectorAll('.tlBox').forEach(d => d.ontoggle = () => {
+    if(!d.open) return;
+    loadTimeline(d.dataset.app, d.querySelector('.tlHost'));
+  });
   const upd = async (id, patch) => {
     const a = apps.find(x => x.id === id);
     const updated = await DB.updateApplication(id, patch);
