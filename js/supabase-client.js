@@ -402,6 +402,25 @@
     return data;
   }
   // 收回逾期未花完的一鍵通關獎勵點數（登入後呼叫一次，best-effort）
+  // ── 對話室的安全提醒與 Consent Mode（見 schema 第 24 節）──
+  // 等級是伺服器端在送訊息當下判定並存在訊息上的，前端只負責顯示。
+  // 放前端判定的話，改一下 devtools 就沒有了。
+  async function chatConsentState(appId) {
+    const { data, error } = await sb.rpc('chat_consent_state', { p_app_id: appId });
+    if (error) throw error;
+    return data || { mine: false, other: false, both: false };
+  }
+  async function setChatConsent(appId, on) {
+    const { data, error } = await sb.rpc('set_chat_consent', { p_app_id: appId, p_on: !!on });
+    if (error) throw error;
+    return data;
+  }
+  async function adminChatDangerCounts() {
+    const { data, error } = await sb.rpc('admin_chat_danger_counts');
+    if (error) throw error;
+    return data || [];
+  }
+
   async function settleBonusCredits() {
     try { await sb.rpc('settle_bonus_credits'); } catch (e) { /* 沒有的話就算了，不影響登入 */ }
   }
@@ -573,6 +592,7 @@
     adminUpdateProfile, adminListPending, adminListAllProfiles, adminListAllApplications, adminUserAction,
     listOutbox, listInbox, findApplicationTo, updateApplication,
     listMessages, sendMessage, closeChat, subscribeMessages,
+    chatConsentState, setChatConsent, adminChatDangerCounts,
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
     applyTo, refundApplication, adminAddCredits,
     sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,

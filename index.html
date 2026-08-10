@@ -213,6 +213,20 @@
   .s2Q{border-top:1px dotted var(--rule);padding-top:10px;margin-top:12px}
   .s2Q:first-of-type{border-top:none;padding-top:0;margin-top:0}
   .s2QTitle{font-size:13.5px;font-weight:600;line-height:1.7}
+  /* 對話室安全提醒：色彩當線條用，不當色塊。
+     這是提醒不是判決，版面上不該長得像一張紅單。 */
+  .safeNote{margin-top:8px;padding:8px 10px;border-left:2px solid var(--rule);
+        background:transparent;font-size:12.5px;line-height:1.7;color:var(--ink-soft)}
+  .safeNote b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px}
+  .safeNote.boundary{border-left-color:var(--warn)}
+  .safeNote.sexual{border-left-color:#C2761E}
+  .safeNote.danger{border-left-color:var(--bad)}
+  .safeNote.danger b{color:var(--bad)}
+  .safeNote .bar{margin-top:6px;gap:6px}
+  .safeNote .bar button{padding:4px 10px;font-size:12px;min-height:0}
+  .consentBar{padding:10px 16px;border-top:1px solid var(--rule);font-size:12.5px}
+  .consentBar.on{background:var(--brand-tint)}
+  .consentBar .bar{margin-top:6px}
   /* 檢舉時效：逾期用紅色的線，不是紅色的塊 */
   .slaBar{font-size:13px;border-bottom:1px dotted var(--rule);padding-bottom:8px;margin-bottom:10px}
   .slaTag{display:inline-block;font-size:12px;border:1px solid var(--rule);border-radius:999px;
@@ -371,6 +385,7 @@
 <dialog id="chatDialog" aria-labelledby="chatTitle">
   <div class="chatHead"><strong id="chatTitle">第二階段對話</strong><button class="ghost" id="chatClose">關閉</button></div>
   <div id="chatMessages" aria-live="polite"></div>
+  <div id="chatConsent" class="consentBar"></div>
   <div style="padding:12px 16px">
     <p class="hint" style="margin-top:0">可直接聊天，或把訊息標記為「客製化感情問題」。不舒服時可立即結束對話並檢舉。</p>
     <textarea id="chatBody" rows="3" maxlength="2000" placeholder="寫下想說的話或想深入了解的感情問題…"></textarea>
@@ -3354,11 +3369,80 @@ function bindInbox(){
 
 /* ── 第二階段即時對話 ── */
 let activeChat = null, stopChatSubscription = null, activeChatOther = null;
+let chatConsent = {mine:false, other:false, both:false};
+
+/* 三級安全提醒的文案。
+   刻意不寫「此言論構成性騷擾」——是否構成性騷擾、適用哪一套法律、
+   有沒有刑事責任，都要看情境、關係、是否持續、是否違反意願等具體事實。
+   系統只描述「這段內容可能涉及什麼」，並把選項交回當事人。
+   系統不是法院，不做法律定性。 */
+const CHAT_SAFETY = {
+  boundary: {icon:'🟡', title:'界線提醒',
+    body:'這段內容可能涉及較私密的身體或性話題。開始之前，建議先確認對方是否願意談。'},
+  sexual: {icon:'🟠', title:'性話題警示',
+    body:'這則訊息可能涉及未經邀請的露骨性內容。對方沒有義務回答，'
+       + '也可以隨時表示不想繼續。請先確認彼此是否同意談論性相關話題。'},
+  danger: {icon:'🔴', title:'安全提醒',
+    body:'這段內容可能涉及脅迫、強迫或其他安全風險。建議停止互動並保留紀錄。'
+       + '你可以立即封鎖或提出檢舉；若涉及現實安全或法律問題，也可以尋求外部協助。'}
+};
+function chatSafetyHTML(m){
+  const c = CHAT_SAFETY[m.safety_level]; if(!c) return '';
+  /* 提醒是給「收到的人」看的行動選項；自己送出的那則只顯示說明，
+     不需要「封鎖自己」這種選項。 */
+  const mine = m.sender_id === me.id;
+  return `<div class="safeNote ${m.safety_level}">
+    <b>${c.icon} 暖陽${esc(c.title)}</b>
+    <div>${esc(c.body)}</div>
+    ${mine ? '' : `<div class="bar">
+      <button class="ghost safeUncomfy">我覺得不舒服</button>
+      <button class="ghost safeBlock">封鎖</button>
+      <button class="ghost safeReport">檢舉</button>
+    </div>`}
+  </div>`;
+}
 function renderChatMessages(rows){
   $('chatMessages').innerHTML = rows.length ? rows.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">
     <div class="hint">${m.kind === 'question' ? '感情問題・' : ''}${new Date(m.created_at).toLocaleString('zh-TW')}</div>
-    <div style="white-space:pre-wrap">${esc(m.body)}</div></div>`).join('') : '<div class="empty">還沒有訊息，從一個真誠的問題開始吧。</div>';
+    <div style="white-space:pre-wrap">${esc(m.body)}</div>
+    ${chatSafetyHTML(m)}</div>`).join('') : '<div class="empty">還沒有訊息，從一個真誠的問題開始吧。</div>';
+  $('chatMessages').querySelectorAll('.safeUncomfy').forEach(b => b.onclick = () => {
+    /* 「我覺得不舒服」不是一個檢舉動作，是一句可以直接送出去的話——
+       很多時候需要的只是把界線講出來，而不是立刻把事情鬧大。 */
+    $('chatBody').value = '我覺得剛剛那個話題讓我不太舒服，可以先不要聊這個嗎？';
+    $('chatBody').focus();
+  });
+  $('chatMessages').querySelectorAll('.safeBlock').forEach(b => b.onclick = () => $('chatBlockUser').click());
+  $('chatMessages').querySelectorAll('.safeReport').forEach(b => b.onclick = () => {
+    if(activeChatOther && activeChatOther.id) reportProfile(activeChatOther.id);
+  });
   $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+}
+
+/* Consent Mode：兩個成年人真的想談性話題時，不該一看到性詞就一直跳警告。
+   但這是兩個人「各自」按下才成立，而且隨時可以撤回——
+   單方面宣告的同意不是同意。
+   ⚠️ 就算開著，威脅／強迫／對方說了不要之後繼續，仍然會亮 🔴。 */
+function renderChatConsent(){
+  const box = $('chatConsent'); if(!box) return;
+  const c = chatConsent;
+  box.className = 'consentBar' + (c.both ? ' on' : '');
+  box.innerHTML = `
+    <div><b>${c.both ? '🔐 目前雙方同意討論私密話題' : '🔒 私密話題'}</b>
+      <span class="hint">${c.both
+        ? '這個狀態下不會再為性話題跳提醒。任何一方都可以隨時撤回。'
+        : (c.mine ? '你已表示願意，等待對方也表示願意。'
+                  : (c.other ? '對方已表示願意談親密／性相關話題，你可以自己決定要不要。'
+                             : '要談親密或性相關話題之前，兩個人可以各自表示願意。'))}</span></div>
+    <div class="bar"><button class="ghost" id="chatConsentBtn">${
+      c.mine ? '撤回我的同意' : '我願意談親密／性相關話題'}</button></div>
+    <p class="hint" style="margin:6px 0 0">即使雙方同意，涉及威脅、強迫、散布私密影像，
+      或在對方表示停止之後仍持續，系統一樣會提醒，而且同意不會讓那些變成可以接受的事。</p>`;
+  $('chatConsentBtn').onclick = async () => {
+    $('chatConsentBtn').disabled = true;
+    try{ chatConsent = await DB.setChatConsent(activeChat, !chatConsent.mine); renderChatConsent(); }
+    catch(e){ flash('chatMsg', e.message || '操作失敗'); $('chatConsentBtn').disabled = false; }
+  };
 }
 async function openChat(appId, name, otherId){
   activeChat = appId; activeChatOther = {id: otherId || null, name: name || '對方'};
@@ -3366,6 +3450,9 @@ async function openChat(appId, name, otherId){
   $('chatDialog').showModal(); $('chatMessages').innerHTML = '<p class="hint">讀取對話中⋯⋯</p>';
   try{ renderChatMessages(await DB.listMessages(appId)); }
   catch(e){ $('chatMessages').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; }
+  try{ chatConsent = await DB.chatConsentState(appId); }
+  catch(e){ chatConsent = {mine:false, other:false, both:false}; }
+  renderChatConsent();
   if(stopChatSubscription) stopChatSubscription();
   stopChatSubscription = DB.subscribeMessages(appId, async () => {
     if(activeChat === appId) renderChatMessages(await DB.listMessages(appId));

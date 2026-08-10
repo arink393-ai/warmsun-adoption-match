@@ -4080,3 +4080,278 @@ on conflict (code) do update set
   priority = excluded.priority, min_stage = excluded.min_stage, cond = excluded.cond,
   escalate = excluded.escalate, requires = excluded.requires, reason_code = excluded.reason_code,
   title = excluded.title, body = excluded.body, ask = excluded.ask, enabled = excluded.enabled;
+
+-- ============================================================
+-- 24) 對話室安全提醒（三級）與 Consent Mode
+--
+--     這一節有兩條寫死的原則，違反哪一條都比「漏偵測」更糟：
+--
+--     (1) **系統不做法律定性。** 不寫「此言論構成性騷擾」。
+--         是否構成性騷擾、適用哪一套法律、有沒有刑事責任，都要看情境、
+--         關係、是否持續、是否違反意願等具體事實，不能靠一句文字下結論。
+--         系統只描述「這段內容可能涉及什麼」，並把選項交回當事人。
+--
+--     (2) **不能只做關鍵字比對。**「我不喜歡別人問我會不會口交」跟
+--         「妳會口交嗎」含同一個詞，但一個是在講自己的界線、一個是要求。
+--         只看關鍵字會把前者也亮紅燈——那會讓人不敢談論自己的界線，
+--         剛好害到最需要保護的那個人。
+--         所以偵測是兩層：先抓訊號類別，再看訊號的「組合」。
+--
+--     偵測在伺服器端跑（send_match_message 裡），等級存在訊息上。
+--     放前端的話，改一下 devtools 就沒有了。
+-- ============================================================
+
+-- 24.1 訊號類別 ------------------------------------------------
+--      規則是資料不是程式：要調整用字不必改函式、不必重新部署。
+--      pattern 是 POSIX 正規表示式，對 body 做大小寫不敏感比對。
+create table if not exists public.chat_safety_signals (
+  code    text primary key,
+  class   text not null check (class in
+            ('sexual','body_topic','threat','threat_harm','coercion',
+             'intimate_image','request','selfref','refusal')),
+  pattern text not null,
+  note    text not null default '',
+  enabled boolean not null default true
+);
+
+insert into public.chat_safety_signals (code, class, pattern, note) values
+  -- 露骨性內容
+  ('S_ACT','sexual','(口交|肛交|做愛|上床|性交|自慰|一夜情|約砲|約炮)','性行為'),
+  ('S_BODY','sexual','(胸部|奶子|下體|生殖器|陰道|陰莖|屁股|裸體|裸照)','性器官或裸露'),
+  -- 較私密但不必然是性要求的身體話題
+  ('B_BODY','body_topic','(身材|三圍|罩杯|體重多少|腿|穿多少)','私密的身體話題'),
+  -- 威脅
+  ('T_LEAK','threat','(傳出去|散[佈布]|公開你的|公開妳的|讓大家看|給你家人看|給妳家人看)','散布威脅'),
+  /* 人身威脅單獨成一類：在對話裡威脅要傷害對方，本身就是紅燈，
+     不需要再搭配任何性相關內容。 */
+  ('T_HARM','threat_harm','(弄死|殺了你|殺了妳|讓你好看|讓妳好看|找人處理你|找人處理妳|打死你|打死妳)','人身威脅'),
+  ('T_COND','threat','(不給我|不答應|不聽話).{0,12}(就|我就)','條件式威脅'),
+  -- 強迫
+  ('C_MUST','coercion','(一定要|必須|不然就|否則就|你敢|妳敢)','強迫語氣'),
+  -- 私密影像
+  ('I_PIC','intimate_image','(裸照|私密照|不穿衣服的照片|脫光|裸.{0,3}視訊)','私密影像'),
+  -- 第二人稱要求：這是把「談論」跟「要求」分開的關鍵訊號
+  /* 中文的疑問語尾不只有「嗎」。少了呢／啊／問號，
+     「你體重多少啊」就會被當成陳述句而漏掉。 */
+  ('R_ASK','request','(你|妳|您).{0,12}(嗎|嘛|吧|呢|啊|\?|？)','對對方提問'),
+  /* 動詞跟「給我」中間通常夾著受詞：「傳裸照給我」。
+     寫死成「傳給我」會漏掉最常見的那種說法。 */
+  ('R_GIVE','request','((傳|拍|發|寄|給).{0,8}給我|給我看|讓我看|給我一張)','要求提供'),
+  ('R_WANT','request','(我想看|我要看|我想要你|我想要妳)','表達索求'),
+  -- 反向訊號：在講自己的界線、引述別人的話、或在拒絕。
+  -- 命中這些的時候，同一句裡的性相關詞不該被當成「要求」。
+  ('X_SELF','selfref','(我不喜歡|我不想|我討厭|我不願意|不要問我|別問我|我覺得不舒服)','在講自己的界線'),
+  ('X_QUOTE','selfref','(他問我|她問我|對方問我|有人問我|之前有人)','在引述別人說過的話'),
+  -- 對方已經表達拒絕：後續再送性內容，性質完全不同
+  ('X_STOP','refusal','(不要|停止|別再|我不想談|請停下|不舒服|拒絕)','表達拒絕')
+on conflict (code) do update set
+  class = excluded.class, pattern = excluded.pattern,
+  note = excluded.note, enabled = excluded.enabled;
+
+alter table public.chat_safety_signals enable row level security;
+drop policy if exists "chat_safety_signals_read" on public.chat_safety_signals;
+create policy "chat_safety_signals_read" on public.chat_safety_signals
+  for select to authenticated using (true);
+drop policy if exists "chat_safety_signals_write_admin" on public.chat_safety_signals;
+create policy "chat_safety_signals_write_admin" on public.chat_safety_signals
+  for all to authenticated
+  using (public.match_is_admin(auth.uid())) with check (public.match_is_admin(auth.uid()));
+grant select on public.chat_safety_signals to authenticated;
+grant insert, update, delete on public.chat_safety_signals to authenticated;
+
+-- 24.2 一段文字命中哪些訊號類別 --------------------------------
+create or replace function public.chat_signal_classes(p_body text)
+returns text[] language sql stable set search_path = public, pg_temp as $$
+  select coalesce(array_agg(distinct s.class), '{}'::text[])
+    from public.chat_safety_signals s
+   where s.enabled and coalesce(p_body,'') ~* s.pattern;
+$$;
+
+-- 24.3 Consent Mode ------------------------------------------
+--      兩個成年人真的想談性話題時，不該一看到性詞就一直跳警告。
+--      但這是「雙方各自按下」才成立，而且隨時可以撤回——
+--      單方面宣告的同意不是同意。
+create table if not exists public.chat_consent (
+  application_id uuid not null references public.applications(id) on delete cascade,
+  user_id        uuid not null references auth.users(id) on delete cascade,
+  agreed_at      timestamptz not null default now(),
+  primary key (application_id, user_id)
+);
+alter table public.chat_consent enable row level security;
+drop policy if exists "chat_consent_participant" on public.chat_consent;
+create policy "chat_consent_participant" on public.chat_consent
+  for select to authenticated using (exists (
+    select 1 from public.applications a
+     where a.id = application_id and auth.uid() in (a.from_user, a.to_user)));
+grant select on public.chat_consent to authenticated;
+
+create or replace function public.chat_consent_on(p_app_id uuid)
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+  select (select count(*) from public.chat_consent c where c.application_id = p_app_id) >= 2;
+$$;
+
+-- 自己按下或撤回同意。永遠只能動自己那一列——替對方按下同意是最不能允許的事。
+create or replace function public.set_chat_consent(p_app_id uuid, p_on boolean)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_app public.applications;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這個對話';
+  end if;
+  if v_app.stage < 2 then raise exception '第二階段後才有對話室'; end if;
+  if p_on then
+    insert into public.chat_consent(application_id, user_id) values (p_app_id, auth.uid())
+      on conflict do nothing;
+  else
+    delete from public.chat_consent where application_id = p_app_id and user_id = auth.uid();
+  end if;
+  return public.chat_consent_state(p_app_id);
+end $$;
+revoke all on function public.set_chat_consent(uuid, boolean) from public, anon;
+grant execute on function public.set_chat_consent(uuid, boolean) to authenticated;
+
+create or replace function public.chat_consent_state(p_app_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_app public.applications; v_me boolean; v_other boolean;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這個對話';
+  end if;
+  select exists(select 1 from public.chat_consent
+                 where application_id = p_app_id and user_id = auth.uid()) into v_me;
+  select exists(select 1 from public.chat_consent
+                 where application_id = p_app_id and user_id <> auth.uid()) into v_other;
+  return jsonb_build_object('mine', v_me, 'other', v_other, 'both', v_me and v_other);
+end $$;
+revoke all on function public.chat_consent_state(uuid) from public, anon;
+grant execute on function public.chat_consent_state(uuid) to authenticated;
+
+-- 24.4 判等級 --------------------------------------------------
+--      p_refused = 對方在最近的對話裡已經表達過拒絕。
+--      這個參數存在的理由：同一句話在「對方剛說不要」之後送出，
+--      性質跟第一次問完全不同。
+create or replace function public.chat_safety_level(
+  p_body text, p_consent boolean default false, p_refused boolean default false
+) returns jsonb language plpgsql stable set search_path = public, pg_temp as $$
+declare cls text[]; sexual boolean; body_t boolean; threat boolean; harm boolean;
+        coercion boolean; image boolean; request boolean; selfref boolean;
+begin
+  cls := public.chat_signal_classes(p_body);
+  sexual   := 'sexual'         = any(cls);
+  body_t   := 'body_topic'     = any(cls);
+  threat   := 'threat'         = any(cls);
+  harm     := 'threat_harm'    = any(cls);
+  coercion := 'coercion'       = any(cls);
+  image    := 'intimate_image' = any(cls);
+  request  := 'request'        = any(cls);
+  selfref  := 'selfref'        = any(cls);
+
+  -- 威脅要傷害對方，本身就是紅燈，不需要搭配任何性相關內容
+  if harm then return jsonb_build_object('level','danger','code','D_HARM'); end if;
+
+  /* 🔴 安全紅燈：脅迫、強迫、或在對方說過不要之後仍然繼續。
+     這一層 **不受 Consent Mode 影響**——同意談性話題，
+     從來不等於同意被威脅或被強迫。 */
+  if threat and (sexual or image or coercion) then
+    return jsonb_build_object('level','danger','code','D_THREAT');
+  end if;
+  if coercion and (sexual or image) then
+    return jsonb_build_object('level','danger','code','D_COERCE');
+  end if;
+  if p_refused and (sexual or image) and request then
+    return jsonb_build_object('level','danger','code','D_PERSIST');
+  end if;
+
+  /* 在講自己的界線、或在引述別人說過的話，就不是在對對方提出要求。
+     「我不喜歡別人問我會不會口交」跟「妳會口交嗎」含同一個詞，
+     把前者也亮燈，等於讓人不敢談自己的界線。 */
+  if selfref then return jsonb_build_object('level', null, 'code', null); end if;
+
+  -- Consent Mode 開著的時候，🟠 與 🟡 都不再打斷對話（🔴 仍然會亮）
+  if p_consent then return jsonb_build_object('level', null, 'code', null); end if;
+
+  if sexual and request then
+    return jsonb_build_object('level','sexual','code','S_UNINVITED');
+  end if;
+  if (body_t or sexual) and request then
+    return jsonb_build_object('level','boundary','code','B_PRIVATE');
+  end if;
+  return jsonb_build_object('level', null, 'code', null);
+end $$;
+
+-- 24.5 訊息上存等級 --------------------------------------------
+alter table public.match_messages add column if not exists safety_level text
+  check (safety_level in ('boundary','sexual','danger'));
+alter table public.match_messages add column if not exists safety_code text;
+
+-- 24.6 送訊息時就地判定 ----------------------------------------
+--      注意：**不擋下訊息**。擋下來的話送出的人會改寫幾個字再送一次，
+--      而收到的人反而失去「這個人剛剛說了什麼」的證據。
+--      暖陽的選擇是讓它送出去、標記起來、把選項交給收到的人。
+create or replace function public.send_match_message(p_app_id uuid, p_body text, p_kind text default 'message')
+returns public.match_messages
+language plpgsql security definer set search_path = '' as $$
+declare v_app public.applications; v_profile public.match_profiles; v_msg public.match_messages;
+        v_consent boolean; v_refused boolean; v_safe jsonb;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app is null or auth.uid() not in (v_app.from_user, v_app.to_user) then raise exception '無權使用這個對話'; end if;
+  if v_app.stage < 2 or v_app.status <> 'open' then raise exception '第二階段後且申請進行中才能對話'; end if;
+  if exists (select 1 from public.match_blocks where application_id = p_app_id) then raise exception '這段對話已被關閉'; end if;
+  if public.match_is_blocked(v_app.from_user, v_app.to_user) then raise exception '這段對話已被關閉'; end if;
+  select * into v_profile from public.match_profiles where id = auth.uid();
+  if v_profile.account_status <> 'active' or v_profile.posting_locked then raise exception '你的發言權限目前受限'; end if;
+  if p_kind not in ('message','question') then raise exception '不支援的訊息類型'; end if;
+  if char_length(btrim(coalesce(p_body,''))) not between 1 and 2000 then raise exception '訊息需為 1 到 2000 字'; end if;
+  if (select count(*) from public.match_messages where sender_id = auth.uid() and created_at > now() - interval '1 minute') >= 10
+    then raise exception '傳送太頻繁，請稍後再試'; end if;
+
+  v_consent := public.chat_consent_on(p_app_id);
+  -- 對方最近 20 則裡有沒有表達過拒絕
+  select exists (
+    select 1 from (
+      select body from public.match_messages
+       where application_id = p_app_id and sender_id <> auth.uid()
+       order by created_at desc limit 20) t
+     where 'refusal' = any(public.chat_signal_classes(t.body))
+  ) into v_refused;
+  v_safe := public.chat_safety_level(btrim(p_body), v_consent, v_refused);
+
+  insert into public.match_messages(application_id, sender_id, kind, body, safety_level, safety_code)
+    values (p_app_id, auth.uid(), p_kind, btrim(p_body),
+            nullif(v_safe->>'level',''), nullif(v_safe->>'code',''))
+    returning * into v_msg;
+  return v_msg;
+end $$;
+revoke all on function public.send_match_message(uuid,text,text) from public, anon;
+grant execute on function public.send_match_message(uuid,text,text) to authenticated;
+
+-- 24.7 🔴 進管理端的安全佇列 ------------------------------------
+--      只給管理員看得到「有幾則、在哪一段對話」，不外流訊息內容——
+--      內容要在檢舉稽核的流程裡看，不是在一張列表上隨手翻。
+create or replace function public.admin_chat_danger_counts()
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare out_rows jsonb;
+begin
+  if auth.uid() is null or not public.match_is_admin(auth.uid()) then
+    raise exception '只有管理員可以查看';
+  end if;
+  select coalesce(jsonb_agg(x order by x->>'last_at' desc), '[]'::jsonb) into out_rows
+    from (
+      select jsonb_build_object(
+        'application_id', m.application_id,
+        'sender_id', m.sender_id,
+        'n', count(*),
+        'last_at', max(m.created_at)
+      ) as x
+      from public.match_messages m
+      where m.safety_level = 'danger'
+        and m.created_at > now() - interval '30 days'
+      group by m.application_id, m.sender_id
+    ) t;
+  return out_rows;
+end $$;
+revoke all on function public.admin_chat_danger_counts() from public, anon;
+grant execute on function public.admin_chat_danger_counts() to authenticated;
