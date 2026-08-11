@@ -8,27 +8,34 @@
 // 真正寄信在這裡。所以**這支函式沒部署、或寄信服務掛掉，網站一樣完全正常**，
 // 只是 owner_notifications 的 pending 會累積，而管理後台看得到那個數字。
 //
-// ── 部署 ────────────────────────────────────────────────
-// 1. supabase functions deploy notify-owner
-// 2. 設定三個 secret（RESEND_API_KEY 到 https://resend.com 免費申請）：
-//      supabase secrets set RESEND_API_KEY=re_xxxxx
-//      supabase secrets set NOTIFY_TO=warmsun.shelter@gmail.com
-//      supabase secrets set NOTIFY_FROM="暖陽動物之家 <onboarding@resend.dev>"
-//    （NOTIFY_FROM 用 resend.dev 那個網域可以直接寄，不必先驗證自己的網域；
-//      之後有自己的網域再換掉。）
-// 3. 讓它定時跑。兩種都可以，選一種：
-//    (a) Supabase Dashboard → Integrations → Cron
-//        新增一個排程，每 15 分鐘呼叫這支函式一次。
-//    (b) 任何外部排程（例如 GitHub Actions 的 schedule）去 POST 這個網址。
-//    沒有排程的話，也可以在 Database Webhooks 設定成
-//    「owner_notifications 有 INSERT 就呼叫這支函式」——那是即時的，
-//    但每一筆一封信，量大時會很吵。建議用排程，一次寄一封摘要。
+// ── 部署：不需要安裝 CLI ─────────────────────────────────
+// 「supabase functions deploy」是 CLI 指令，沒裝 CLI 當然找不到。
+// **在 Supabase 後台直接貼程式碼就可以了**，完整步驟寫在 README 第 46 節。
+// 摘要：
+//   1. Dashboard → Edge Functions → 建一支叫 notify-owner 的函式，
+//      把這個檔案整份貼進去，Deploy。
+//   2. **把這支函式的「Verify JWT」關掉。** 這是一定會踩到的坑：
+//      平台預設會先驗 JWT，排程與 Webhook 帶的不是使用者 JWT，
+//      會在我們自己的檢查跑到之前就被擋成 401。
+//      關掉之後改由下面的 x-notify-secret 把關（所以那個一定要設）。
+//   3. 設定 secrets（Edge Functions → Secrets）：
+//        RESEND_API_KEY = re_xxxxx        （https://resend.com 免費申請）
+//        NOTIFY_TO      = warmsun.shelter@gmail.com
+//        NOTIFY_FROM    = 暖陽動物之家 <onboarding@resend.dev>
+//        NOTIFY_SECRET  = 自己產一組亂數
+//      NOTIFY_FROM 用 resend.dev 那個網域可以直接寄，不必先驗證自己的網域。
+//      SUPABASE_URL 與 SUPABASE_SERVICE_ROLE_KEY 是平台自動注入的，不用自己設。
+//   4. 讓它定時跑：Dashboard → Integrations → Cron，每 15 分鐘呼叫一次，
+//      並在 HTTP headers 加上 x-notify-secret: <你設的那組>。
+//      （也可以用 Database Webhooks 設成「owner_notifications 有 INSERT 就呼叫」，
+//        那是即時的。這支函式每次都會把待寄的全部合成一封，所以不會重複寄。）
 //
 // ── 授權 ────────────────────────────────────────────────
 // 這支函式用 service_role 讀寫 outbox，所以**不能讓任何人隨便呼叫**。
 // 呼叫時必須帶 Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>，
 // 或帶 x-notify-secret: <NOTIFY_SECRET>（自己設一組亂數）。
 // 兩個都沒設對就直接 401。
+// ⚠️ 把 Verify JWT 關掉之後，**這個檢查就是唯一的一道門**，NOTIFY_SECRET 不能不設。
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 

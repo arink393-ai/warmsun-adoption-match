@@ -1686,36 +1686,94 @@ DETAIL: Failing row contains (P_TOME, reported, ...)
 
 #### 要怎麼設定（這一段是給站長照著做的）
 
-程式都寫好了，但**我沒有辦法替你部署，也不能替你保管 API 金鑰**，所以要你自己跑一次：
+程式都寫好了，但**我沒有辦法替你部署，也不能替你保管 API 金鑰**，所以要你自己跑一次。
 
-1. **申請寄信服務**。到 <https://resend.com> 註冊（免費方案每天 100 封、每月 3000 封，
-   這個量遠超過需要）。建立一組 API Key，長得像 `re_xxxxxxxx`。
-2. **部署函式**（在專案根目錄）：
-   ```
-   supabase functions deploy notify-owner
-   ```
-3. **設定三個 secret**：
-   ```
-   supabase secrets set RESEND_API_KEY=re_xxxxxxxx
-   supabase secrets set NOTIFY_TO=warmsun.shelter@gmail.com
-   supabase secrets set NOTIFY_FROM="暖陽動物之家 <onboarding@resend.dev>"
-   ```
-   `onboarding@resend.dev` 是 Resend 提供的測試寄件網域，**不需要先驗證自己的網域**
-   就能寄。之後有自己的網域再換掉。
-4. **讓它定時跑**。Supabase Dashboard → **Integrations → Cron** → 新增排程，
-   每 15 分鐘呼叫 `notify-owner` 一次。這樣一次寄一封摘要，不會每件事一封信。
-   （也可以走 Database Webhooks 設成「`owner_notifications` 有 INSERT 就呼叫」，
-   那是即時的，但量大時會很吵。）
-5. **驗收**：隨便送一則意見回饋，等下一次排程跑完，信箱應該會收到一封摘要；
-   管理後台頂端那條「待審通知」的 pending 會回到 0。
+> **不需要安裝 Supabase CLI。** `supabase functions deploy` 是 CLI 指令，
+> 沒裝當然找不到。底下走的是**全程在後台點**的路線。
+> （習慣用 CLI 的話，最後面有 CLI 版。）
+
+**1. 申請寄信服務**
+到 <https://resend.com> 註冊（免費方案每天 100 封、每月 3000 封，遠超過需要），
+建立一組 API Key，長得像 `re_xxxxxxxx`。
+
+**2. 產一組通知密鑰**
+隨便一串夠長的亂數就好，等一下第 4、5 步都要用。例如在瀏覽器 console 執行：
+```js
+crypto.randomUUID() + crypto.randomUUID()
+```
+記下來，這組**不要 commit 進 repo**。
+
+**3. 在後台建函式**
+Supabase Dashboard → 左邊 **Edge Functions** → **Deploy a new function**
+→ 選 **Via Editor**（或「Create a new function」之類的按鈕，不同版本字樣略有差異）
+→ 名稱填 `notify-owner`
+→ 把 `supabase/functions/notify-owner/index.ts` **整份**貼進編輯器
+→ **Deploy**。
+
+**4. 把這支函式的「Verify JWT」關掉**　← ⚠️ 這一步不做，後面一定會 401
+進到 `notify-owner` 的 **Settings / Details**，找到 **Verify JWT**（或
+「Enforce JWT Verification」）並**關閉**。
+
+為什麼：平台預設會先驗使用者 JWT，而排程與 Webhook 帶的不是使用者 JWT，
+會在函式自己的檢查跑到之前就被擋掉。關掉之後，把關的是函式裡的
+`x-notify-secret` 檢查——**所以第 5 步的 `NOTIFY_SECRET` 一定要設，那是唯一的一道門。**
+
+**5. 設定 secrets**
+Edge Functions → **Secrets**（或 Project Settings → Edge Functions → Secrets），加四筆：
+
+| 名稱 | 值 |
+|---|---|
+| `RESEND_API_KEY` | 第 1 步拿到的 `re_xxxxxxxx` |
+| `NOTIFY_TO` | `warmsun.shelter@gmail.com` |
+| `NOTIFY_FROM` | `暖陽動物之家 <onboarding@resend.dev>` |
+| `NOTIFY_SECRET` | 第 2 步那組亂數 |
+
+`onboarding@resend.dev` 是 Resend 提供的測試寄件網域，**不必先驗證自己的網域**就能寄；
+之後有自己的網域再換掉。
+`SUPABASE_URL` 與 `SUPABASE_SERVICE_ROLE_KEY` 是平台自動注入的，**不用自己設**。
+
+**6. 先手動測一次**（在排程之前，這樣才知道是哪一步壞的）
+```bash
+curl -i -X POST \
+  -H "x-notify-secret: <第 2 步那組亂數>" \
+  https://<你的專案代號>.supabase.co/functions/v1/notify-owner
+```
+- `{"sent":N}` → 成功，信應該進信箱了
+- `{"sent":0,"note":"沒有待寄的通知"}` → 也是成功，只是目前沒東西要寄。
+  先去網站送一則意見回饋再測一次。
+- `401` → 第 4 步的 Verify JWT 還開著，或 `NOTIFY_SECRET` 沒對上
+- `500` 且訊息提到 `RESEND_API_KEY` → 第 5 步漏了
+- `502` → Resend 那邊退件，回應裡會有原因（通常是 `NOTIFY_FROM` 寫錯）
+
+**7. 讓它定時跑**
+Dashboard → **Integrations → Cron** → 新增排程，每 15 分鐘呼叫一次
+`https://<專案代號>.supabase.co/functions/v1/notify-owner`，
+HTTP headers 加上 `x-notify-secret: <第 2 步那組亂數>`。
+
+一次寄一封摘要，不會每件事一封信。
+（也可以改用 **Database Webhooks**，設成「`owner_notifications` 有 INSERT 就呼叫」，
+那是即時的。這支函式每次都會把待寄的全部合成一封並標記，所以**不會重複寄**。）
+
+**8. 驗收**：管理後台頂端那條「待審通知」的 pending 會回到 0，
+而且不再顯示「看起來還沒設定」。
 
 **沒有做這幾步也完全不影響網站**——所有功能照常，只是沒有人會收到 email，
 而後台會一直顯示「看起來還沒設定」。
 
-⚠️ 這支函式用 service_role 讀寫 outbox，所以呼叫時**必須**帶
-`Authorization: Bearer <service_role key>` 或 `x-notify-secret`（自己設一組亂數並
-`supabase secrets set NOTIFY_SECRET=...`）。兩個都沒對就直接 401。
-Supabase 的 Cron 會自動帶 service_role key，所以走第 4 步不用另外處理。
+<details><summary>習慣用 CLI 的話</summary>
+
+```bash
+npm i -g supabase          # 或 brew install supabase/tap/supabase
+supabase login
+supabase link --project-ref <你的專案代號>
+supabase functions deploy notify-owner --no-verify-jwt
+supabase secrets set RESEND_API_KEY=re_xxxxxxxx
+supabase secrets set NOTIFY_TO=warmsun.shelter@gmail.com
+supabase secrets set NOTIFY_FROM="暖陽動物之家 <onboarding@resend.dev>"
+supabase secrets set NOTIFY_SECRET=<亂數>
+```
+`--no-verify-jwt` 就是後台第 4 步那個開關。
+</details>
 
 順帶一提，同一支函式也可以拿來跑 `purge_expired_chat_photos()` 與
 `purge_due_companion_links()`——**排程一旦接上，那兩個缺口就一起補上了**。
