@@ -521,6 +521,48 @@
   const adminReviewStory = (id, ok, note) => rpc('admin_review_story',
     { p_id: id, p_approve: !!ok, p_note: note || '' });
 
+  // ── 📷 對話相簿（見 schema 第 34 節）──────────────────────
+  // 照片 7 天後過期。過期是資料庫與 Storage 的政策一起擋的，
+  // 不是前端不畫出來而已。
+  const CHAT_BUCKET = 'chat-photos';
+  async function uploadChatPhoto(appId, file, caption) {
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const path = `${appId}/${crypto.randomUUID()}.${ext || 'jpg'}`;
+    const up = await sb.storage.from(CHAT_BUCKET).upload(path, file, { upsert: false });
+    if (up.error) throw up.error;
+    try {
+      return await rpc('add_chat_photo', { p_app_id: appId, p_path: path, p_caption: caption || '' });
+    } catch (e) {
+      // 記錄失敗就把剛上傳的檔案收掉，不要留下一個沒有人認領的物件
+      await sb.storage.from(CHAT_BUCKET).remove([path]).catch(() => {});
+      throw e;
+    }
+  }
+  async function chatPhotoUrl(path) {
+    // 私密 bucket，只能用簽名網址；1 小時後這個連結本身就失效
+    const { data, error } = await sb.storage.from(CHAT_BUCKET).createSignedUrl(path, 3600);
+    if (error) throw error;
+    return data.signedUrl;
+  }
+  async function listChatPhotos(appId) {
+    const r = await rpc('list_chat_photos', { p_app_id: appId });
+    /* 順手把自己傳的、已經過期的檔案從 Storage 刪掉。
+       排程還沒有，這是唯一會真的讓檔案消失的路徑——
+       但只涵蓋還有人在打開的對話，所以介面上只承諾「看不到」。 */
+    const stale = (r && r.expired_mine) || [];
+    if (stale.length) {
+      try {
+        await sb.storage.from(CHAT_BUCKET).remove(stale);
+        await rpc('mark_chat_photos_purged', { p_paths: stale });
+      } catch (e) { /* best-effort，失敗就下次再試 */ }
+    }
+    return (r && r.photos) || [];
+  }
+  const expireChatPhoto = (id) => rpc('expire_chat_photo', { p_id: id });
+
+  // ── 📬 待審通知的狀態（見 schema 第 35 節）────────────────
+  const ownerNotificationHealth = () => rpc('owner_notification_health');
+
   const myCompanionLinks = ()   => rpc('my_companion_links');
   const listCapsules = (linkId) => rpc('list_capsules', { p_link_id: linkId });
   const writeCapsule = (linkId, openAt, body, title) =>
@@ -746,6 +788,8 @@
     clinicPermissions, setClinicPermission, clinicSafetyMode, buildClinicContext,
     saveClinicSession, listClinicSessions, deleteClinicSession,
     partnerState, setPartner, annualPeriods, annualReview,
+    uploadChatPhoto, chatPhotoUrl, listChatPhotos, expireChatPhoto,
+    ownerNotificationHealth,
     storyState, saveStory, setStoryAgree, setStoryName,
     publicStories, adminStoryQueue, adminReviewStory,
     myCompanionLinks, listCapsules, writeCapsule, openCapsule,

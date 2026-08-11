@@ -281,6 +281,19 @@
   .storyCard h3{font-family:var(--font-heading);font-size:17px;margin:0 0 4px}
   .storyBody{white-space:pre-wrap;margin-top:8px;line-height:1.85}
   .stNote{flex:1 1 220px;min-width:0}
+  /* 📷 對話相簿：小張、可捲，不要把對話擠掉 */
+  .albumBar{padding:10px 16px;border-top:1px solid var(--rule);font-size:12.5px}
+  .photoGrid{display:flex;gap:10px;overflow-x:auto;padding:8px 0 2px}
+  .photoCard{flex:0 0 150px;margin:0;border:1px solid var(--rule);padding:6px}
+  .photoCard img{width:100%;height:110px;object-fit:cover;display:block}
+  .photoCard figcaption{font-size:11.5px;margin-top:4px}
+  .photoCard .bar{gap:4px;margin-top:4px}
+  .photoCard .bar > *{padding:2px 8px;font-size:11.5px;min-height:0}
+  .photoCard a.dl{display:inline-block;border:1px solid var(--rule);border-radius:999px;
+        text-decoration:none;color:var(--brand-dk)}
+  /* 📬 通知沒接上時的提示：一條線，不是一塊紅色 */
+  .notifyBar{border-left:2px solid var(--warn);padding:6px 10px;font-size:12.5px;margin-bottom:10px}
+  .notifyBar.bad{border-left-color:var(--bad)}
   /* 檢舉時效：逾期用紅色的線，不是紅色的塊 */
   .slaBar{font-size:13px;border-bottom:1px dotted var(--rule);padding-bottom:8px;margin-bottom:10px}
   .slaTag{display:inline-block;font-size:12px;border:1px solid var(--rule);border-radius:999px;
@@ -439,6 +452,8 @@
 <dialog id="chatDialog" aria-labelledby="chatTitle">
   <div class="chatHead"><strong id="chatTitle">第二階段對話</strong><button class="ghost" id="chatClose">關閉</button></div>
   <div id="chatMessages" aria-live="polite"></div>
+  <!-- 📷 對話相簿：照片 7 天後就看不到了，想留下來要自己按 ⬇️ -->
+  <div id="chatAlbum" class="albumBar"></div>
   <div id="chatCompanion" class="companionBar" hidden></div>
   <div id="chatConsent" class="consentBar"></div>
   <div style="padding:12px 16px">
@@ -3886,6 +3901,71 @@ function renderChatMessages(rows){
   $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
 }
 
+/* ── 📷 對話相簿（見 schema 第 34 節）──────────────────────
+   照片 7 天後過期。過期由資料庫與 Storage 的政策一起擋，不是前端不畫而已。
+
+   ⚠️ 這一段的文案有一條底線：**會過期不等於安全。**
+   對方在這 7 天內可以下載、可以截圖，暖陽擋不住，任何軟體都擋不住。
+   一個看起來會「自動消失」的相簿，如果讓人以為傳私密照片是安全的，
+   那比不做這個功能更糟。所以那句話一定要在畫面上，而且有測試盯著。 */
+let chatPhotos = [];
+async function renderChatAlbum(){
+  const box = $('chatAlbum'); if(!box) return;
+  try{ chatPhotos = await DB.listChatPhotos(activeChat); }
+  catch(e){ chatPhotos = []; }
+  const cards = await Promise.all(chatPhotos.map(async p => {
+    let url = '';
+    try{ url = await DB.chatPhotoUrl(p.path); }catch(e){}
+    return `<figure class="photoCard">
+      ${url ? `<img src="${url}" alt="${esc(p.caption || '對話中的照片')}" loading="lazy">`
+            : '<div class="hint">讀不到這張照片</div>'}
+      <figcaption>
+        ${p.caption ? `<div>${esc(p.caption)}</div>` : ''}
+        <div class="hint">${p.mine ? '你傳的・' : ''}剩 ${p.days_left} 天</div>
+        <div class="bar">
+          ${url ? `<a class="ghost dl" href="${url}" download>⬇️ 下載</a>` : ''}
+          ${p.mine ? `<button class="ghost photoPull" data-id="${p.id}">收回</button>` : ''}
+        </div>
+      </figcaption>
+    </figure>`;
+  }));
+  box.innerHTML = `
+    <div><b>📷 對話相簿</b>
+      <span class="hint">照片 <b>7 天後就看不到了</b>。想留下來的請按 ⬇️ 下載。</span></div>
+    ${cards.length ? `<div class="photoGrid">${cards.join('')}</div>`
+      : '<p class="hint" style="margin:6px 0 0">還沒有照片。</p>'}
+    <div class="bar" style="margin-top:8px">
+      <input type="file" id="photoFile" accept="image/*" style="max-width:220px">
+      <input id="photoCaption" placeholder="說明（選填）" maxlength="200" style="max-width:200px">
+      <button class="ghost" id="photoSend">傳送照片</button>
+      <span class="msg" id="photoMsg"></span>
+    </div>
+    <p class="hint" style="margin:6px 0 0">
+      <b>會過期不等於安全。</b>對方在這 7 天內可以下載、可以截圖，
+      暖陽擋不住，任何軟體都擋不住。傳出去之前請先想一次：
+      這張照片如果被留下來、被傳出去，你可以接受嗎？
+      收到讓你不舒服的照片，可以直接封鎖或檢舉。</p>`;
+  $('photoSend').onclick = async () => {
+    const f = $('photoFile').files[0];
+    if(!f){ flash('photoMsg','先選一張照片'); return; }
+    if(f.size > 8 * 1024 * 1024){ flash('photoMsg','照片請小於 8MB'); return; }
+    $('photoSend').disabled = true;
+    try{
+      await DB.uploadChatPhoto(activeChat, f, $('photoCaption').value.trim());
+      $('photoFile').value = ''; $('photoCaption').value = '';
+      renderChatAlbum();
+    }catch(e){ flash('photoMsg', e.message || '傳不上去'); }
+    $('photoSend').disabled = false;
+  };
+  box.querySelectorAll('.photoPull').forEach(b => b.onclick = async () => {
+    /* 收回是立刻的，但已經被下載或截圖的收不回來——
+       這句話一定要說，不能讓人按了以為沒事了。 */
+    if(!confirm('收回之後對方就看不到了。\n但如果他已經下載或截圖，那是收不回來的。\n確定收回嗎？')) return;
+    try{ await DB.expireChatPhoto(b.dataset.id); renderChatAlbum(); }
+    catch(e){ alert(e.message || '收不回來'); }
+  });
+}
+
 let bmTarget = null;
 function openBookmark(m){
   bmTarget = m;
@@ -4626,6 +4706,32 @@ async function jrStory(L){
   };
 }
 
+/* 📬 待審通知有沒有真的在跑。
+   這個區塊的用途是**揭穿自己**：如果通知從來沒接上，pending 會一直往上長，
+   而站方會在這裡看到。沒有它的話，「有做通知」這件事會變成一個沒有人驗證過的假設。 */
+async function renderNotifyHealth(){
+  const box = $('notifyHealth'); if(!box) return;
+  let h;
+  try{ h = await DB.ownerNotificationHealth(); }catch(e){ box.innerHTML = ''; return; }
+  if(!h.pending && !h.last_sent_at){ box.innerHTML = ''; return; }
+  if(h.looks_unconfigured){
+    box.innerHTML = `<div class="notifyBar bad">
+      <b>📬 待審通知看起來還沒設定</b>
+      <div>已經累積 ${h.pending} 則通知，但一封都沒有寄出過。
+        網站功能不受影響，只是沒有人會收到 email——要靠自己進來看。</div>
+      <div class="hint">設定步驟在 README 的「待審通知」那一節
+        （部署 supabase/functions/notify-owner，設定 RESEND_API_KEY 與 NOTIFY_TO）。</div>
+    </div>`;
+    return;
+  }
+  box.innerHTML = `<div class="notifyBar${h.pending > 20 ? ' bad' : ''}">
+    <b>📬 待審通知</b>
+    <div>待寄 ${h.pending} 則${h.last_sent_at
+      ? `，最後一次寄出：${esc(new Date(h.last_sent_at).toLocaleString('zh-TW'))}` : ''}。</div>
+    ${h.last_error ? `<div class="hint">最後一次錯誤：${esc(h.last_error)}</div>` : ''}
+  </div>`;
+}
+
 /* 管理端：故事審核 */
 async function renderStoryAdmin(){
   let rows = [];
@@ -4787,6 +4893,7 @@ async function openChat(appId, name, otherId){
   try{ companion = await DB.companionState(appId); }
   catch(e){ companion = {eligible:false, exists:false, status:'none', mine:false, other:false}; }
   renderCompanion();
+  renderChatAlbum();
   if(stopChatSubscription) stopChatSubscription();
   stopChatSubscription = DB.subscribeMessages(appId, async () => {
     if(activeChat !== appId) return;
@@ -5586,6 +5693,7 @@ async function renderAdminHome(){
   }
   if(!$('adminStats')){
     body.innerHTML = `
+      <div id="notifyHealth"></div>
       <fieldset><legend>全站統計</legend><p class="hint" id="adminStats">讀取中⋯⋯</p></fieldset>
       <fieldset><legend>手動加點</legend>
         <p class="hint" style="margin:0 0 8px">線上儲值尚未開放，人工加值（例如轉帳收款後）請用這裡，會走安全函式，不是直接改資料庫。</p>
@@ -5642,6 +5750,11 @@ async function renderAdminHome(){
       }catch(e){ flash('grantMsg', e.message || '操作失敗'); }
     };
   }
+
+  /* 通知狀態不依賴底下那幾個統計查詢，所以先畫。
+     放在後面的話，統計一失敗就 return，通知沒接上這件事永遠不會被說出來——
+     而那正好是最需要被說出來的時候。 */
+  renderNotifyHealth();
 
   let allProfiles, allApps, reports;
   try{

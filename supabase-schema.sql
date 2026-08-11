@@ -6540,3 +6540,367 @@ begin
 end $$;
 revoke all on function public.set_companion_partner(uuid, boolean) from public, anon;
 grant execute on function public.set_companion_partner(uuid, boolean) to authenticated;
+
+-- ============================================================
+-- 34) 📷 對話相簿：照片 7 天後過期，想留下來要自己下載
+--
+--     這是規格第 7 節第 2 題（陪伴紀錄的照片要放哪個 bucket）的答案，
+--     而且這個答案**把那道題解掉了**，不是繞過去：
+--     照片不進陪伴紀錄，也不長期保存。它們待在對話旁邊的相簿裡，
+--     7 天之後就看不到了。沒有長期私密儲存，就沒有那個 bucket 的清理政策問題，
+--     也不必跟 6.1 的 purge_at 綁在一起。想留下來的人自己按 ⬇️ 下載。
+--
+--     ── 一句必須講清楚的話 ────────────────────────────────
+--     **會過期不等於安全。** 對方在這 7 天內可以下載、可以截圖，
+--     暖陽擋不住，任何軟體都擋不住。
+--     介面上一定要照實寫——一個看起來會「自動消失」的相簿，
+--     如果讓人以為傳私密照片是安全的，那比不做這個功能更糟。
+--     這一條有測試盯著。
+--
+--     ── 過期怎麼真的發生 ──────────────────────────────────
+--     分兩層，因為排程還是沒有：
+--       ・**看得到／看不到**：list_chat_photos() 直接以 expires_at 過濾，
+--         時間一到，App 裡就再也拿不到那個路徑，不需要任何排程。
+--       ・**檔案本身**：需要有人去 Storage 刪。前端在列相簿時會順手把
+--         自己上傳、已經過期的那幾個刪掉（best-effort）；
+--         沒人再打開的對話則要靠排程。purge_expired_chat_photos() 已經寫好，
+--         但**還是沒有東西在呼叫它**，所以介面上只承諾「看不到」，
+--         不承諾「已經從伺服器上消失」。
+-- ============================================================
+
+insert into storage.buckets (id, name, public)
+  values ('chat-photos', 'chat-photos', false)
+  on conflict (id) do nothing;
+
+create table if not exists public.chat_photos (
+  id             uuid primary key default gen_random_uuid(),
+  application_id uuid not null references public.applications(id) on delete cascade,
+  sender_id      uuid not null references auth.users(id) on delete cascade,
+  path           text not null unique,
+  caption        text not null default '',
+  created_at     timestamptz not null default now(),
+  expires_at     timestamptz not null default now() + interval '7 days',
+  purged_at      timestamptz
+);
+create index if not exists chat_photos_app_idx
+  on public.chat_photos(application_id, created_at desc);
+
+alter table public.chat_photos enable row level security;
+drop policy if exists "chat_photos_participant" on public.chat_photos;
+create policy "chat_photos_participant" on public.chat_photos
+  for select to authenticated using (
+    exists (select 1 from public.applications a
+             where a.id = application_id and auth.uid() in (a.from_user, a.to_user)));
+grant select on public.chat_photos to authenticated;
+
+-- Storage 的權限：路徑統一是 {application_id}/{uuid}.jpg
+drop policy if exists "chat_photos_sender_write" on storage.objects;
+drop policy if exists "chat_photos_participant_read" on storage.objects;
+create policy "chat_photos_sender_write"
+  on storage.objects for all to authenticated
+  using (bucket_id = 'chat-photos' and owner = auth.uid())
+  with check (
+    bucket_id = 'chat-photos' and owner = auth.uid()
+    -- 只能傳進自己有份的那段對話的資料夾
+    and exists (select 1 from public.applications a
+                 where a.id = (storage.foldername(name))[1]::uuid
+                   and auth.uid() in (a.from_user, a.to_user)));
+/* 讀取一樣要是當事人，**而且那一列還沒過期**。
+   少了 expires_at 這個條件，過期的只是在畫面上看不到，
+   知道路徑的人還是拿得到——那就等於沒有過期。 */
+create policy "chat_photos_participant_read"
+  on storage.objects for select to authenticated
+  using (
+    bucket_id = 'chat-photos'
+    and exists (select 1 from public.chat_photos p
+                 join public.applications a on a.id = p.application_id
+                where p.path = storage.objects.name
+                  and p.expires_at > now()
+                  and auth.uid() in (a.from_user, a.to_user)));
+
+-- 34.1 傳一張 ------------------------------------------------
+create or replace function public.add_chat_photo(
+  p_app_id uuid, p_path text, p_caption text default ''
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_app public.applications; v_id uuid; n int;
+begin
+  if auth.uid() is null then raise exception '請先登入'; end if;
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app.id is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這個對話';
+  end if;
+  if v_app.status <> 'open' then raise exception '這段對話已經結束'; end if;
+  -- 路徑一定要在這段對話的資料夾底下，不然 Storage 的政策就形同虛設
+  if p_path is null or p_path not like (p_app_id::text || '/%') then
+    raise exception '照片路徑不正確';
+  end if;
+  if public.looks_like_contact(coalesce(p_caption,'')) then
+    raise exception '照片說明裡不要放聯絡方式';
+  end if;
+
+  -- 一段對話裡同時最多 30 張還沒過期的，避免被當成免費圖床
+  select count(*) into n from public.chat_photos
+   where application_id = p_app_id and expires_at > now();
+  if n >= 30 then raise exception '這段對話目前的照片已經達到上限（30 張），等舊的過期再傳'; end if;
+
+  insert into public.chat_photos(application_id, sender_id, path, caption)
+    values (p_app_id, auth.uid(), p_path, left(coalesce(p_caption,''), 200))
+    returning id into v_id;
+  return jsonb_build_object('id', v_id);
+end $$;
+revoke all on function public.add_chat_photo(uuid,text,text) from public, anon;
+grant execute on function public.add_chat_photo(uuid,text,text) to authenticated;
+
+-- 34.2 相簿 --------------------------------------------------
+create or replace function public.list_chat_photos(p_app_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_app public.applications;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app.id is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這個對話';
+  end if;
+  return jsonb_build_object(
+    'photos', (select coalesce(jsonb_agg(jsonb_build_object(
+        'id', p.id, 'path', p.path, 'caption', p.caption,
+        'mine', p.sender_id = auth.uid(),
+        'created_at', p.created_at, 'expires_at', p.expires_at,
+        /* 剩幾天用 ceil：還有 6 小時就顯示「剩 1 天」，
+           顯示成 0 會讓人以為已經沒了而不去下載。 */
+        'days_left', greatest(1, ceil(extract(epoch from (p.expires_at - now())) / 86400)::int))
+        order by p.created_at desc), '[]'::jsonb)
+      from public.chat_photos p
+     where p.application_id = p_app_id and p.expires_at > now()),
+    /* 前端拿這個去做 best-effort 清理：只刪自己上傳的。
+       別人上傳的檔案自己沒有權限刪，也不該有。 */
+    'expired_mine', (select coalesce(jsonb_agg(p.path), '[]'::jsonb)
+      from public.chat_photos p
+     where p.application_id = p_app_id and p.expires_at <= now()
+       and p.sender_id = auth.uid() and p.purged_at is null));
+end $$;
+revoke all on function public.list_chat_photos(uuid) from public, anon;
+grant execute on function public.list_chat_photos(uuid) to authenticated;
+
+-- 前端把 Storage 上的檔案刪掉之後回報，避免下次又列一次
+create or replace function public.mark_chat_photos_purged(p_paths text[])
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare n int;
+begin
+  update public.chat_photos set purged_at = now()
+   where path = any(p_paths) and sender_id = auth.uid() and expires_at <= now();
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function public.mark_chat_photos_purged(text[]) from public, anon;
+grant execute on function public.mark_chat_photos_purged(text[]) to authenticated;
+
+/* 想提早收回自己傳的照片。收回是立刻的，不用對方同意。
+   （但對方在這之前如果已經下載或截圖，那是收不回來的——
+     這句話介面上要寫出來，不能讓人以為按了就沒事了。） */
+create or replace function public.expire_chat_photo(p_id uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v public.chat_photos;
+begin
+  select * into v from public.chat_photos where id = p_id;
+  if v.id is null then raise exception '找不到這張照片'; end if;
+  if v.sender_id <> auth.uid() then raise exception '只有傳出去的人可以收回'; end if;
+  update public.chat_photos set expires_at = now() where id = p_id;
+end $$;
+revoke all on function public.expire_chat_photo(uuid) from public, anon;
+grant execute on function public.expire_chat_photo(uuid) to authenticated;
+
+/* ⚠️ 給排程用的，目前**沒有東西在呼叫它**。
+   它只把資料列標記掉；Storage 上的檔案要由呼叫端（Edge Function）去刪。 */
+create or replace function public.expired_chat_photo_paths(p_limit int default 500)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  return (select coalesce(jsonb_agg(path), '[]'::jsonb) from (
+    select path from public.chat_photos
+     where expires_at <= now() and purged_at is null
+     order by expires_at limit greatest(1, least(p_limit, 1000))) t);
+end $$;
+create or replace function public.purge_expired_chat_photos(p_paths text[])
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare n int;
+begin
+  update public.chat_photos set purged_at = now() where path = any(p_paths);
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function public.expired_chat_photo_paths(int) from public, anon, authenticated;
+revoke all on function public.purge_expired_chat_photos(text[]) from public, anon, authenticated;
+grant execute on function public.expired_chat_photo_paths(int) to service_role;
+grant execute on function public.purge_expired_chat_photos(text[]) to service_role;
+
+-- ============================================================
+-- 35) 📬 待審通知：站方信箱的收件匣（outbox）
+--
+--     問題：人工審核目前沒有通知，站方要自己進管理後台才知道有東西待審。
+--     跟第 36 節檢舉時效通知是同一個缺口。
+--
+--     ── 為什麼做成一張表，而不是在 trigger 裡直接發信 ────────
+--     在 trigger 裡打 HTTP 出去有三個問題：外部服務掛掉會讓使用者那一次
+--     送出檢舉／回饋整個失敗；沒有重試；而且發生了什麼完全看不到。
+--     所以這裡做的是一個 **outbox**：資料庫只負責「記下有這件事要通知」，
+--     真正寄信的是 Edge Function（supabase/functions/notify-owner）。
+--     好處是——**就算通知從來沒被接上，網站的功能一樣完全正常**，
+--     只是 pending 會一直累積，而管理後台看得到那個數字。
+--
+--     ── 這一節本身不會寄出任何信 ──────────────────────────
+--     部署與設定步驟寫在 README。沒有設定的話這裡就只是一張會長大的表，
+--     不會有任何錯誤，也不會擋住任何人。
+-- ============================================================
+
+create table if not exists public.owner_notifications (
+  id         uuid primary key default gen_random_uuid(),
+  kind       text not null,
+  ref_id     uuid,
+  subject    text not null,
+  body       text not null default '',
+  created_at timestamptz not null default now(),
+  sent_at    timestamptz,
+  attempts   int not null default 0,
+  last_error text
+);
+alter table public.owner_notifications drop constraint if exists owner_notifications_kind_check;
+alter table public.owner_notifications add constraint owner_notifications_kind_check
+  check (kind in ('report','feedback','story','photo_review','verify_review'));
+create index if not exists owner_notifications_pending_idx
+  on public.owner_notifications(sent_at, created_at);
+
+alter table public.owner_notifications enable row level security;
+drop policy if exists "owner_notifications_admin" on public.owner_notifications;
+create policy "owner_notifications_admin" on public.owner_notifications
+  for select to authenticated using (public.match_is_admin(auth.uid()));
+grant select on public.owner_notifications to authenticated;
+
+create or replace function public.queue_owner_notification(
+  p_kind text, p_ref uuid, p_subject text, p_body text default ''
+) returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  insert into public.owner_notifications(kind, ref_id, subject, body)
+    values (p_kind, p_ref, left(p_subject, 200), left(coalesce(p_body,''), 2000));
+exception when others then
+  /* 通知失敗**不能**讓使用者那一次操作失敗。
+     送不出檢舉比收不到通知嚴重得多。 */
+  null;
+end $$;
+revoke all on function public.queue_owner_notification(text,uuid,text,text) from public, anon, authenticated;
+
+-- 35.1 什麼時候記一筆 ------------------------------------------
+create or replace function public.trg_notify_report()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform public.queue_owner_notification('report', new.id,
+    '有一件新的檢舉',
+    '檢舉理由：' || left(coalesce(new.why,''), 300)
+    || E'\n處理時效是 3 個工作日。');
+  return new;
+end $$;
+drop trigger if exists trg_notify_report on public.reports;
+create trigger trg_notify_report after insert on public.reports
+  for each row execute function public.trg_notify_report();
+
+create or replace function public.trg_notify_feedback()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform public.queue_owner_notification('feedback', new.id,
+    '有一則新的意見回饋（' || coalesce(new.category,'other') || '）',
+    left(coalesce(new.body,''), 500));
+  return new;
+end $$;
+drop trigger if exists trg_notify_feedback on public.feedback;
+create trigger trg_notify_feedback after insert on public.feedback
+  for each row execute function public.trg_notify_feedback();
+
+/* 故事是狀態變成 pending 的那一刻才要通知，不是寫草稿的時候。
+   草稿改一次就寄一封信，站方會直接把通知關掉。 */
+create or replace function public.trg_notify_story()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if new.status = 'pending' and (tg_op = 'INSERT' or old.status is distinct from 'pending') then
+    perform public.queue_owner_notification('story', new.id,
+      '有一則故事等待審核：' || left(coalesce(new.title,''), 60),
+      left(coalesce(new.body,''), 500));
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_notify_story on public.companion_stories;
+create trigger trg_notify_story after insert or update on public.companion_stories
+  for each row execute function public.trg_notify_story();
+
+/* 照片與身分驗證：同樣只在「送出審核」那一刻。 */
+create or replace function public.trg_notify_review()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if new.photo_status = 'pending' and old.photo_status is distinct from 'pending' then
+    perform public.queue_owner_notification('photo_review', new.id, '有一張大頭照等待審核', '');
+  end if;
+  if new.verify_status = 'pending' and old.verify_status is distinct from 'pending' then
+    perform public.queue_owner_notification('verify_review', new.id, '有一份身分驗證等待審核', '');
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_notify_review on public.match_profiles;
+create trigger trg_notify_review after update on public.match_profiles
+  for each row execute function public.trg_notify_review();
+
+-- 35.2 管理後台看得到通知有沒有真的在跑 ------------------------
+--      這個數字的用途是**揭穿自己**：如果通知沒接上，它會一直往上長。
+create or replace function public.owner_notification_health()
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_pending int; v_oldest timestamptz; v_last timestamptz; v_err text;
+begin
+  if auth.uid() is null or not public.match_is_admin(auth.uid()) then
+    raise exception '只有管理員可以查看通知狀態';
+  end if;
+  select count(*), min(created_at) into v_pending, v_oldest
+    from public.owner_notifications where sent_at is null;
+  select max(sent_at) into v_last from public.owner_notifications where sent_at is not null;
+  select last_error into v_err from public.owner_notifications
+   where last_error is not null order by created_at desc limit 1;
+  return jsonb_build_object(
+    'pending', v_pending, 'oldest_pending', v_oldest,
+    'last_sent_at', v_last, 'last_error', v_err,
+    /* 從來沒寄出過任何一封，而且已經累積了幾筆 → 幾乎可以確定是沒設定。 */
+    'looks_unconfigured', (v_last is null and v_pending > 0));
+end $$;
+revoke all on function public.owner_notification_health() from public, anon;
+grant execute on function public.owner_notification_health() to authenticated;
+
+-- 35.3 給 Edge Function 用的 -----------------------------------
+create or replace function public.pending_owner_notifications(p_limit int default 50)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  return (select coalesce(jsonb_agg(jsonb_build_object(
+      'id', n.id, 'kind', n.kind, 'subject', n.subject,
+      'body', n.body, 'created_at', n.created_at) order by n.created_at), '[]'::jsonb)
+    from (select * from public.owner_notifications
+           where sent_at is null and attempts < 5
+           order by created_at limit greatest(1, least(p_limit, 200))) n);
+end $$;
+create or replace function public.mark_owner_notifications_sent(p_ids uuid[])
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare n int;
+begin
+  update public.owner_notifications set sent_at = now(), last_error = null
+   where id = any(p_ids) and sent_at is null;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+create or replace function public.mark_owner_notifications_failed(p_ids uuid[], p_error text)
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare n int;
+begin
+  update public.owner_notifications
+     set attempts = attempts + 1, last_error = left(coalesce(p_error,''), 500)
+   where id = any(p_ids) and sent_at is null;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function public.pending_owner_notifications(int) from public, anon, authenticated;
+revoke all on function public.mark_owner_notifications_sent(uuid[]) from public, anon, authenticated;
+revoke all on function public.mark_owner_notifications_failed(uuid[],text) from public, anon, authenticated;
+grant execute on function public.pending_owner_notifications(int) to service_role;
+grant execute on function public.mark_owner_notifications_sent(uuid[]) to service_role;
+grant execute on function public.mark_owner_notifications_failed(uuid[],text) to service_role;
