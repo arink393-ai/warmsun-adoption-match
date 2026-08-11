@@ -65,8 +65,15 @@ function authorized(req: Request): boolean {
   const secret = Deno.env.get("NOTIFY_SECRET") ?? "";
   const auth = req.headers.get("Authorization") ?? "";
   const given = req.headers.get("x-notify-secret") ?? "";
+  /* 也接受 ?secret=... 。
+     用途是**測試**：自訂標頭（x-notify-secret）會讓瀏覽器先送一個 OPTIONS 預檢，
+     而預檢依規格不帶任何自訂標頭，卡在那裡的時候錯誤訊息會指向 CORS，
+     跟真正的原因（授權）長得完全不一樣，很難查。
+     用網址參數就不會有預檢，一次就知道函式到底活著沒有。
+     ⚠️ 網址會進瀏覽器紀錄與伺服器 log，所以**排程請用標頭那一種**。 */
+  const qs = new URL(req.url).searchParams.get("secret") ?? "";
   if (svc && auth === `Bearer ${svc}`) return true;
-  if (secret && given === secret) return true;
+  if (secret && (given === secret || qs === secret)) return true;
   return false;
 }
 

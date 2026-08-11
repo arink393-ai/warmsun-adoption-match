@@ -1736,13 +1736,19 @@ Edge Functions → **Secrets**（或 Project Settings → Edge Functions → Sec
 
 專案代號在 `js/config.js` 的 `SUPABASE_URL` 裡就看得到。
 
-**最省事的測法：瀏覽器 console。** 打開網站，按 F12 → Console，貼這一段：
-```js
-fetch('https://<專案代號>.supabase.co/functions/v1/notify-owner', {
-  method: 'POST',
-  headers: { 'x-notify-secret': '<第 2 步那組亂數>' }
-}).then(r => r.json()).then(console.log).catch(console.error)
+**最省事的測法：直接在瀏覽器開這個網址**（把密鑰放在網址上）：
 ```
+https://<專案代號>.supabase.co/functions/v1/notify-owner?secret=<第 2 步那組亂數>
+```
+會看到 JSON 回應。這樣測不會觸發 CORS 預檢，所以**看到的錯誤就是真正的錯誤**。
+
+> 為什麼不用 `x-notify-secret` 標頭測：自訂標頭會讓瀏覽器先送一個 OPTIONS 預檢，
+> 而預檢依規格不帶任何自訂標頭。只要 Verify JWT 還開著，預檢就會被閘道擋掉，
+> 而瀏覽器只會說「CORS policy: preflight ... does not have HTTP ok status」——
+> 那個訊息看起來像 CORS 壞了，實際上是授權被擋。查起來會繞很久。
+>
+> ⚠️ 網址會進瀏覽器紀錄與伺服器 log，所以**排程請用標頭那一種**，
+> 網址參數只拿來做一次性的測試。
 
 有終端機的話 curl 也可以（Windows 用 PowerShell 的話要把換行的 `\` 拿掉寫成一行）：
 ```bash
