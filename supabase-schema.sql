@@ -6237,3 +6237,306 @@ begin
 end $$;
 revoke all on function public.my_companion_links() from public, anon;
 grant execute on function public.my_companion_links() to authenticated;
+
+-- ============================================================
+-- 33) 💛 他們的故事：配對成功的伴侶把故事貼出來給其他人看
+--
+--     ── 這一節在做的事，本質上是第 26 節那個洞的放大版 ──────
+--     暖陽整套四層漸進式揭露，就是為了讓聯絡方式要走完三階段、
+--     雙方都同意才交換。一個可以自由輸入、而且**訪客也看得到**的欄位，
+--     等於開了一條把任何文字放到所有人面前的管道。
+--     所以這裡有三道關，缺一不可：
+--       ① 伺服器端擋聯絡方式（沿用第 26 節的 looks_like_contact）
+--       ② **兩個人都要同意才送得出去**
+--       ③ 人工審核通過才公開
+--
+--     ── 四條寫死的產品規則 ────────────────────────────────
+--     (1) **只有互相承認彼此是伴侶的兩個人才能寫。**（第 32 節的條件）
+--     (2) **改了字，同意就作廢。** 對方同意的是「那一段文字」，
+--         不是「你之後想寫的任何東西」。這一條沒做的話，
+--         第 ② 道關可以被一次編輯繞過去。
+--     (3) **任何一方隨時可以撤下，而且立刻生效、不需要對方同意、不用問原因。**
+--         一段關於兩個人的公開文字，其中一個人不想要了就是不想要了。
+--     (4) **關係結束就自動下架。** 一則屬於已經分開的兩個人的「成功故事」
+--         留在公開頁面上，對兩邊都是傷害。這一條不靠排程，
+--         直接做在 end_companion_link() 裡。
+--
+--     ── 沒有的東西 ────────────────────────────────────────
+--     沒有愛心、沒有瀏覽數、沒有排行榜、沒有精選。
+--     一旦故事之間可以比較，寫故事就變成一件要表現的事。
+--     排序永遠是「最新的在前面」。
+-- ============================================================
+
+create table if not exists public.companion_stories (
+  id          uuid primary key default gen_random_uuid(),
+  link_id     uuid not null unique references public.companion_links(id) on delete cascade,
+  title       text not null default '',
+  body        text not null default '',
+  -- 各自決定自己要不要具名。預設兩邊都不具名——
+  -- 「這兩個帳號在一起」本身就是一則新的公開資訊，佈告欄上原本沒有。
+  show_name_a boolean not null default false,
+  show_name_b boolean not null default false,
+  author      uuid references auth.users(id) on delete set null,
+  agreed_a    boolean not null default false,
+  agreed_b    boolean not null default false,
+  status      text not null default 'draft',
+  admin_note  text not null default '',
+  reviewed_by uuid references auth.users(id) on delete set null,
+  reviewed_at timestamptz,
+  published_at timestamptz,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+alter table public.companion_stories drop constraint if exists companion_stories_status_check;
+alter table public.companion_stories add constraint companion_stories_status_check
+  check (status in ('draft','pending','published','rejected'));
+create index if not exists companion_stories_public_idx
+  on public.companion_stories(status, published_at desc);
+
+alter table public.companion_stories enable row level security;
+drop policy if exists "companion_stories_own" on public.companion_stories;
+/* 表本身只有當事人與管理員讀得到。
+   訪客要看的是 list_public_stories()，那支只回安全的欄位——
+   直接開放讀表的話，link_id、author、agreed_* 會一起流出去。 */
+create policy "companion_stories_own" on public.companion_stories
+  for select to authenticated using (
+    public.match_is_admin(auth.uid())
+    or exists (select 1 from public.companion_links l
+                where l.id = link_id and auth.uid() in (l.user_a, l.user_b)));
+grant select on public.companion_stories to authenticated;
+
+-- 33.1 寫與改 --------------------------------------------------
+create or replace function public.save_story(p_link_id uuid, p_title text, p_body text)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v public.companion_stories;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if not (v_link.partner_a and v_link.partner_b) then
+    raise exception '故事只能由互相承認彼此是伴侶的兩個人一起寫';
+  end if;
+  if v_link.status <> 'active' then raise exception '陪伴紀錄要在進行中才能寫故事'; end if;
+
+  if btrim(coalesce(p_title,'')) = '' then raise exception '故事要有一個標題'; end if;
+  if char_length(btrim(coalesce(p_body,''))) < 30 then
+    raise exception '再多寫一點吧，至少 30 個字';
+  end if;
+  if char_length(p_body) > 4000 then raise exception '故事最多 4000 個字'; end if;
+  /* ① 聯絡方式。沿用第 26 節那一支——這裡是訪客也看得到的地方，
+     一則故事如果可以寫「有興趣的人加我 LINE」，整套解鎖流程就被繞過去了。 */
+  if public.looks_like_contact(p_title) or public.looks_like_contact(p_body) then
+    raise exception '故事裡不要放聯絡方式（email、電話、LINE／IG 帳號、網址）——這一頁訪客也看得到';
+  end if;
+
+  insert into public.companion_stories(link_id, title, body, author, status)
+    values (p_link_id, left(btrim(p_title), 60), btrim(p_body), auth.uid(), 'draft')
+  on conflict (link_id) do update set
+    title = excluded.title, body = excluded.body, author = auth.uid(),
+    /* ② 改了字，同意就作廢。對方同意的是「那一段文字」，
+       不是「你之後想寫的任何東西」。少了這一行，雙方同意那道關
+       可以被一次編輯整個繞過去。 */
+    agreed_a = false, agreed_b = false,
+    status = 'draft', admin_note = '', reviewed_by = null, reviewed_at = null,
+    published_at = null, updated_at = now()
+  returning * into v;
+  return public.story_state(p_link_id);
+end $$;
+revoke all on function public.save_story(uuid,text,text) from public, anon;
+grant execute on function public.save_story(uuid,text,text) to authenticated;
+
+-- 各自決定自己要不要具名
+create or replace function public.set_story_name(p_link_id uuid, p_show boolean)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if auth.uid() = v_link.user_a then
+    update public.companion_stories set show_name_a = coalesce(p_show,false), updated_at = now()
+     where link_id = p_link_id;
+  else
+    update public.companion_stories set show_name_b = coalesce(p_show,false), updated_at = now()
+     where link_id = p_link_id;
+  end if;
+  return public.story_state(p_link_id);
+end $$;
+revoke all on function public.set_story_name(uuid,boolean) from public, anon;
+grant execute on function public.set_story_name(uuid,boolean) to authenticated;
+
+-- 33.2 同意送出／撤下 ------------------------------------------
+create or replace function public.set_story_agree(p_link_id uuid, p_on boolean)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v public.companion_stories; v_me_is_a boolean;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  select * into v from public.companion_stories where link_id = p_link_id;
+  if v.id is null then raise exception '還沒有故事'; end if;
+  v_me_is_a := (auth.uid() = v_link.user_a);
+
+  -- 只動自己那一格
+  if v_me_is_a then update public.companion_stories set agreed_a = coalesce(p_on,false) where id = v.id;
+  else               update public.companion_stories set agreed_b = coalesce(p_on,false) where id = v.id; end if;
+
+  /* ③ 撤下是立刻生效的，而且不需要對方同意、不用寫原因。
+     一段關於兩個人的公開文字，其中一個人不想要了就是不想要了。
+     已經審過的也一樣會掉下來——之後要再上，就要重新審一次。 */
+  update public.companion_stories
+     set status = case
+           when not (agreed_a and agreed_b) then 'draft'
+           when status = 'published' then 'published'
+           when status = 'rejected'  then 'rejected'
+           else 'pending' end,
+         published_at = case when agreed_a and agreed_b and status = 'published'
+                             then published_at else null end,
+         updated_at = now()
+   where id = v.id;
+  return public.story_state(p_link_id);
+end $$;
+revoke all on function public.set_story_agree(uuid,boolean) from public, anon;
+grant execute on function public.set_story_agree(uuid,boolean) to authenticated;
+
+create or replace function public.story_state(p_link_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v public.companion_stories; v_me_is_a boolean;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  v_me_is_a := (auth.uid() = v_link.user_a);
+  select * into v from public.companion_stories where link_id = p_link_id;
+  return jsonb_build_object(
+    'eligible', (v_link.partner_a and v_link.partner_b and v_link.status = 'active'),
+    'exists',   v.id is not null,
+    'title',    coalesce(v.title, ''),
+    'body',     coalesce(v.body, ''),
+    'status',   coalesce(v.status, 'none'),
+    'admin_note', coalesce(v.admin_note, ''),
+    'mine',     coalesce(case when v_me_is_a then v.agreed_a else v.agreed_b end, false),
+    /* 這裡跟第 32 節不同：故事的同意狀態兩邊都看得到。
+       他們已經互相承認彼此是伴侶了，「要不要一起把故事貼出去」
+       是一件本來就要一起討論的事，不是一句需要保護的告白。 */
+    'other',    coalesce(case when v_me_is_a then v.agreed_b else v.agreed_a end, false),
+    'show_name', coalesce(case when v_me_is_a then v.show_name_a else v.show_name_b end, false),
+    'published_at', v.published_at);
+end $$;
+revoke all on function public.story_state(uuid) from public, anon;
+grant execute on function public.story_state(uuid) to authenticated;
+
+-- 33.3 訪客看到的清單 ------------------------------------------
+--      只回公開需要的欄位。沒有 id 以外的內部欄位，也沒有任何計數。
+create or replace function public.list_public_stories(p_limit int default 50)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  return (select coalesce(jsonb_agg(jsonb_build_object(
+      'id', s.id, 'title', s.title, 'body', s.body,
+      'published_at', s.published_at,
+      /* 各自決定自己要不要具名。沒同意的那一邊回 null，
+         前端顯示成「一位使用者」。 */
+      'name_a', case when s.show_name_a then coalesce(nullif(pa.name,''), null) else null end,
+      'name_b', case when s.show_name_b then coalesce(nullif(pb.name,''), null) else null end)
+      /* 永遠照時間排。一旦可以照「熱門」排，寫故事就變成一件要表現的事。 */
+      order by s.published_at desc), '[]'::jsonb)
+    from (select * from public.companion_stories
+           where status = 'published' and published_at is not null
+           order by published_at desc limit greatest(1, least(p_limit, 100))) s
+    join public.companion_links l on l.id = s.link_id
+    left join public.match_profiles pa on pa.id = l.user_a
+    left join public.match_profiles pb on pb.id = l.user_b);
+end $$;
+grant execute on function public.list_public_stories(int) to authenticated, anon;
+
+-- 33.4 人工審核 ------------------------------------------------
+create or replace function public.admin_story_queue()
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  if auth.uid() is null or not public.match_is_admin(auth.uid()) then
+    raise exception '只有管理員可以審核故事';
+  end if;
+  return (select coalesce(jsonb_agg(jsonb_build_object(
+      'id', s.id, 'link_id', s.link_id, 'title', s.title, 'body', s.body,
+      'status', s.status, 'admin_note', s.admin_note,
+      'updated_at', s.updated_at, 'published_at', s.published_at)
+      -- 待審的排前面，同一組裡最舊的排前面（誰等最久）
+      order by (s.status <> 'pending'), s.updated_at), '[]'::jsonb)
+    from public.companion_stories s
+   where s.status in ('pending','published','rejected'));
+end $$;
+revoke all on function public.admin_story_queue() from public, anon;
+grant execute on function public.admin_story_queue() to authenticated;
+
+create or replace function public.admin_review_story(
+  p_id uuid, p_approve boolean, p_note text default ''
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v public.companion_stories;
+begin
+  if auth.uid() is null or not public.match_is_admin(auth.uid()) then
+    raise exception '只有管理員可以審核故事';
+  end if;
+  select * into v from public.companion_stories where id = p_id;
+  if v.id is null then raise exception '找不到這則故事'; end if;
+  /* 審核不能替當事人補上同意。少了這一條，一則被撤下的故事
+     可以被管理員一鍵放回公開頁面。 */
+  if p_approve and not (v.agreed_a and v.agreed_b) then
+    raise exception '這則故事目前沒有雙方同意，不能公開';
+  end if;
+  update public.companion_stories
+     set status = case when p_approve then 'published' else 'rejected' end,
+         admin_note = left(coalesce(p_note,''), 500),
+         reviewed_by = auth.uid(), reviewed_at = now(),
+         published_at = case when p_approve then now() else null end,
+         updated_at = now()
+   where id = p_id returning * into v;
+  return jsonb_build_object('id', v.id, 'status', v.status);
+end $$;
+revoke all on function public.admin_review_story(uuid,boolean,text) from public, anon;
+grant execute on function public.admin_review_story(uuid,boolean,text) to authenticated;
+
+-- 33.5 關係一結束或收回相互承認，故事就下架 --------------------
+--      (4) 一則屬於已經分開的兩個人的「成功故事」留在公開頁面上，
+--      對兩邊都是傷害。這裡不靠排程，直接做在那兩支 RPC 裡。
+create or replace function public.unpublish_story_for(p_link_id uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  update public.companion_stories
+     set status = 'draft', published_at = null, updated_at = now()
+   where link_id = p_link_id and status <> 'draft';
+end $$;
+revoke all on function public.unpublish_story_for(uuid) from public, anon, authenticated;
+
+create or replace function public.end_companion_link(p_link_id uuid)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if v_link.status = 'ended' then return public.companion_disposition_state(p_link_id); end if;
+  update public.companion_links
+     set status = 'ended', ended_at = now(), purge_at = now() + interval '30 days'
+   where id = p_link_id;
+  perform public.unpublish_story_for(p_link_id);
+  return public.companion_disposition_state(p_link_id);
+end $$;
+revoke all on function public.end_companion_link(uuid) from public, anon;
+grant execute on function public.end_companion_link(uuid) to authenticated;
+
+create or replace function public.set_companion_partner(p_link_id uuid, p_on boolean)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v_me_is_a boolean;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if v_link.status <> 'active' then
+    raise exception '陪伴紀錄要在進行中才能做這件事';
+  end if;
+  v_me_is_a := (auth.uid() = v_link.user_a);
+  if v_me_is_a then update public.companion_links set partner_a = coalesce(p_on,false) where id = p_link_id;
+  else               update public.companion_links set partner_b = coalesce(p_on,false) where id = p_link_id; end if;
+
+  update public.companion_links
+     set partnered_at = case when partner_a and partner_b and partnered_at is null
+                             then now() else partnered_at end
+   where id = p_link_id;
+
+  -- 收回相互承認 → 故事也跟著下架（寫故事的前提沒有了）
+  select * into v_link from public.companion_links where id = p_link_id;
+  if not (v_link.partner_a and v_link.partner_b) then
+    perform public.unpublish_story_for(p_link_id);
+  end if;
+  return public.companion_partner_state(p_link_id);
+end $$;
+revoke all on function public.set_companion_partner(uuid, boolean) from public, anon;
+grant execute on function public.set_companion_partner(uuid, boolean) to authenticated;

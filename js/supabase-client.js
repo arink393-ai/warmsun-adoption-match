@@ -508,6 +508,19 @@
   const annualReview    = (linkId, end) =>
     rpc('companion_annual_review', { p_link_id: linkId, p_period_end: end || null });
 
+  // ── 💛 他們的故事（見 schema 第 33 節）────────────────────
+  // 三道關全部在伺服器端：擋聯絡方式、雙方同意、人工審核。
+  // 前端這幾支只是把狀態拿過來畫。
+  const storyState  = (linkId)          => rpc('story_state', { p_link_id: linkId });
+  const saveStory   = (linkId, t, b)    => rpc('save_story',
+    { p_link_id: linkId, p_title: t, p_body: b });
+  const setStoryAgree = (linkId, on)    => rpc('set_story_agree', { p_link_id: linkId, p_on: !!on });
+  const setStoryName  = (linkId, show)  => rpc('set_story_name', { p_link_id: linkId, p_show: !!show });
+  const publicStories = ()              => rpc('list_public_stories');
+  const adminStoryQueue = ()            => rpc('admin_story_queue');
+  const adminReviewStory = (id, ok, note) => rpc('admin_review_story',
+    { p_id: id, p_approve: !!ok, p_note: note || '' });
+
   const myCompanionLinks = ()   => rpc('my_companion_links');
   const listCapsules = (linkId) => rpc('list_capsules', { p_link_id: linkId });
   const writeCapsule = (linkId, openAt, body, title) =>
@@ -733,6 +746,8 @@
     clinicPermissions, setClinicPermission, clinicSafetyMode, buildClinicContext,
     saveClinicSession, listClinicSessions, deleteClinicSession,
     partnerState, setPartner, annualPeriods, annualReview,
+    storyState, saveStory, setStoryAgree, setStoryName,
+    publicStories, adminStoryQueue, adminReviewStory,
     myCompanionLinks, listCapsules, writeCapsule, openCapsule,
     endCompanionLink, dispositionState, setDisposition,
     submitFeedback, listMyFeedback, feedbackLooksPersonal,

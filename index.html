@@ -274,6 +274,13 @@
         padding:0 8px;margin-left:6px;color:var(--ink-soft)}
   .jrPre{white-space:pre-wrap;word-break:break-all;font-size:11.5px;max-height:260px;
         overflow:auto;background:var(--paper);border:1px solid var(--rule);padding:8px;margin:6px 0 0}
+  /* 💛 他們的故事：一則就是一則，不做卡片牆。
+     卡片牆會讓人一眼比較「誰的比較精彩」，那不是這一頁的用途。 */
+  .storyCard{padding:16px 0;border-bottom:1px solid var(--rule)}
+  .storyCard:last-child{border-bottom:0}
+  .storyCard h3{font-family:var(--font-heading);font-size:17px;margin:0 0 4px}
+  .storyBody{white-space:pre-wrap;margin-top:8px;line-height:1.85}
+  .stNote{flex:1 1 220px;min-width:0}
   /* 檢舉時效：逾期用紅色的線，不是紅色的塊 */
   .slaBar{font-size:13px;border-bottom:1px dotted var(--rule);padding-bottom:8px;margin-bottom:10px}
   .slaTag{display:inline-block;font-size:12px;border:1px solid var(--rule);border-radius:999px;
@@ -1067,6 +1074,19 @@
 </div>
 
 <!-- 流程說明 -->
+<!-- 💛 他們的故事：訪客也看得到。所以這一頁的內容全部走過
+     「擋聯絡方式 → 雙方同意 → 人工審核」三道關（schema 第 33 節）。 -->
+<div class="pane" id="pane-stories">
+  <fieldset>
+    <legend>💛 他們的故事</legend>
+    <p class="hint" style="margin-top:0">這裡是走完全程、而且互相承認彼此是伴侶的人，
+      自己願意寫下來分享的。<b>每一則都是兩個人都同意才貼出來的</b>，
+      而且任何一方隨時可以撤下。</p>
+    <p class="hint">要不要具名由各自決定，所以你會看到有些人是「一位使用者」。</p>
+    <div id="storyList"><p class="hint">讀取中⋯⋯</p></div>
+  </fieldset>
+</div>
+
 <div class="pane" id="pane-how">
   <fieldset>
     <legend>名詞對照表</legend>
@@ -1829,6 +1849,8 @@ function renderVerifyNotice(){
 /* ── 分頁 ── */
 const PANES = [
   {k:'home', t:'首頁'}, {k:'board', t:'佈告欄'}, {k:'center', t:'個人中心'}, {k:'admin', t:'管理後台'},
+  // 💛 他們的故事不進 PROTECTED_TABS：訪客也看得到，那才叫「貼出來給其他人看」
+  {k:'stories', t:'💛 他們的故事'},
   {k:'how', t:'流程說明'}, {k:'safety', t:'🛡️ 安全中心'}, {k:'privacy', t:'隱私權'}, {k:'terms', t:'服務條款'}
 ];
 const SUBS = [
@@ -1875,6 +1897,7 @@ function initTabs(){
     if(b.dataset.k === 'center') showSub(curSub);
     if(b.dataset.k === 'admin') renderAdminHome();
     if(b.dataset.k === 'safety') renderBlockedList();
+    if(b.dataset.k === 'stories') renderPublicStories();
   };
   document.addEventListener('click', e => {
     const g = e.target.closest('[data-goto]'); if(!g) return;
@@ -4047,7 +4070,7 @@ async function renderJournal(){
     <div class="tabbar" id="jrTabs">${
       [['timeline','🕰️ 時間線'],['goals','🎯 共同目標'],['checkin','🩺 關係健康檢查'],
        ['clinic','🩺 診療室'],['capsule','✉️ 回憶膠囊']]
-      .concat(L.partnered ? [['annual','📖 年度回顧']] : [])
+      .concat(L.partnered ? [['annual','📖 年度回顧'],['story','💛 我們的故事']] : [])
       .concat([['end','⚙️ 這段紀錄']])
       .map(([k,t]) => `<button class="tabbtn${k === jrTab ? ' on' : ''}" data-j="${k}">${t}</button>`).join('')}</div>`;
   if($('jrPick')) $('jrPick').onchange = e => { jrLink = e.target.value; renderJournal(); };
@@ -4056,8 +4079,8 @@ async function renderJournal(){
     jrTab = b.dataset.j; renderJournal();
   };
 
-  // 收回相互承認之後，年度回顧那一格就不在了，別停在一個不存在的分頁上
-  if(jrTab === 'annual' && !L.partnered) jrTab = 'timeline';
+  // 收回相互承認之後，年度回顧與故事那兩格就不在了，別停在一個不存在的分頁上
+  if(['annual','story'].includes(jrTab) && !L.partnered) jrTab = 'timeline';
   const ro = L.status !== 'active';   // 共同的內容能不能寫
   $('jrBody').innerHTML = '<p class="hint">讀取中⋯⋯</p>';
   try{
@@ -4067,6 +4090,7 @@ async function renderJournal(){
     if(jrTab === 'clinic')   await jrClinic(L);
     if(jrTab === 'capsule')  await jrCapsule(L);
     if(jrTab === 'annual')   await jrAnnual(L);
+    if(jrTab === 'story')    await jrStory(L);
     if(jrTab === 'end')      await jrEnd(L);
   }catch(e){ $('jrBody').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; }
 }
@@ -4516,6 +4540,121 @@ async function jrAnnual(L){
       ${bodyHTML}
     </fieldset>`;
   if($('jrPeriod')) $('jrPeriod').onchange = e => { jrPeriod = e.target.value; renderJournal(); };
+}
+
+/* ── 💛 他們的故事 ────────────────────────────────────────
+   訪客也看得到的公開頁面。所有守門都在伺服器端（schema 第 33 節）：
+   擋聯絡方式、雙方同意、人工審核。這裡只負責畫，以及把規則講清楚。
+   **沒有愛心、沒有瀏覽數、沒有排行榜、沒有精選。**
+   一旦故事之間可以比較，寫故事就變成一件要表現的事。 */
+function storyWho(s){
+  const a = s.name_a, b = s.name_b;
+  const one = n => n ? esc(n) : '一位使用者';
+  return `${one(a)} 與 ${one(b)}`;
+}
+async function renderPublicStories(){
+  let rows = [];
+  try{ rows = await DB.publicStories(); }
+  catch(e){ $('storyList').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; return; }
+  $('storyList').innerHTML = rows.length ? rows.map(s => `<article class="storyCard">
+      <h3>${esc(s.title)}</h3>
+      <div class="hint">${storyWho(s)}・${
+        esc(new Date(s.published_at).toLocaleDateString('zh-TW'))}</div>
+      <div class="storyBody">${esc(s.body)}</div>
+    </article>`).join('')
+    : '<p class="hint">還沒有人分享。這一頁是空的，也沒關係——'
+      + '暖陽不會為了填滿它去催任何人寫。</p>';
+}
+
+/* 寫故事：在陪伴紀錄裡，只有互相承認彼此是伴侶的兩個人看得到這一格 */
+async function jrStory(L){
+  const s = await DB.storyState(L.link_id);
+  const STATUS = {
+    draft:     {tag:'草稿', note:'還沒送出。兩個人都同意之後才會進審核。'},
+    pending:   {tag:'等待審核', note:'已經送出，等站方看過。通常會在幾天內處理。'},
+    published: {tag:'已公開', note:'現在訪客在「💛 他們的故事」看得到它。'},
+    rejected:  {tag:'退回', note:'站方請你們改一些地方再送一次。'}
+  };
+  const cur = STATUS[s.status] || {tag:'還沒寫', note:''};
+  $('jrBody').innerHTML = `
+    <fieldset><legend>把故事貼出來給其他人看</legend>
+      <p class="hint" style="margin-top:0">這一頁<b>訪客也看得到</b>，所以要走三道關：
+        系統會擋掉聯絡方式、<b>兩個人都同意</b>才送得出去、站方看過才公開。</p>
+      <p class="hint">要不要寫是你們的事。不寫完全沒有任何影響，暖陽也不會來問第二次。</p>
+      <p><b>目前狀態：</b>${esc(cur.tag)}　<span class="hint">${esc(cur.note)}</span></p>
+      ${s.status === 'rejected' && s.admin_note
+        ? `<div class="notice"><b>站方寫的</b><div>${esc(s.admin_note)}</div></div>` : ''}
+      <label for="jrStTitle">標題</label>
+      <input id="jrStTitle" maxlength="60" value="${esc(s.title)}">
+      <label for="jrStBody">故事</label>
+      <textarea id="jrStBody" rows="8" maxlength="4000">${esc(s.body)}</textarea>
+      <p class="hint">不要寫聯絡方式（email、電話、LINE／IG 帳號、網址）——
+        這一頁訪客也看得到，寫了會被擋下來。</p>
+      <div class="bar"><button id="jrStSave">儲存草稿</button>
+        <span class="msg" id="jrStMsg"></span></div>
+      <p class="hint">⚠️ <b>改了字之後，兩邊的同意都會作廢。</b>
+        對方同意的是「那一段文字」，不是之後的任何版本。</p>
+    </fieldset>
+    <fieldset><legend>要不要貼出去</legend>
+      <label class="s2Chk">
+        <input type="checkbox" id="jrStAgree"${s.mine ? ' checked' : ''}>
+        <span>我同意把這則故事貼出來</span></label>
+      <p class="hint" style="margin:4px 0 0">${s.other
+        ? '對方也已經同意了。' : '對方還沒有同意。'}</p>
+      <label class="s2Chk" style="margin-top:10px">
+        <input type="checkbox" id="jrStName"${s.show_name ? ' checked' : ''}>
+        <span>在故事裡顯示我的暱稱</span></label>
+      <p class="hint" style="margin:4px 0 0">預設不顯示，會寫成「一位使用者」。
+        各自決定各自的，你選了不代表對方也會顯示。</p>
+      <p class="hint" style="margin-top:10px"><b>任何一方隨時可以撤下。</b>
+        把上面的勾拿掉，公開頁面上立刻就沒有了，不需要對方同意，也不用寫原因。
+        關係結束或收回相互承認時也會自動下架。</p>
+    </fieldset>`;
+  $('jrStSave').onclick = async () => {
+    $('jrStSave').disabled = true;
+    try{ await DB.saveStory(L.link_id, $('jrStTitle').value.trim(), $('jrStBody').value.trim());
+         renderJournal(); }
+    catch(e){ flash('jrStMsg', e.message || '存不起來'); $('jrStSave').disabled = false; }
+  };
+  $('jrStAgree').onchange = async () => {
+    try{ await DB.setStoryAgree(L.link_id, $('jrStAgree').checked); renderJournal(); }
+    catch(e){ alert(e.message || '改不了'); renderJournal(); }
+  };
+  $('jrStName').onchange = async () => {
+    try{ await DB.setStoryName(L.link_id, $('jrStName').checked); }
+    catch(e){ alert(e.message || '改不了'); renderJournal(); }
+  };
+}
+
+/* 管理端：故事審核 */
+async function renderStoryAdmin(){
+  let rows = [];
+  try{ rows = await DB.adminStoryQueue(); }
+  catch(e){ $('stAdminList').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; return; }
+  const open = rows.filter(r => r.status === 'pending');
+  $('stAdminBar').innerHTML = rows.length
+    ? `待審 <b>${open.length}</b> 則，總共 ${rows.length} 則。`
+    : '<span class="hint">目前沒有故事等待審核。</span>';
+  $('stAdminList').innerHTML = rows.map(r => `<div class="jrItem">
+      <div class="jrWhen">${esc({pending:'待審', published:'已公開', rejected:'已退回'}[r.status] || r.status)}</div>
+      <div><b>${esc(r.title)}</b>
+        <div class="jrBodyTxt">${esc(r.body)}</div>
+        ${r.admin_note ? `<div class="hint">上次的意見：${esc(r.admin_note)}</div>` : ''}
+        <div class="bar">
+          <input class="stNote" data-id="${r.id}" placeholder="退回時要說明原因" maxlength="500">
+          <button class="stOk" data-id="${r.id}">通過並公開</button>
+          <button class="ghost stNo" data-id="${r.id}">退回</button>
+        </div></div></div>`).join('')
+    || '<p class="hint">沒有故事。</p>';
+  const act = async (id, ok) => {
+    const note = ($('stAdminList').querySelector(`.stNote[data-id="${id}"]`) || {}).value || '';
+    /* 退回一定要寫原因。沒有原因的退回，使用者只會再送一次一模一樣的東西。 */
+    if(!ok && !note.trim()){ alert('退回要寫原因，不然對方不知道要改什麼。'); return; }
+    try{ await DB.adminReviewStory(id, ok, note); renderStoryAdmin(); }
+    catch(e){ alert(e.message || '操作失敗'); }
+  };
+  $('stAdminList').querySelectorAll('.stOk').forEach(b => b.onclick = () => act(b.dataset.id, true));
+  $('stAdminList').querySelectorAll('.stNo').forEach(b => b.onclick = () => act(b.dataset.id, false));
 }
 
 /* ── ⚙️ 這段紀錄：結束與處置 ─────────────────────────────── */
@@ -5470,6 +5609,14 @@ async function renderAdminHome(){
           我們對使用者說的是「會看，但不保證每一則都回覆」。</p>
         <div id="fbAdminBar" class="slaBar"></div>
         <div id="fbAdminList"><p class="hint">讀取中⋯⋯</p></div></fieldset>
+      <fieldset><legend>💛 他們的故事：審核</legend>
+        <p class="hint" style="margin-top:0">這是<b>訪客也看得到</b>的公開內容，
+          所以要看過才放行。系統已經擋掉聯絡方式，這裡看的是別的：
+          有沒有寫到第三個人、公司名稱、可以定位到個人的細節。
+          <b>沒有雙方同意的故事在這裡按通過也會被擋下來。</b></p>
+        <div id="stAdminBar" class="slaBar"></div>
+        <div id="stAdminList"><p class="hint">讀取中⋯⋯</p></div>
+      </fieldset>
       <fieldset><legend>會員管理</legend>
         <p class="hint">限制發文只會禁止送申請、聊天與 AI 功能；停用登入會封鎖帳號；永久刪除會連同驗證帳號與相關資料移除。</p>
         <div id="memberList"><p class="hint">讀取中⋯⋯</p></div>
@@ -5562,6 +5709,7 @@ async function renderAdminHome(){
   renderSafetyQueue();
   renderTplMaster();
   renderFeedbackAdmin();
+  renderStoryAdmin();
 
   $('reportList').querySelectorAll('.mark').forEach(b => b.onclick = async () => {
     try{ await DB.adminMarkReportDone(b.dataset.id); renderAdminHome(); }catch(e){ alert(e.message || '操作失敗'); }
