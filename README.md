@@ -1812,6 +1812,55 @@ supabase secrets set NOTIFY_SECRET=<亂數>
 與 `smoketest-chat-safety.js` 擴充到 **47 項**。
 連同既有測試 SQL **697 項**、瀏覽器 **855 項**，全部通過。
 
+### 47. 修掉一個「第一次貼沒事、第二次貼才炸」的 bug
+
+站長把最新的 `supabase-schema.sql` 貼進 SQL Editor 時撞到：
+
+```
+ERROR: 23514: check constraint "chat_safety_signals_class_check"
+of relation "chat_safety_signals" is violated by some row
+```
+
+**原因是同一個 check 的允許值清單被定義在兩個地方**：第 24 節一份、
+第 30 節為了加 `reported_harm` 又寫了一份。第 24 節那份比較窄，於是——
+
+- **第一次貼** → 完全正常（第 30 節那份最後生效）
+- **第二次貼** → 第 24 節那份把清單改窄，而第 30 節上一輪插進去的
+  `reported_harm` 資料違反了它 → 23514
+
+而 README 從第一天就寫著「改完重新貼一次整份 schema 就好」，
+所以這等於把那句話直接弄假了。
+
+**修法**：class 清單只留第 24 節那一份（補上 `reported_harm`），
+第 30 節只保留 insert。用 `grep` 掃過整份檔案，
+`chat_safety_signals_class_check` 是**唯一**被定義兩次的約束。
+
+#### 為什麼既有的升級測試沒抓到
+
+`pgtest-upgrade.sql` 的流程是「把資料庫降版 → 重貼」，而**降版那一步剛好會
+刪掉新版才有的那幾列**（我上一輪還特地把 `reported_harm` 加進刪除清單）。
+於是那個流程永遠測不到「已經是新版的資料庫，再貼一次」——
+而那正是站長每次實際會做的事。
+
+補了兩道防線：
+
+- **`pgtest-upgrade.sql` 第四段**：直接再 `\i supabase-schema.sql` 一次。
+  `ON_ERROR_STOP` 開著，任何 23514 都會停在那裡。
+  （已用「把修正拿掉」驗證過它真的會紅。）
+- **`tools/check-schema.mjs`**：靜態掃描，同一個 constraint 名稱出現兩次就
+  直接失敗，而且印出兩處的行號。這道在跑資料庫之前就會擋下來。
+  目前 28 個 constraint 全部只有一個定義處。
+
+#### 順帶一提：另一個錯誤訊息
+
+同時看到的 `syntax error at or near "<!"` `LINE 1: <!DOCTYPE html>`
+是把**網頁**貼進 SQL Editor 了——從 GitHub 的檔案瀏覽頁複製會連 HTML 一起帶走。
+要用 Raw：
+
+```
+https://raw.githubusercontent.com/arink393-ai/warmsun-adoption-match/main/supabase-schema.sql
+```
+
 ## 已知限制（原型階段）
 
 ### 只能在 Supabase 控制台做，程式改不到

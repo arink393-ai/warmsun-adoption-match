@@ -4119,11 +4119,21 @@ create table if not exists public.chat_safety_signals (
    清單的類別（例如第 25 節的 'reported'），在既有資料庫上永遠不會生效，
    只會在 insert 的時候炸成 23514。而本機測試每次都先 drop schema，
    剛好是唯一碰不到這條路徑的跑法。
-   凡是「之後可能會加值」的 check，都要照這個寫法拉出來。 */
+   凡是「之後可能會加值」的 check，都要照這個寫法拉出來。
+
+   ⚠️⚠️ **這裡是 class 清單唯一的定義處，後面任何一節都不可以再 drop/add 一次。**
+   第 30 節原本又寫了一份（為了加 'reported_harm'），結果是：
+   第一次貼整份 schema 沒事，**第二次貼就炸**——因為這一行的清單比較窄，
+   而第 30 節那時候已經把 reported_harm 的規則寫進表裡了。
+   「重新貼一次整份 schema 就好」這句話當場失效，而且錯誤訊息只說
+   「某些列違反約束」，完全看不出是兩個地方各定義了一份。
+   新增類別請直接加在下面這一行。 */
 alter table public.chat_safety_signals drop constraint if exists chat_safety_signals_class_check;
 alter table public.chat_safety_signals add constraint chat_safety_signals_class_check
   check (class in ('sexual','body_topic','threat','threat_harm','coercion',
-                   'intimate_image','request','selfref','refusal','reported'));
+                   'intimate_image','request','selfref','refusal',
+                   'reported',        -- 第 25 節意見回饋
+                   'reported_harm')); -- 第 30 節診療室安全模式
 
 insert into public.chat_safety_signals (code, class, pattern, note) values
   -- 露骨性內容
@@ -5555,10 +5565,9 @@ grant execute on function public.set_clinic_permission(uuid,text,boolean) to aut
 --
 --      跟第 25 節的 reported 分開，是為了不要把「他逼我太緊」這種
 --      關係壓力也推進安全模式：那會讓人不敢談日常的拉扯。
-alter table public.chat_safety_signals drop constraint if exists chat_safety_signals_class_check;
-alter table public.chat_safety_signals add constraint chat_safety_signals_class_check
-  check (class in ('sexual','body_topic','threat','threat_harm','coercion',
-                   'intimate_image','request','selfref','refusal','reported','reported_harm'));
+-- class 清單在第 24 節統一定義（含 reported_harm），這裡只加規則。
+-- 曾經在這裡又 drop/add 過一次，那讓整份 schema 貼第二次就會失敗——
+-- 見第 24 節那段註解。
 insert into public.chat_safety_signals (code, class, pattern, note) values
   ('P_HIT','reported_harm',
    '(他|她|對方|男友|女友|老公|老婆|伴侶|前任).{0,6}(打我|動手|推我|掐我|踹我|摔我|勒我|扯我頭髮)',

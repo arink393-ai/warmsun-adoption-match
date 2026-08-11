@@ -112,3 +112,43 @@ begin
 
   raise notice '=== 升級路徑測試結束 ===';
 end $$;
+
+-- ════════════════════════════════════════════════════════════
+-- 四、再貼一次（這一段是後來補的，因為它抓到了一個真的漏掉的 bug）
+-- ════════════════════════════════════════════════════════════
+-- 上面第一段會先把資料庫「降版」再重貼，而降版那一步剛好會**刪掉**
+-- 新版才有的那幾列。結果是：那個流程永遠測不到
+-- 「已經是新版的資料庫，再貼一次整份 schema」這條路徑。
+--
+-- 而那正是站長實際會做的事——每次我改完 schema，他就整份重貼一次。
+-- 實際炸掉的是 chat_safety_signals_class_check：
+-- 第 24 節與第 30 節各定義了一份 class 清單，而第 24 節那份比較窄，
+-- 第二次貼的時候，第 30 節上一輪插進去的 reported_harm 就違反了它。
+--
+-- 所以這裡直接再貼一次。ON_ERROR_STOP 開著，任何一個 23514 都會停在這裡。
+\i supabase-schema.sql
+
+do $$
+declare n int;
+begin
+  raise notice '=== 連續貼兩次 ===';
+  perform pg_temp.ok(true, '整份 schema 連續貼兩次都不會出錯');
+
+  select count(*) into n from public.chat_safety_signals where class = 'reported_harm';
+  perform pg_temp.ok(n >= 1, '再貼一次之後 reported_harm 的規則還在', n::text);
+
+  /* 結構上的防線：同一個 check 的允許值清單只能有一個定義處。
+     兩個地方各寫一份，遲早會有一份比較窄，而症狀是「第二次貼才炸」——
+     最難聯想到原因的那種。 */
+  select count(*) into n from pg_constraint
+   where conrelid = 'public.chat_safety_signals'::regclass
+     and conname = 'chat_safety_signals_class_check';
+  perform pg_temp.ok(n = 1, 'class 的 check 只有一條（不是疊了兩條）', n::text);
+
+  perform pg_temp.ok(
+    (select pg_get_constraintdef(oid) from pg_constraint
+      where conname = 'chat_safety_signals_class_check') like '%reported_harm%',
+    '而且那一條包含所有後面章節會用到的類別');
+
+  raise notice '=== 再貼一次測試結束 ===';
+end $$;
