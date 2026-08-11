@@ -1733,17 +1733,33 @@ Edge Functions → **Secrets**（或 Project Settings → Edge Functions → Sec
 `SUPABASE_URL` 與 `SUPABASE_SERVICE_ROLE_KEY` 是平台自動注入的，**不用自己設**。
 
 **6. 先手動測一次**（在排程之前，這樣才知道是哪一步壞的）
-```bash
-curl -i -X POST \
-  -H "x-notify-secret: <第 2 步那組亂數>" \
-  https://<你的專案代號>.supabase.co/functions/v1/notify-owner
+
+專案代號在 `js/config.js` 的 `SUPABASE_URL` 裡就看得到。
+
+**最省事的測法：瀏覽器 console。** 打開網站，按 F12 → Console，貼這一段：
+```js
+fetch('https://<專案代號>.supabase.co/functions/v1/notify-owner', {
+  method: 'POST',
+  headers: { 'x-notify-secret': '<第 2 步那組亂數>' }
+}).then(r => r.json()).then(console.log).catch(console.error)
 ```
-- `{"sent":N}` → 成功，信應該進信箱了
-- `{"sent":0,"note":"沒有待寄的通知"}` → 也是成功，只是目前沒東西要寄。
-  先去網站送一則意見回饋再測一次。
-- `401` → 第 4 步的 Verify JWT 還開著，或 `NOTIFY_SECRET` 沒對上
-- `500` 且訊息提到 `RESEND_API_KEY` → 第 5 步漏了
-- `502` → Resend 那邊退件，回應裡會有原因（通常是 `NOTIFY_FROM` 寫錯）
+
+有終端機的話 curl 也可以（Windows 用 PowerShell 的話要把換行的 `\` 拿掉寫成一行）：
+```bash
+curl -i -X POST -H "x-notify-secret: <第 2 步那組亂數>" \
+  https://<專案代號>.supabase.co/functions/v1/notify-owner
+```
+
+**回應怎麼讀：**
+
+| 回應 | 意思 |
+|---|---|
+| `{"sent":N}` | 成功，信應該進信箱了 |
+| `{"sent":0,"note":"沒有待寄的通知…"}` | 也是成功，只是現在沒東西要寄。先去網站送一則意見回饋再測一次 |
+| `401` | 第 4 步的 Verify JWT 還開著，或 `NOTIFY_SECRET` 沒對上（回應的 `hint` 會講） |
+| `500` 提到 `Could not find the function` | 最新的 `supabase-schema.sql` 還沒貼進 SQL Editor |
+| `500` 提到 `RESEND_API_KEY` | 第 5 步漏了 |
+| `502` | Resend 退件，`detail` 裡有原因（多半是 `NOTIFY_FROM` 寫錯） |
 
 **7. 讓它定時跑**
 Dashboard → **Integrations → Cron** → 新增排程，每 15 分鐘呼叫一次

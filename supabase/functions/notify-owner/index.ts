@@ -47,6 +47,19 @@ const KIND_LABEL: Record<string, string> = {
   verify_review: "🪪 身分驗證審核",
 };
 
+/* 每一個回應都要帶 CORS 標頭。
+   第一版只在 OPTIONS 帶，正式回應沒帶——結果是用瀏覽器測的時候，
+   函式其實跑成功了，瀏覽器卻把回應丟掉並報一個看起來像壞掉的 CORS 錯誤。
+   把驗證擋在 x-notify-secret，開放 CORS 不會讓任何人多拿到東西。 */
+const CORS = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, content-type, x-notify-secret",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const reply = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: CORS });
+
 function authorized(req: Request): boolean {
   const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const secret = Deno.env.get("NOTIFY_SECRET") ?? "";
@@ -58,18 +71,10 @@ function authorized(req: Request): boolean {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "authorization, content-type, x-notify-secret",
-      },
-    });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (!authorized(req)) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401, headers: { "Content-Type": "application/json" },
-    });
+    return reply({ error: "unauthorized",
+      hint: "x-notify-secret 沒對上，或這支函式的 Verify JWT 還開著" }, 401);
   }
 
   const url = Deno.env.get("SUPABASE_URL");
@@ -78,31 +83,27 @@ Deno.serve(async (req) => {
   const from = Deno.env.get("NOTIFY_FROM") ?? "暖陽動物之家 <onboarding@resend.dev>";
   const resend = Deno.env.get("RESEND_API_KEY");
   if (!url || !key) {
-    return new Response(JSON.stringify({ error: "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 沒設定" }),
-      { status: 500, headers: { "Content-Type": "application/json" } });
+    return reply({ error: "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 沒設定" }, 500);
   }
   const sb = createClient(url, key);
 
   const { data: rows, error } = await sb.rpc("pending_owner_notifications", { p_limit: 50 });
   if (error) {
-    return new Response(JSON.stringify({ error: error.message }),
-      { status: 500, headers: { "Content-Type": "application/json" } });
+    return reply({ error: error.message,
+      hint: "找不到 RPC 的話，代表最新的 supabase-schema.sql 還沒貼進 SQL Editor" }, 500);
   }
   const list = (rows ?? []) as Array<{
     id: string; kind: string; subject: string; body: string; created_at: string;
   }>;
   if (list.length === 0) {
-    return new Response(JSON.stringify({ sent: 0, note: "沒有待寄的通知" }),
-      { headers: { "Content-Type": "application/json" } });
+    return reply({ sent: 0, note: "沒有待寄的通知（這也算成功：去網站送一則意見回饋再測一次）" });
   }
 
   // 沒設定寄信服務時不要把 outbox 標記成已寄出——
   // 標了就等於把那些通知永遠丟掉，而且沒有人會發現。
   if (!resend || !to) {
-    return new Response(JSON.stringify({
-      pending: list.length,
-      error: "RESEND_API_KEY 或 NOTIFY_TO 沒設定，這幾筆先留著沒有寄出",
-    }), { status: 500, headers: { "Content-Type": "application/json" } });
+    return reply({ pending: list.length,
+      error: "RESEND_API_KEY 或 NOTIFY_TO 沒設定，這幾筆先留著沒有寄出" }, 500);
   }
 
   const byKind = new Map<string, typeof list>();
@@ -139,10 +140,8 @@ Deno.serve(async (req) => {
     const text = await res.text();
     // 失敗就記下來並累加 attempts，不標記成已寄出（第 5 次之後就不再重試）
     await sb.rpc("mark_owner_notifications_failed", { p_ids: ids, p_error: text.slice(0, 500) });
-    return new Response(JSON.stringify({ error: "寄信失敗", detail: text.slice(0, 300) }),
-      { status: 502, headers: { "Content-Type": "application/json" } });
+    return reply({ error: "寄信失敗（Resend 退件）", detail: text.slice(0, 300) }, 502);
   }
   await sb.rpc("mark_owner_notifications_sent", { p_ids: ids });
-  return new Response(JSON.stringify({ sent: ids.length }),
-    { headers: { "Content-Type": "application/json" } });
+  return reply({ sent: ids.length });
 });
