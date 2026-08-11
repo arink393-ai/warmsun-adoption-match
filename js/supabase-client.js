@@ -499,6 +499,15 @@
   const deleteClinicSession = (id)    => rpc('delete_clinic_session', { p_id: id });
 
   // ── 回憶膠囊與結束處置（見 schema 第 31 節）──────────────
+  // ── 伴侶關係的相互承認與年度回顧（見 schema 第 32 節）──────
+  // ⚠️ partnerState().other 只有在兩邊都按下時才會是 true。
+  //    它不是「對方按了沒有」——單方面按下時對方那邊完全看不出來。
+  const partnerState    = (linkId)     => rpc('companion_partner_state', { p_link_id: linkId });
+  const setPartner      = (linkId, on) => rpc('set_companion_partner', { p_link_id: linkId, p_on: !!on });
+  const annualPeriods   = (linkId)     => rpc('companion_annual_periods', { p_link_id: linkId });
+  const annualReview    = (linkId, end) =>
+    rpc('companion_annual_review', { p_link_id: linkId, p_period_end: end || null });
+
   const myCompanionLinks = ()   => rpc('my_companion_links');
   const listCapsules = (linkId) => rpc('list_capsules', { p_link_id: linkId });
   const writeCapsule = (linkId, openAt, body, title) =>
@@ -723,6 +732,7 @@
     checkinQuestions, checkinSummary, submitCheckin, setCheckinShare,
     clinicPermissions, setClinicPermission, clinicSafetyMode, buildClinicContext,
     saveClinicSession, listClinicSessions, deleteClinicSession,
+    partnerState, setPartner, annualPeriods, annualReview,
     myCompanionLinks, listCapsules, writeCapsule, openCapsule,
     endCompanionLink, dispositionState, setDisposition,
     submitFeedback, listMyFeedback, feedbackLooksPersonal,

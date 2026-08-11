@@ -1198,7 +1198,14 @@
     屆時會改為「與個人身分脫鉤後另行保存」，並會在這裡更新說明。<br>
     ・檢舉紀錄：處理完成後保存 1 年，供爭議追溯。<b>被檢舉方的帳號若已刪除，紀錄僅保留處理結果，
     不再連結到任何個人資料</b><br>
-    ・封鎖名單：保存至你自行解除，或帳號刪除時一併移除</p>
+    ・封鎖名單：保存至你自行解除，或帳號刪除時一併移除<br>
+    ・<b>🌱 陪伴紀錄</b>（回憶、里程碑、共同目標、關係健康檢查、診療紀錄、回憶膠囊、對話書籤）：<br>
+    　　關係進行中：保存至你自行刪除<br>
+    　　關係結束後：由<b>你自己選擇處置方式</b>（全部刪除／封存唯讀／只留我自己寫的），
+    選了立刻執行；兩個人各自選各自的，不需要一致<br>
+    　　<b>保留超過一年，只發生在你們兩個都明確承認彼此是伴侶的情況下。</b>
+    沒有相互承認的關係不提供年度回顧，也就不會為了年度回顧而多留任何東西。
+    這件事是兩個人各自按下的，而且隨時可以收回</p>
 
     <p><b>四、第三方處理</b><br>
     ・大頭照的初步檢查、主治獸醫評估與進階診斷，會將相關內容傳送至 AI 服務（Anthropic Claude）進行分析。該服務不會將內容用於訓練模型。<br>
@@ -4005,7 +4012,7 @@ const GOAL_STATUS = [
 ];
 const BM_ICON = {love:'💛', milestone:'🌱', promise:'📝', memory:'🎁'};
 
-let jrLinks = [], jrLink = null, jrPerm = null, jrTab = 'timeline';
+let jrLinks = [], jrLink = null, jrPerm = null, jrTab = 'timeline', jrPeriod = null;
 const jrLabel = (arr, v) => (arr.find(x => x.v === v) || {}).label || v;
 
 async function refreshJournalTab(){
@@ -4039,7 +4046,9 @@ async function renderJournal(){
     </div>
     <div class="tabbar" id="jrTabs">${
       [['timeline','🕰️ 時間線'],['goals','🎯 共同目標'],['checkin','🩺 關係健康檢查'],
-       ['clinic','🩺 診療室'],['capsule','✉️ 回憶膠囊'],['end','⚙️ 這段紀錄']]
+       ['clinic','🩺 診療室'],['capsule','✉️ 回憶膠囊']]
+      .concat(L.partnered ? [['annual','📖 年度回顧']] : [])
+      .concat([['end','⚙️ 這段紀錄']])
       .map(([k,t]) => `<button class="tabbtn${k === jrTab ? ' on' : ''}" data-j="${k}">${t}</button>`).join('')}</div>`;
   if($('jrPick')) $('jrPick').onchange = e => { jrLink = e.target.value; renderJournal(); };
   $('jrTabs').onclick = e => {
@@ -4047,6 +4056,8 @@ async function renderJournal(){
     jrTab = b.dataset.j; renderJournal();
   };
 
+  // 收回相互承認之後，年度回顧那一格就不在了，別停在一個不存在的分頁上
+  if(jrTab === 'annual' && !L.partnered) jrTab = 'timeline';
   const ro = L.status !== 'active';   // 共同的內容能不能寫
   $('jrBody').innerHTML = '<p class="hint">讀取中⋯⋯</p>';
   try{
@@ -4055,6 +4066,7 @@ async function renderJournal(){
     if(jrTab === 'checkin')  await jrCheckin(L);
     if(jrTab === 'clinic')   await jrClinic(L);
     if(jrTab === 'capsule')  await jrCapsule(L);
+    if(jrTab === 'annual')   await jrAnnual(L);
     if(jrTab === 'end')      await jrEnd(L);
   }catch(e){ $('jrBody').innerHTML = `<p class="err">${esc(e.message || '讀取失敗')}</p>`; }
 }
@@ -4464,15 +4476,93 @@ async function jrCapsule(L){
   });
 }
 
+/* ── 📖 年度回顧 ─────────────────────────────────────────
+   只給互相承認彼此是伴侶的兩個人（規格第 7 節第 3 題的答案）。
+   **沒有 AI，也沒有任何數字。** 就是把那一年你們自己寫下的東西照時間端出來。
+   放一個「今年你們記了 12 則回憶」進去，它就會變成一個要衝的數字；
+   放一段 AI 講評進去，它就會變成一份年度評鑑。兩個都不要。 */
+async function jrAnnual(L){
+  const periods = await DB.annualPeriods(L.link_id);
+  if(!jrPeriod || !periods.some(p => p.end === jrPeriod)) jrPeriod = (periods[0] || {}).end || null;
+  const r = await DB.annualReview(L.link_id, jrPeriod);
+  const line = (when, head, body) => `<div class="jrItem">
+    <div class="jrWhen">${esc(String(when || '').slice(0,10))}</div>
+    <div><b>${esc(head)}</b>${body ? `<div class="jrBodyTxt">${esc(body)}</div>` : ''}</div></div>`;
+  /* 各段先組好再塞進版型。第一版把四段都寫成巢狀樣板字串，
+     四層之後少了一個收尾的 } 就整個 script 掛掉——而且錯誤訊息指的是別的地方。 */
+  const sec = (title, html) => html ? `<h4>${title}</h4>${html}` : '';
+  const goalsHTML = r.goals.map(g => `<div class="jrItem">
+      <div class="jrWhen">${g.status === 'done' ? '完成了' : '先放著'}</div>
+      <div><b>${esc(g.title)}</b></div></div>`).join('')
+    /* 完成與先放著並列，不分好壞。先放著不是沒做到，
+       是那一年你們決定先不推它。 */
+    + (r.goals.length ? '<p class="hint">「先放著」跟「完成了」放在一起，沒有先後——'
+       + '那一年你們決定先不推它，就是這樣而已。</p>' : '');
+  const bodyHTML = r.empty
+    ? '<p class="hint">這一年還沒有東西。沒有東西也沒關係。</p>'
+    : sec('🌱 那些日子', r.milestones.map(m => line(m.at, jrLabel(MILESTONES, m.type), m.note)).join(''))
+    + sec('🌤️ 記下來的事', r.memories.map(m => line(m.at, m.title, m.body)).join(''))
+    + sec('🔖 想留著的話', r.bookmarks.map(b =>
+        line(b.at, `${BM_ICON[b.kind] || '🔖'}「${b.body}」`, b.note)).join(''))
+    + sec('🎯 一起想做的事', goalsHTML);
+  $('jrBody').innerHTML = `
+    ${periods.length > 1 ? `<label for="jrPeriod">哪一年</label>
+      <select id="jrPeriod">${periods.map(p =>
+        `<option value="${p.end}"${p.end === jrPeriod ? ' selected' : ''}>${
+          esc(String(p.start).slice(0,10))} ～ ${esc(String(p.end).slice(0,10))}</option>`).join('')}</select>` : ''}
+    <fieldset><legend>${esc(String(r.period_start).slice(0,10))} ～ ${esc(String(r.period_end).slice(0,10))}</legend>
+      <p class="hint" style="margin-top:0">這一頁只是把你們自己寫下的東西照時間排出來。
+        <b>暖陽不對這一年下任何評語，也不算任何數字。</b></p>
+      ${bodyHTML}
+    </fieldset>`;
+  if($('jrPeriod')) $('jrPeriod').onchange = e => { jrPeriod = e.target.value; renderJournal(); };
+}
+
 /* ── ⚙️ 這段紀錄：結束與處置 ─────────────────────────────── */
 const DISPOSITIONS = [
   {v:'delete',    label:'🗑️ 全部刪除', note:'我在這段關係裡寫的東西全部刪掉。'},
   {v:'archive',   label:'📦 封存唯讀', note:'保留，但誰都不能再新增或修改。'},
   {v:'mine_only', label:'✍️ 只留我自己寫的', note:'我寫的留著，對方寫的從我這邊移除。'}
 ];
+/* 相互承認彼此是伴侶。
+   ⚠️ 這一段的每一句文案都在處理同一件事：**單方面按下不會讓對方知道。**
+   承認彼此是伴侶不是邀請，是一句告白。把「某某已經認定你是他的伴侶」
+   推到另一個人面前，他接下來按或不按都不再是自由的——
+   按了可能只是不想讓對方難堪，不按則變成一次當面的拒絕。
+   所以按下去之後畫面上不會有任何「等待對方」的進度，那樣等於變相通知。
+   這也是它跟第 27 節建立陪伴紀錄刻意不一樣的地方。 */
+function partnerBoxHTML(L, ps){
+  if(!ps.eligible && !ps.both) return '';
+  if(ps.both) return `<fieldset><legend>你們互相承認彼此是伴侶</legend>
+    <p class="hint" style="margin-top:0">${ps.partnered_at
+      ? `從 ${esc(new Date(ps.partnered_at).toLocaleDateString('zh-TW'))} 起。` : ''}
+      因為這樣，這本紀錄會跟著你們的關係一起留著，📖 年度回顧也才會出現。</p>
+    <p class="hint">這不是一個等級，也不是成就。它只做兩件事：讓年度回顧出現，
+      以及讓這本紀錄的保存期限跟著關係走。它不會出現在佈告欄，別人看不到。</p>
+    <div class="bar"><button class="ghost" id="jrPartnerBtn">收回</button>
+      <span class="msg" id="jrPartnerMsg"></span></div>
+    <p class="hint">任何一方都可以隨時收回，收回不會通知對方。</p>
+  </fieldset>`;
+  return `<fieldset><legend>你們是伴侶嗎</legend>
+    <p class="hint" style="margin-top:0">如果你們已經走到會把對方稱為伴侶的階段，
+      可以在這裡說一次。兩個人都說了，這本紀錄才會跟著關係一起留著，
+      📖 年度回顧也才會出現。</p>
+    <div class="notice">
+      <b>按下之後，對方不會被通知，畫面上也不會有任何變化。</b>
+      只有當你們兩個都按下時，才會同時看到。
+      在那之前，你不會知道對方按了沒有，對方也不會知道你按了。
+    </div>
+    <div class="bar"><button class="ghost" id="jrPartnerBtn">${
+      ps.mine ? '收回我說過的' : '我把對方當成我的伴侶'}</button>
+      <span class="msg" id="jrPartnerMsg"></span></div>
+    ${ps.mine ? '<p class="hint">你已經說過了。收回也不會通知對方。</p>' : ''}
+  </fieldset>`;
+}
 async function jrEnd(L){
   const st = L.status === 'ended' ? await DB.dispositionState(L.link_id) : null;
-  $('jrBody').innerHTML = L.status !== 'ended' ? `
+  let ps = {mine:false, other:false, both:false, eligible:false, partnered_at:null};
+  try{ ps = await DB.partnerState(L.link_id); }catch(e){}
+  $('jrBody').innerHTML = partnerBoxHTML(L, ps) + (L.status !== 'ended' ? `
     <fieldset><legend>結束這段陪伴紀錄</legend>
       <p class="hint" style="margin-top:0">結束之後這本紀錄變成唯讀，然後你可以選擇怎麼處置
         你在裡面寫的東西。對方也會各自選他自己的，你們不需要選一樣的。</p>
@@ -4500,7 +4590,12 @@ async function jrEnd(L){
           {memory:'回憶', milestone:'里程碑', goal:'共同目標'}[t.kind] || t.kind}。`).join('')}
         這一行是刻意留著的——不然另一方會以為自己記錯了。</p>` : ''}
       <p class="hint">對方選了什麼，這裡不會顯示。那是他自己的決定。</p>
-    </fieldset>`;
+    </fieldset>`);
+  if($('jrPartnerBtn')) $('jrPartnerBtn').onclick = async () => {
+    $('jrPartnerBtn').disabled = true;
+    try{ await DB.setPartner(L.link_id, !ps.mine); jrLinks = []; renderJournal(); }
+    catch(e){ flash('jrPartnerMsg', e.message || '失敗'); $('jrPartnerBtn').disabled = false; }
+  };
   if($('jrEndBtn')) $('jrEndBtn').onclick = async () => {
     if(!confirm('結束之後這本紀錄就不能再新增了。確定嗎？')) return;
     try{ await DB.endCompanionLink(L.link_id); jrLinks = []; renderJournal(); }

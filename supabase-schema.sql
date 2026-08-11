@@ -6028,3 +6028,212 @@ begin
 end $$;
 revoke all on function public.my_companion_links() from public, anon;
 grant execute on function public.my_companion_links() to authenticated;
+
+-- ============================================================
+-- 32) 🌱 陪伴紀錄第 8 步的另一半：伴侶關係的相互承認，與年度回顧
+--
+--     規格第 7 節第 3 題（年度回顧要留一年以上，跟隱私權政策的保存期限衝突）
+--     的答案：**年度回顧只給互相承認彼此為伴侶的兩個人。**
+--     其餘的關係不做年度回顧，也就不需要為了年度回顧多留任何東西。
+--     於是「保留超過一年」不再是一個對所有人生效的預設，
+--     而是一件兩個人各自明確按下、而且隨時可以收回的事。
+--
+--     ── 這一節跟第 27 節刻意不一樣的地方：單方面按下**不會**讓對方看到 ──
+--     第 27 節建立陪伴紀錄時，我讓「對方想為這段相遇留下紀錄」顯示出來，
+--     因為那是一個關於「要不要一起記東西」的邀請。
+--     承認彼此是伴侶不是邀請，是一句告白。
+--     把「某某已經認定你是他的伴侶」推到另一個人面前，
+--     他接下來按或不按都不再是自由的——按了可能只是不想讓對方難堪，
+--     不按則變成一次當面的拒絕。
+--     所以這裡改成**兩個人都按下才會同時看到**，在那之前誰都不知道對方按了沒有。
+--     收回也一樣安靜，不會通知。
+--
+--     ── 這不是等級，也不是成就 ──
+--     沒有徽章、沒有「配對成功率」、沒有把它放在別人看得到的地方。
+--     它只做兩件事：讓年度回顧出現，以及讓這段紀錄的保存期限跟著關係走。
+-- ============================================================
+
+alter table public.companion_links add column if not exists partner_a boolean not null default false;
+alter table public.companion_links add column if not exists partner_b boolean not null default false;
+alter table public.companion_links add column if not exists partnered_at timestamptz;
+
+create or replace function public.set_companion_partner(p_link_id uuid, p_on boolean)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v_me_is_a boolean;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if v_link.status <> 'active' then
+    raise exception '陪伴紀錄要在進行中才能做這件事';
+  end if;
+  v_me_is_a := (auth.uid() = v_link.user_a);
+  if v_me_is_a then update public.companion_links set partner_a = coalesce(p_on,false) where id = p_link_id;
+  else               update public.companion_links set partner_b = coalesce(p_on,false) where id = p_link_id; end if;
+
+  -- partnered_at 只在第一次成立時寫，收回再按回來不重算（跟 started_at 同一個理由）
+  update public.companion_links
+     set partnered_at = case when partner_a and partner_b and partnered_at is null
+                             then now() else partnered_at end
+   where id = p_link_id;
+  return public.companion_partner_state(p_link_id);
+end $$;
+revoke all on function public.set_companion_partner(uuid, boolean) from public, anon;
+grant execute on function public.set_companion_partner(uuid, boolean) to authenticated;
+
+create or replace function public.companion_partner_state(p_link_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v_me_is_a boolean; v_mine boolean; v_both boolean;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  v_me_is_a := (auth.uid() = v_link.user_a);
+  v_mine := case when v_me_is_a then v_link.partner_a else v_link.partner_b end;
+  v_both := v_link.partner_a and v_link.partner_b;
+  return jsonb_build_object(
+    'mine', v_mine,
+    /* **只有在兩邊都按下時才回傳 other。**
+       單方面按下時這裡永遠是 false，不是「對方還沒按」——
+       因為連「對方按了沒有」這件事本身都不該讓人知道。
+       想改這一行之前，先讀這一節開頭那段。 */
+    'other', v_both,
+    'both',  v_both,
+    'partnered_at', case when v_both then v_link.partnered_at else null end,
+    'eligible', v_link.status = 'active');
+end $$;
+revoke all on function public.companion_partner_state(uuid) from public, anon;
+grant execute on function public.companion_partner_state(uuid) to authenticated;
+
+-- 32.1 保存期限 ------------------------------------------------
+--      隱私權政策裡那條「陪伴紀錄保留多久」的程式版本。
+--      沒有互相承認的關係不做年度回顧，也就不需要為了它多留東西。
+create or replace function public.companion_keeps_history(p_link_id uuid)
+returns boolean language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  return v_link.partner_a and v_link.partner_b;
+end $$;
+revoke all on function public.companion_keeps_history(uuid) from public, anon;
+grant execute on function public.companion_keeps_history(uuid) to authenticated;
+
+-- 32.2 年度回顧 ------------------------------------------------
+--      **這裡沒有 AI，也沒有任何數字。**
+--      年度回顧就是把那一年你們自己寫下的東西照時間端出來。
+--      放一個「今年你們記了 12 則回憶」進去，它就會變成一個要衝的數字；
+--      放一段 AI 講評進去，它就會變成一份年度評鑑。兩個都不要。
+create or replace function public.companion_annual_review(
+  p_link_id uuid, p_period_end date default null
+) returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  v_link public.companion_links; v_from date; v_to date;
+  v_mem jsonb; v_ms jsonb; v_bm jsonb; v_goals jsonb; v_first date;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if not (v_link.partner_a and v_link.partner_b) then
+    raise exception '年度回顧只在兩個人都承認彼此是伴侶之後才會出現';
+  end if;
+  v_to   := coalesce(p_period_end, current_date);
+  v_from := (v_to - interval '1 year')::date;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'at', m.at, 'type', m.type, 'title', m.title, 'body', m.body,
+           'mine', m.created_by = auth.uid()) order by m.at), '[]'::jsonb)
+    into v_mem
+    from public.companion_memories m
+   where m.link_id = p_link_id and m.at > v_from and m.at <= v_to
+     and (m.created_by = auth.uid() or m.visibility = 'both');
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'at', s.at, 'type', s.milestone_type, 'note', s.note) order by s.at), '[]'::jsonb)
+    into v_ms
+    from public.companion_milestones s
+   where s.link_id = p_link_id and s.at > v_from and s.at <= v_to;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'at', b.created_at::date, 'kind', b.kind, 'body', msg.body,
+           'note', b.note, 'mine', b.user_id = auth.uid()) order by b.created_at), '[]'::jsonb)
+    into v_bm
+    from public.message_bookmarks b
+    join public.match_messages msg on msg.id = b.message_id
+    join public.applications a on a.id = b.application_id
+   where least(a.from_user, a.to_user) = v_link.user_a
+     and greatest(a.from_user, a.to_user) = v_link.user_b
+     and b.created_at::date > v_from and b.created_at::date <= v_to
+     and (b.user_id = auth.uid() or b.visibility = 'both');
+
+  /* 目標只列「完成了」與「先放著」，而且兩個並列，不分好壞。
+     先放著不是沒做到，是那一年你們決定先不推它。 */
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'title', g.title, 'category', g.category, 'status', g.status) order by g.created_at), '[]'::jsonb)
+    into v_goals
+    from public.companion_goals g
+   where g.link_id = p_link_id and g.status in ('done','paused');
+
+  select min(x) into v_first from (
+    select min(at) as x from public.companion_memories where link_id = p_link_id
+    union all select min(at) from public.companion_milestones where link_id = p_link_id
+    union all select v_link.started_at::date) t;
+
+  return jsonb_build_object(
+    'period_start', v_from, 'period_end', v_to,
+    'partnered_at', v_link.partnered_at,
+    'first_entry',  v_first,
+    'memories', v_mem, 'milestones', v_ms, 'bookmarks', v_bm, 'goals', v_goals,
+    /* 有沒有東西可以看，交給前端判斷有沒有內容就好。
+       這裡刻意不回傳任何 count 欄位——一個數字放在那裡，遲早會被畫成一個數字。 */
+    'empty', (v_mem = '[]'::jsonb and v_ms = '[]'::jsonb
+              and v_bm = '[]'::jsonb and v_goals = '[]'::jsonb));
+end $$;
+revoke all on function public.companion_annual_review(uuid,date) from public, anon;
+grant execute on function public.companion_annual_review(uuid,date) to authenticated;
+
+-- 哪幾個年度可以看：從第一筆紀錄那一年到今年
+create or replace function public.companion_annual_periods(p_link_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_link public.companion_links; v_first date; d date; out_rows jsonb := '[]'::jsonb;
+begin
+  v_link := public.companion_link_for(p_link_id);
+  if not (v_link.partner_a and v_link.partner_b) then return '[]'::jsonb; end if;
+  v_first := v_link.started_at::date;
+  d := current_date;
+  while d > v_first loop
+    out_rows := out_rows || jsonb_build_array(jsonb_build_object(
+      'end', d, 'start', (d - interval '1 year')::date));
+    d := (d - interval '1 year')::date;
+  end loop;
+  if out_rows = '[]'::jsonb then
+    out_rows := jsonb_build_array(jsonb_build_object(
+      'end', current_date, 'start', (current_date - interval '1 year')::date));
+  end if;
+  return out_rows;
+end $$;
+revoke all on function public.companion_annual_periods(uuid) from public, anon;
+grant execute on function public.companion_annual_periods(uuid) to authenticated;
+
+-- 32.3 清單也要帶上伴侶狀態（一樣只在兩邊都按下時才回傳）--------
+create or replace function public.my_companion_links()
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  if auth.uid() is null then raise exception '請先登入'; end if;
+  return (select coalesce(jsonb_agg(x order by x->>'started_at' desc), '[]'::jsonb) from (
+    select jsonb_build_object(
+      'link_id', l.id,
+      'status',  l.status,
+      'started_at', l.started_at,
+      'ended_at', l.ended_at,
+      'days', case when l.status = 'active'
+                   then greatest(0, (current_date - l.started_at::date)) else null end,
+      'other_name', coalesce(nullif(p.name,''), '對方'),
+      'other_id', p.id,
+      'my_disposition', case when auth.uid() = l.user_a then l.disposition_a else l.disposition_b end,
+      'purge_at', l.purge_at,
+      'partner_mine', case when auth.uid() = l.user_a then l.partner_a else l.partner_b end,
+      -- 只有兩邊都按下才成立，也只有那時候才看得出對方按過
+      'partnered', (l.partner_a and l.partner_b),
+      'partnered_at', case when l.partner_a and l.partner_b then l.partnered_at else null end) as x
+      from public.companion_links l
+      join public.match_profiles p
+        on p.id = case when auth.uid() = l.user_a then l.user_b else l.user_a end
+     where auth.uid() in (l.user_a, l.user_b)
+       and l.status <> 'pending') s);
+end $$;
+revoke all on function public.my_companion_links() from public, anon;
+grant execute on function public.my_companion_links() to authenticated;
