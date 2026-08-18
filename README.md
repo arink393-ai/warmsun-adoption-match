@@ -1710,6 +1710,21 @@ Supabase Dashboard → 左邊 **Edge Functions** → **Deploy a new function**
 → 把 `supabase/functions/notify-owner/index.ts` **整份**貼進編輯器
 → **Deploy**。
 
+> ⚠️ **建立時就要把名稱填對，事後改不了。**
+> 後台建函式如果沒填名稱，Supabase 會自動給一個隨機代號
+> （`rapid-worker`、`swift-badger` 這種）。而那個代號**就是網址**，
+> 之後在設定頁改「Name」只會改顯示名稱——那一頁自己也寫著
+> 「Your slug and endpoint URL will remain the same」。
+>
+> 症狀是：後台明明看得到一支叫 notify-owner 的函式，
+> 打 `/functions/v1/notify-owner` 卻一直回 `NOT_FOUND`。
+> **以函式頁面最上方顯示的那個網址為準**，那才是真的。
+> 名稱錯了就砍掉重建，比繼續用一個叫 rapid-worker 的通知函式好。
+>
+> 貼完程式碼後順手核對行數（目前 154 行）與最後一行（`});`）。
+> 行數對不上代表貼到舊版或沒貼完，而部署一樣會成功，
+> 只是跑的是舊的程式碼——那種錯最難查。
+
 **4. 把這支函式的「Verify JWT」關掉**　← ⚠️ 這一步不做，後面一定會 401
 進到 `notify-owner` 的 **Settings / Details**，找到 **Verify JWT**（或
 「Enforce JWT Verification」）並**關閉**。
