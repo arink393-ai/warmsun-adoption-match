@@ -1721,7 +1721,7 @@ Supabase Dashboard → 左邊 **Edge Functions** → **Deploy a new function**
 > **以函式頁面最上方顯示的那個網址為準**，那才是真的。
 > 名稱錯了就砍掉重建，比繼續用一個叫 rapid-worker 的通知函式好。
 >
-> 貼完程式碼後順手核對行數（目前 154 行）與最後一行（`});`）。
+> 貼完程式碼後順手核對行數（目前 184 行）與最後一行（`});`）。
 > 行數對不上代表貼到舊版或沒貼完，而部署一樣會成功，
 > 只是跑的是舊的程式碼——那種錯最難查。
 
@@ -1777,7 +1777,8 @@ curl -i -X POST -H "x-notify-secret: <第 2 步那組亂數>" \
 |---|---|
 | `{"sent":N}` | 成功，信應該進信箱了 |
 | `{"sent":0,"note":"沒有待寄的通知…"}` | 也是成功，只是現在沒東西要寄。先去網站送一則意見回饋再測一次 |
-| `401` | 第 4 步的 Verify JWT 還開著，或 `NOTIFY_SECRET` 沒對上（回應的 `hint` 會講） |
+| 完全沒有 JSON（瀏覽器報 CORS、或 `Missing authorization header`） | 第 4 步的 Verify JWT 還開著——函式根本沒被叫到，被閘道擋掉了 |
+| `401` **而且看得到這段 JSON**（`{"error":"unauthorized",...}`） | 函式是活的，JWT 沒問題，是 `NOTIFY_SECRET` 沒對上。回應裡的 `診斷` 欄位會告訴你：有沒有收到你送的密鑰、長度多少、伺服器那邊有沒有設——照著比對就找得到是哪一邊漏了或打錯了（常見是複製時多帶了空白或換行，函式會自動去頭尾空白但不會處理中間） |
 | `500` 提到 `Could not find the function` | 最新的 `supabase-schema.sql` 還沒貼進 SQL Editor |
 | `500` 提到 `RESEND_API_KEY` | 第 5 步漏了 |
 | `502` | Resend 退件，`detail` 裡有原因（多半是 `NOTIFY_FROM` 寫錯） |
