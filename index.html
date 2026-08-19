@@ -7,10 +7,15 @@
 <meta property="og:title" content="暖陽動物之家｜認養配對所">
 <meta property="og:description" content="借用嚴謹的認養手續，找一輩子的家人。">
 <meta property="og:type" content="website">
-<!-- og:image 故意先不加：專案裡還沒有實際的預覽圖檔（og.png），
-     指到一張不存在的圖分享出去只會顯示破圖，比完全不設定更難看。
-     之後準備好圖檔、放進專案根目錄後，再補上：
-     <meta property="og:image" content="https://arink393-ai.github.io/warmsun-adoption-match/og.png"> -->
+<meta property="og:image" content="https://arink393-ai.github.io/warmsun-adoption-match/icons/logo-full.png">
+<!-- PWA：manifest／圖示／安裝時的主題色。sw.js 的註冊在 body 最後面，
+     跟其他啟動邏輯放一起，理由見那裡的註解。 -->
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="48x48" href="icons/favicon-48.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#FF8A3D">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Lora:wght@400;500;600&family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500&display=swap" rel="stylesheet">
@@ -6058,5 +6063,12 @@ initTabs();
 initCenter();
 initWizard();
 renderDemoCards();
+
+/* PWA 安裝用的 service worker。register() 失敗要接住——本機用 file://
+   開發測試時瀏覽器本來就不支援 service worker（不是安全來源），
+   讓它安靜失敗，不能變成整頁的未捕捉錯誤。 */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
 </script>
 </html>

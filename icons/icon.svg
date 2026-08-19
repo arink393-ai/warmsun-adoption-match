@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="sunG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFC04D"/>
+      <stop offset="1" stop-color="#FF8A3D"/>
+    </linearGradient>
+    <linearGradient id="dogG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F0D6AE"/>
+      <stop offset="1" stop-color="#DDB47F"/>
+    </linearGradient>
+    <linearGradient id="catG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#D69B62"/>
+      <stop offset="1" stop-color="#A96A38"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background -->
+  <rect x="0" y="0" width="512" height="512" rx="0" fill="#FEF8EC"/>
+
+  <!-- sun rays -->
+  <g stroke="#FF9A44" stroke-width="14" stroke-linecap="round">
+    <line x1="256" y1="46" x2="256" y2="80"/>
+    <line x1="171" y1="66" x2="188" y2="98"/>
+    <line x1="341" y1="66" x2="324" y2="98"/>
+    <line x1="108" y1="122" x2="136" y2="146"/>
+    <line x1="404" y1="122" x2="376" y2="146"/>
+    <line x1="86" y1="196" x2="120" y2="204"/>
+    <line x1="426" y1="196" x2="392" y2="204"/>
+  </g>
+  <!-- sun -->
+  <circle cx="256" cy="196" r="92" fill="url(#sunG)"/>
+
+  <!-- house silhouette (subtle backdrop) -->
+  <path d="M256 168 L 400 268 L 400 452 Q400 464 388 464 L124 464
+           Q112 464 112 452 L112 268 Z" fill="#FCEFD7"/>
+
+  <!-- small heart between the sun and the two heads -->
+  <path d="M256 268
+           c -14 -16 -42 -13 -42 10 c0 18 20 30 42 46
+           c22 -16 42 -28 42 -46 c0 -23 -28 -26 -42 -10 Z"
+        fill="#F2704A"/>
+
+  <!-- big heart formed by their arms (negative space, drawn before bodies then re-cut) -->
+  <!-- bodies -->
+  <path d="M162 402 q-40 10 -40 52 q0 46 46 46 h96 q10 0 10 -14
+           q0 -30 -34 -56 q-34 -26 -78 -28 Z" fill="url(#dogG)"/>
+  <path d="M350 402 q40 10 40 52 q0 46 -46 46 h-96 q-10 0 -10 -14
+           q0 -30 34 -56 q34 -26 78 -28 Z" fill="url(#catG)"/>
+  <!-- heart cut-out between the bodies -->
+  <path d="M256 396
+           c -16 -18 -48 -15 -48 12 c0 21 23 35 48 53
+           c25 -18 48 -32 48 -53 c0 -27 -32 -30 -48 -12 Z"
+        fill="#FEF8EC"/>
+
+  <!-- dog head -->
+  <path d="M132 312 Q90 330 96 396 Q100 430 132 420 Q118 370 132 312 Z" fill="#CBA06D"/>
+  <circle cx="182" cy="352" r="70" fill="url(#dogG)"/>
+  <path d="M144 330 q10 -10 20 -2" stroke="#5A3A22" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <path d="M160 372 q18 14 36 0" stroke="#8A5A30" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <ellipse cx="240" cy="356" rx="8" ry="6" fill="#4A2E18"/>
+
+  <!-- cat head -->
+  <path d="M322 320 L336 268 L358 302 Z" fill="url(#catG)"/>
+  <path d="M402 320 L388 268 L366 302 Z" fill="url(#catG)"/>
+  <circle cx="362" cy="352" r="66" fill="url(#catG)"/>
+  <path d="M378 328 q10 -10 20 -2" stroke="#3E2412" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <path d="M342 372 q18 14 36 0" stroke="#6B3E1E" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <path d="M304 356 l16 -7 l0 14 Z" fill="#3E2412"/>
+</svg>

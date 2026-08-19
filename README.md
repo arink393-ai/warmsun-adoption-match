@@ -2034,6 +2034,62 @@ Relationship Health Score 同一個理由：沒有校準基礎的數字或燈號
 （完全私人、不對外顯示、不做為篩選條件）——設計方向已經在跟使用者確認過，
 還沒動工。
 
+### 51. PWA 圖示與 Logo
+
+使用者傳了一張設計好的 Logo（太陽下、屋頂形狀裡，一隻狗跟一隻貓鼻子碰鼻子、
+身體圍出一顆愛心，下面寫著「暖陽動物之家・遇見對的人，從心開始」），
+但那張圖只存在於對話裡——工具端沒有辦法把貼進來的圖直接存成檔案，
+拿不到原始像素。跟使用者確認過後，改成照看到的構圖與配色**重畫**一版，
+不是逐像素還原那張圖。
+
+新增 `icons/icon.svg`（512×512 的向量原稿，方形無圓角——manifest 的圖示
+本來就該是滿版方形，圓角是各平台自己套用的，原稿再帶一次圓角只會變成
+「圓角疊圓角」的雙重邊）與 `icons/logo-full.svg`（帶文字的完整版型，
+用在 README／社群分享圖）。兩份都是純 SVG 手刻的向量圖形（圓、路徑、
+線段組成的太陽光芒、房屋輪廓、兩隻動物的頭與身體、中間鏤空的愛心），
+沒有外部圖庫或點陣底圖。
+
+**沒有 SVG 點陣化工具（`rsvg-convert`／`imagemagick`／`sharp` 都不在這個
+環境裡），改用已經裝好的 Playwright headless Chromium 截圖代替**：
+把 SVG 包進一個尺寸剛好的 HTML 頁面、設定對應的 viewport、截圖裁到那個
+尺寸，就是一張精確像素數的 PNG。這條路徑本來就是這個 repo 測試用的同一支
+瀏覽器，不必額外裝東西。
+
+輸出的圖示：
+
+| 檔案 | 尺寸 | 用途 |
+|---|---|---|
+| `icon-192.png` / `icon-512.png` | 192×192／512×512 | manifest 一般圖示（`purpose: any`） |
+| `maskable-192.png` / `maskable-512.png` | 192×192／512×512 | manifest 的 maskable 圖示——內容縮到 80% 並置中，safe zone 之外留白，才不會被各平台的圓形／圓角遮罩切到重要內容 |
+| `apple-touch-icon.png` | 180×180 | iOS 加入主畫面 |
+| `favicon-48/32/16.png` | 48／32／16 | 瀏覽器分頁圖示 |
+
+favicon 額外做了一版簡化圖（`favicon-simple.svg`，只留太陽與愛心，
+不畫狗貓的五官）：完整版縮到 16～32px 時，光芒、耳朵、表情全部糊在一起
+變成一團色塊，簡化版在那個尺寸反而更容易辨認。192／512 兩個常用尺寸
+維持完整版。
+
+`manifest.json`：`display: standalone`、`background_color`／`theme_color`
+取 Logo 裡的暖色（`#FEF8EC` 米白、`#FF8A3D` 橘）。`sw.js` 是
+network-first、只快取同源的靜態外殼（HTML 與 icons）——**故意不快取
+Supabase 的任何回應**，這個網站的核心內容全部是即時資料（申請狀態、
+對話、揭露層級），快取到就等於讓使用者看著過期的畫面做決定，那比沒有
+離線支援還糟。`index.html` 與 `dashboard.html` 都連了 manifest 與
+service worker；`shelter-review-assistant.html` 是內部工具，只給了
+favicon，沒有讓它可以獨立安裝。
+
+service worker 的註冊包在 `'serviceWorker' in navigator` 判斷與
+`.catch(()=>{})` 裡——本機用 `file://` 開發測試時（包含這個 repo 全部的
+瀏覽器 smoke test）本來就不是安全來源，`register()` 一定會失敗，
+沒接住的話會變成整頁的未捕捉錯誤，把原本測別的東西的測試一起弄紅。
+
+驗證：手動確認 `manifest.json` 是合法 JSON、九張輸出的 PNG 都是正確尺寸、
+`index.html` 與 `dashboard.html` 的 `<script>` 區塊語法沒有問題；
+再跑一次完整瀏覽器回歸（SQL 沒有異動，維持 749 項；瀏覽器 26 份共
+**925 項**）確認新增的 `<link>` 標籤與 service worker 註冊沒有讓任何一份
+既有測試變紅。這一輪沒有新增測試檔——變動的是靜態資源與幾行啟動邏輯，
+沒有新的規則或分支需要覆蓋。
+
 ## 已知限制（原型階段）
 
 ### 只能在 Supabase 控制台做，程式改不到
