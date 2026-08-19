@@ -225,6 +225,11 @@ alter table public.match_profiles add constraint match_profiles_weekly_work_hour
 -- 預設 {} 代表「沒有任何不可妥協條件」，不會憑空產生紅燈。
 alter table public.match_profiles add column if not exists dealbreakers jsonb not null default '{}'::jsonb;
 
+-- ❤️ 關係能力評估（第 37 節）：6 題情境式的自由文字回答，key -> 回答原文。
+-- 存的是文字，不是分數，不會算出任何燈號或百分比。跟上面 weekly_work_hours
+-- 同一個理由提前宣告：get_visible_match_profiles() 在建立當下就要看得到它。
+alter table public.match_profiles add column if not exists readiness jsonb not null default '{}'::jsonb;
+
 -- ── 第 17 節的四個新題組（欄位提前到這裡宣告，理由同上）──────────
 -- 17.1 欄位 ----------------------------------------------------
 -- ① 生活節奏（第 1 層：跟生活習慣同一層）
@@ -549,7 +554,9 @@ language sql security definer stable set search_path = '' as $$
       'ex_contact_acceptance','opposite_friend_boundary','relationship_boundary_actions',
       -- Dealbreaker 嚴重度整個不外流：只給「有幾項」。細項是很強的識別資訊，
       -- 而且初診本來就在伺服器端讀得到，前端沒有任何理由需要拿到值。
-      'dealbreakers'
+      'dealbreakers',
+      -- ❤️ 關係能力評估（第 37 節）：黑名單制，下面依階段決定要不要給。
+      'readiness'
     ]::text[])
     || jsonb_build_object(
       -- 第 0 層：年齡只給區間
@@ -616,6 +623,11 @@ language sql security definer stable set search_path = '' as $$
         case when rel.stage >= 2 then p.relationship_boundary_actions else '[]'::jsonb end,
       'dealbreaker_count', (select count(*) from jsonb_each_text(coalesce(p.dealbreakers,'{}'::jsonb)) d
                              where d.value = 'non_negotiable'),
+      -- ❤️ 關係能力評估：原始回答文字，第 2 層才開放（第 37 節）。
+      -- 選第 2 層而不是跟學歷同一層的第 1 層：這一欄是「怎麼處理衝突、
+      -- 怎麼扛責任」的敘事文字，識別度跟敏感度都比單選欄位高，
+      -- 定位比照宗教與感情史（同樣第 2 層）而不是身高學歷。
+      'readiness', case when rel.stage >= 2 then p.readiness else '{}'::jsonb end,
       -- 第 3 層：要雙方都同意解鎖
       'birth',  case when rel.stage >= 3 and rel.unlock_from and rel.unlock_to then p.birth else null end,
       'locked', case when rel.stage >= 3 and rel.unlock_from and rel.unlock_to then p.locked else null end,
@@ -4599,7 +4611,16 @@ $$;
 -- 26.3 存檔時檢查 ----------------------------------------------
 create or replace function public.guard_profile_custom_text()
 returns trigger language plpgsql set search_path = public, pg_temp as $$
-declare bad text; raw jsonb; n int;
+declare
+  bad text; raw jsonb; n int;
+  -- ❤️ 第 37 節：關係能力評估的白名單。這份清單刻意跟後面的
+  -- readiness_questions()（純 SQL 函式，會秀在畫面上）各自獨立寫一份，
+  -- 不是互相呼叫——這支 trigger 函式在資料庫剛建立、readiness_questions()
+  -- 都還沒定義的當下就要能跑。兩份清單只要不同步，
+  -- tests/pgtest-readiness.sql 會直接紅（逐一比對兩邊的 6 個 key）。
+  v_readiness_keys text[] := array['conflict_repair','boundary_respect',
+    'emotional_responsibility','accountability','reciprocity','autonomy'];
+  rk record;
 begin
   /* 順序很重要：**先檢查原始輸入，最後才清洗。**
      反過來寫的話，clean_tags 的長度上限會先把「IG @mycoolname」這種
@@ -4646,6 +4667,30 @@ begin
   new.gender  := btrim(regexp_replace(coalesce(new.gender,''),  '[\s　]+', ' ', 'g'));
   if char_length(new.species) > 12 then raise exception '物種請控制在 12 個字以內'; end if;
   if char_length(new.gender)  > 12 then raise exception '性別請控制在 12 個字以內'; end if;
+
+  -- ④ 關係能力評估（第 37 節）：只收白名單裡的 6 個 key，每題最多 500 字，
+  --    一樣不能藏聯絡方式——這一欄通過第二階段後會被對方看到原始文字，
+  --    不是私訊管道。
+  if jsonb_typeof(coalesce(new.readiness,'{}'::jsonb)) <> 'object' then
+    raise exception 'readiness 格式不正確';
+  end if;
+  for rk in select key, value from jsonb_each_text(coalesce(new.readiness,'{}'::jsonb)) loop
+    if not (rk.key = any(v_readiness_keys)) then
+      raise exception '「%」不是有效的關係能力題目', rk.key;
+    end if;
+    if public.looks_like_contact(rk.value) then
+      raise exception '關係能力題的回答裡看起來有聯絡方式。這一欄要通過第二階段才會被對方看到，'
+        '不是私訊——聯絡方式請留到雙方同意交換的那一步。';
+    end if;
+    if char_length(btrim(rk.value)) > 500 then
+      raise exception '「%」的回答超過 500 字，請精簡一點', rk.key;
+    end if;
+  end loop;
+  -- 修剪空白，去掉空字串（等於還沒回答那一題，不佔位置）
+  select coalesce(jsonb_object_agg(key, btrim(value)), '{}'::jsonb) into new.readiness
+    from jsonb_each_text(coalesce(new.readiness,'{}'::jsonb))
+   where btrim(value) <> '';
+
   return new;
 end $$;
 
@@ -6980,3 +7025,67 @@ begin
 end $$;
 revoke all on function public.check_hard_filter(uuid) from public, anon;
 grant execute on function public.check_hard_filter(uuid) to authenticated;
+
+-- ============================================================
+-- 37. ❤️ 關係能力評估（Relationship Readiness）
+--     使用者對整站做過一輪完整的產品評估之後的結論：暖陽已經很會篩
+--     「不適合的人」（💞 相容度：條件對不對得起來），但還沒有篩出
+--     「有能力經營長期關係的人」。這一節補的是後者，跟 💞 相容度
+--     是兩條互相獨立的軸線，不是取代。
+--
+--     ── 6 題情境式問題，不是人格測驗 ──────────────────────────
+--     衝突後的修復、界線尊重、情緒責任、當責、互惠、自主與空間——
+--     6 個長期關係最容易磨損的能力，每一題問的是「上一次實際發生時
+--     你怎麼做」，不是「你覺得自己是怎樣的人」（自我認知跟實際行為
+--     常常對不起來，問「上一次實際上怎麼做」比較不容易變成自我行銷）。
+--     白名單與題目本文分別見上面 guard_profile_custom_text()（第 26.3
+--     節，程式提前到那裡宣告，理由同 weekly_work_hours）與下面的
+--     readiness_questions()。
+--
+--     ── 不輸出分數，不做燈號 ────────────────────────────────
+--     跟第 22 節刪掉 vet_scores、第 29 節 checkin 不做 Relationship
+--     Health Score 同一個理由：沒有校準基礎的數字或燈號一旦出現，
+--     就會被當成結論，而『❤️ 戀愛成熟度 93/100』這種東西看起來
+--     像事實，其實只是 6 段自我陳述。get_visible_match_profiles()
+--     只回傳原始文字，前端顯示時一定要帶上「這不是人格診斷，也不
+--     代表對方一定會如此行動」的提醒（見 index.html 的
+--     READINESS_DISCLAIMER）。
+--
+--     ── 給誰看：只給原始文字，不做審查者專用摘要 ───────────────
+--     曾經考慮過讓審查申請的人看到系統算出的 🟢🟡🔴 分類，最後選了
+--     「只給看原始回答文字」——理由是：一旦系統對一段自由文字給出
+--     燈號，那個燈號立刻會被當成系統的判斷，而 6 段情境描述要不要
+--     打折扣、要追問什麼，那件事本來就該留給真人自己判斷，不是
+--     交給規則引擎裝忙。
+--
+--     ── 揭露層級：跟宗教／感情史同一層，不是跟學歷同一層 ─────────
+--     見 get_visible_match_profiles() 內的註解：這是敘事文字，
+--     識別度與敏感度都比單選欄位高，比照第 23 節的宗教與感情史
+--     放在第 2 層（要進入第二階段才看得到），而不是第 1 層。
+--
+--     ── 沒有另外做題庫版本管理 ──────────────────────────────
+--     跟第 29 節的 checkin_questions() 同一個模式：題目是 SQL 函式
+--     回傳的 jsonb，前端用 RPC 現讀，不在 JS 裡再抄一份題目文字——
+--     抄兩份的下場永遠是有一份會走鐘、而且走鐘的方式是「畫面上的
+--     題目文字」跟「資料庫實際驗證的白名單」兜不起來。
+-- ============================================================
+
+-- 37.1 題目：前後端共用同一份 ------------------------------------
+create or replace function public.readiness_questions()
+returns jsonb language sql immutable as $$
+  select '[
+    {"key":"conflict_repair","title":"衝突後的修復",
+     "prompt":"上一次你跟很重要的人吵架之後，你們是怎麼收尾的？請說一次真的發生過的經過——當時你做了什麼，後來怎麼樣了。"},
+    {"key":"boundary_respect","title":"界線尊重",
+     "prompt":"如果對方明確說「這件事我現在不想談」，你通常怎麼反應？請舉一次真實發生過的例子，不是假設。"},
+    {"key":"emotional_responsibility","title":"情緒責任",
+     "prompt":"心情很不好的時候，你通常怎麼處理？那個狀態會不會連帶影響到身邊的人？請舉一個實際發生過的例子。"},
+    {"key":"accountability","title":"當責",
+     "prompt":"上一次某件事明明是你的錯，你是怎麼承認、怎麼處理後續的？請具體描述那一次，不是講一般原則。"},
+    {"key":"reciprocity","title":"互惠",
+     "prompt":"在一段關係裡，你怎麼知道自己付出得夠不夠、或者對方有沒有相對地在乎你？請描述一次你實際注意到這件事的經過。"},
+    {"key":"autonomy","title":"自主與空間",
+     "prompt":"當你在意的人想把時間留給朋友或自己、而不是留給你的時候，你當下的第一個反應通常是什麼？"}
+  ]'::jsonb
+$$;
+grant execute on function public.readiness_questions() to authenticated, anon;

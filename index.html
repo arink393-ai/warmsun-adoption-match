@@ -940,6 +940,17 @@
     <div id="grpDealbreakers"></div>
     </div>
 
+    <!-- ── 第 7 步：關係能力（全部選填，可以整步跳過）─────────── -->
+    <div class="wizPanel" data-step="7">
+    <div class="notice" style="margin-top:0">
+      <b>這一步也可以整個跳過。</b>下面 6 題問的是「上一次實際發生時你怎麼做」，
+      不是「你覺得自己是怎樣的人」——想到真實例子再寫比較有意義，想不到就先留空。<br>
+      <b>不會算出任何分數或燈號。</b>對方看到的是你寫的原始文字，不是系統的判斷。
+    </div>
+    <p class="hint">這不是人格診斷，也不代表對方一定會如此行動。結果只用來指出值得進一步確認的地方。</p>
+    <div id="grpReadiness">載入題目中⋯⋯</div>
+    </div>
+
     <!-- 上一步／下一步；儲存永遠看得到，任何一步都可以先存起來 -->
     <div class="wizNav">
       <button type="button" class="ghost" id="wizPrev">← 上一步</button>
@@ -2019,7 +2030,7 @@ async function fillMe(){
   mDebtWhen.value = myProfile.debt_when||'stage2';
   mRelGoal.value = myProfile.relationship_goal||''; mKidsPlan.value = myProfile.kids_plan||''; mMbti.value = myProfile.mbti||'';
   /* 舊帳號的 work_hours 可能是「45 小時」這種文字，取第一個數字回填到數值欄 */
-  fillExtraFields(myProfile);
+  await fillExtraFields(myProfile);
   mWorkHours.value = myProfile.weekly_work_hours != null ? myProfile.weekly_work_hours
     : (String(myProfile.work_hours||'').match(/\d+/) || [''])[0];
   setCheckGroup('mInterests', myProfile.interests);
@@ -2420,6 +2431,7 @@ function openImportDialog(){
 
 function fieldId(col){ return 'x_' + col; }
 function renderExtraFields(){
+  renderReadinessFields(); // 提早開始讀題目，不等使用者切到第 7 步才發 RPC
   const groups = {};
   EXTRA_FIELDS.forEach(f => { (groups[f.grp] = groups[f.grp] || []).push(f); });
   Object.entries(groups).forEach(([g, list]) => {
@@ -2440,11 +2452,38 @@ function renderExtraFields(){
       ${DEALBREAKER_LEVELS.map(l => `<option value="${l.v}">${esc(l.t)}</option>`).join('')}
     </select>`).join('');
 }
-function fillExtraFields(p){
+function readinessFieldId(k){ return 'rd_' + k; }
+/* ❤️ 關係能力的 6 題只存在資料庫這一份（見 schema 第 37 節的 readiness_questions()），
+   前端用 RPC 現讀，不在這裡再抄一份題目文字——抄兩份的下場就是題目文字走鐘。
+   只跑一次、結果快取起來：renderExtraFields 觸發載入，fillMe() 會先 await 它，
+   確保填值之前 DOM 已經長出來。 */
+let READINESS_Q = null;
+let readinessRenderP = null;
+function renderReadinessFields(){
+  if(readinessRenderP) return readinessRenderP;
+  readinessRenderP = (async () => {
+    const host = $('grpReadiness');
+    try{ READINESS_Q = await DB.readinessQuestions(); }
+    catch(e){ READINESS_Q = []; }
+    if(!host) return;
+    host.innerHTML = READINESS_Q.length ? READINESS_Q.map(q => `
+      <label>${esc(q.title)}</label>
+      <p class="hint" style="margin:2px 0 6px">${esc(q.prompt)}</p>
+      <textarea id="${readinessFieldId(q.key)}" rows="3" maxlength="500" placeholder="選填，不填不影響送審"></textarea>
+    `).join('') : '<p class="hint">題目暫時載入不出來，可以先跳過這一步，之後再回來填。</p>';
+  })();
+  return readinessRenderP;
+}
+async function fillExtraFields(p){
   EXTRA_FIELDS.forEach(f => { const el = $(fieldId(f.col)); if(el) el.value = p[f.col] || ''; });
   const d = (p && typeof p.dealbreakers === 'object' && p.dealbreakers) ? p.dealbreakers : {};
   DEALBREAKER_TOPICS.forEach(t => {
     const el = $('db_' + t.k); if(el) el.value = d[t.k] || 'none';
+  });
+  await renderReadinessFields();
+  const r = (p && typeof p.readiness === 'object' && p.readiness) ? p.readiness : {};
+  (READINESS_Q || []).forEach(q => {
+    const el = $(readinessFieldId(q.key)); if(el) el.value = r[q.key] || '';
   });
 }
 function collectExtraFields(){
@@ -2457,6 +2496,18 @@ function collectExtraFields(){
     if(el && el.value && el.value !== 'none') d[t.k] = el.value;
   });
   out.dealbreakers = d;
+  /* 題目是用 RPC 現讀的，還沒載入成功（或讀取失敗）時 READINESS_Q 是空的——
+     這時候完全不要放 readiness 這個 key，讓 saveMyProfile 保留資料庫裡原本的值。
+     反過來寫（送出一個空物件）的下場是：使用者只是手腳快了一點先按了儲存，
+     結果先前填好的六題全部被一次清空，而且他不會知道為什麼。 */
+  if(Array.isArray(READINESS_Q) && READINESS_Q.length){
+    const r = {};
+    READINESS_Q.forEach(q => {
+      const el = $(readinessFieldId(q.key));
+      if(el && el.value.trim()) r[q.key] = el.value.trim();
+    });
+    out.readiness = r;
+  }
   return out;
 }
 
@@ -2466,8 +2517,12 @@ const WIZ_STEPS = [
   {n:3, t:'自我介紹'},
   {n:4, t:'分階段資料'},
   {n:5, t:'希望遇到誰'},
-  {n:6, t:'你的不可妥協（選填）'}
+  {n:6, t:'你的不可妥協（選填）'},
+  {n:7, t:'關係能力（選填）'}
 ];
+/* 兩個常數集中放在一起，畫面上與後面 profileCardHTML 都會用到 —— 只要有一個地方要改字，
+   就只有這裡要改。*/
+const READINESS_DISCLAIMER = '這不是人格診斷，也不代表對方一定會如此行動。結果只用來指出值得進一步確認的地方。';
 let wizCur = 1;
 function gotoWizStep(n){
   wizCur = Math.max(1, Math.min(WIZ_STEPS.length, n));
@@ -2922,6 +2977,21 @@ function tagRow(title, val, dashed){
   const c = chips(val, dashed);
   return c ? chartSec(title) + `<div class="chipRow">${c}</div>` : '';
 }
+/* ❤️ 關係能力：原始回答文字（見 schema 第 37 節），不算分數不做燈號。
+   拿得到內容本身就代表伺服器已經判定到第 2 層——這裡不再重覆判斷一次階段，
+   跟 rows1／rows2 其餘欄位同一個做法：信任伺服器的遮罩，前端只負責排版。
+   標題文字現讀自 READINESS_Q（renderReadinessFields() 在頁面載入時就先發過 RPC），
+   萬一還沒載到就退回顯示 key，不會整塊消失。 */
+function readinessCardHTML(r){
+  const entries = Object.entries((r && typeof r === 'object') ? r : {}).filter(([,v]) => v);
+  if(!entries.length) return '';
+  const titleOf = k => { const q = (READINESS_Q || []).find(x => x.key === k); return q ? q.title : k; };
+  return `<div class="notice" style="margin-top:10px">
+    <b>❤️ 關係能力（本人回答的原始文字）</b>
+    ${entries.map(([k,v]) => `<div style="margin-top:8px"><b>${esc(titleOf(k))}</b><div class="note">${esc(v)}</div></div>`).join('')}
+    <p class="hint" style="margin-top:8px">${esc(READINESS_DISCLAIMER)}</p>
+  </div>`;
+}
 /* 揭露進度：三個上鎖區塊合併成一個可收合的區塊，並且畫出「你走到第幾層」。
    已經解鎖的那一層預設展開，其餘收合——資訊量一樣，但不再三大塊灰底輪流出現。 */
 function disclosureBlock(p, stage, unlocked){
@@ -2951,7 +3021,7 @@ function disclosureBlock(p, stage, unlocked){
     chartRow('居住', esc(p.living || '（未填）')),
     chartRow('生育規劃', esc(p.kids_plan || '（未填）')),
     chartRow('工作時數', esc(p.work_hours || '（未填）'))
-  ].join('');
+  ].join('') + readinessCardHTML(p.readiness);
   const rows3 = chartRow('生日', esc(p.birth || '（未填）')) +
     `<div class="lock open">🔓 聯絡方式：${esc(p.locked || '（對方尚未填寫）')}</div>`;
 

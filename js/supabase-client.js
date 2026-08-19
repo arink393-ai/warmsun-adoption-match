@@ -173,6 +173,14 @@
     if (error) throw error;
     return data;
   }
+  // ❤️ 關係能力評估的題目（見 supabase-schema.sql 第 37 節）
+  // 題目文字只存在資料庫這一份，前端用 RPC 現讀，存檔仍走既有的 saveMyProfile()——
+  // readiness 只是 match_profiles 的一個 jsonb 欄位，跟 dealbreakers 同一套存法。
+  async function readinessQuestions() {
+    const { data, error } = await sb.rpc('readiness_questions');
+    if (error) throw error;
+    return data;
+  }
   // 提出認養申請：扣掛號費＋建立申請＋寫入受保護的答案表＋存進答題紀錄，同一個交易（見 apply_to()）
   async function applyTo(toId, answers, questions) {
     const { data, error } = await sb.rpc('apply_to', {
@@ -805,7 +813,7 @@
     submitFeedback, listMyFeedback, feedbackLooksPersonal,
     adminFeedbackList, adminSetFeedbackStatus,
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
-    checkHardFilter, applyTo, refundApplication, adminAddCredits,
+    checkHardFilter, readinessQuestions, applyTo, refundApplication, adminAddCredits,
     sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
     blockUser, unblockUser, listBlockedUsers,
     sendPriorityInvite, settleBonusCredits,
