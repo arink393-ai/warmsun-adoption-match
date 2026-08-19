@@ -6913,3 +6913,70 @@ revoke all on function public.mark_owner_notifications_failed(uuid[],text) from 
 grant execute on function public.pending_owner_notifications(int) to service_role;
 grant execute on function public.mark_owner_notifications_sent(uuid[]) to service_role;
 grant execute on function public.mark_owner_notifications_failed(uuid[],text) to service_role;
+
+-- ============================================================
+-- 36) 🔴 送出申請前的 Hard Filter 提醒
+--
+--     動機：使用者自己的實際經驗——如果「大學畢業」是我的不可妥協條件，
+--     為什麼要讓對方先花二十分鐘寫申請，我再拒絕他？
+--     現在的初診報告是申請「送出之後」才產生，只有收件方看得到。
+--     這一節把同一套規則**提前**跑一次，讓「要送出申請的人」自己先看到
+--     一個數字，而不是強迫兩邊都投入一輪心力才發現基本條件對不上。
+--
+--     ── 兩個明確的決定 ──────────────────────────────────
+--     (1) **只提醒，不擋。** 跟初診報告目前的角色一致：系統只提供資訊，
+--         不替使用者決定。使用者的 non_negotiable 設定本身也可能填錯、
+--         也可能後來改變心意——真的擋死沒有回頭路。
+--     (2) **只回傳一個數字，不回傳是哪一項。** 「所以你就是嫌我收入低？」
+--         這種對話不該從一個尚未送出的畫面就開始。要看細節，
+--         等真的送出、對方審查時看到的初診報告才有明細
+--         （而且明細本來就照漸進式揭露分層顯示）。
+--
+--     ── 沒有另外做一套規則 ──────────────────────────────
+--     🔴 的判定邏輯已經在 run_screening() 裡：兩邊都把同一個題組標成
+--     non_negotiable 而且答案衝突，才算 🔴。這裡不重新定義「不可妥協」，
+--     直接借用同一套規則，數字才會跟對方稍後看到的初診報告一致——
+--     不然「送出前顯示 2 項衝突」跟「審查時看到 3 項🔴」對不起來，
+--     使用者會覺得系統自己打架。
+--
+--     p_app 傳 null：這只是送出前的預檢，還沒有申請關係，
+--     不會被 run_screening 記進 CRM 時間軸（log_application_event
+--     只在 p_app 不是 null 時才寫）。而且這一列 screening_results
+--     之後如果真的送出申請，會被同一把 unique key
+--     (from_user, to_user, audience) 直接更新，不會留下重複紀錄。
+-- ============================================================
+
+create or replace function public.check_hard_filter(p_target uuid)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  me uuid := auth.uid();
+  res public.screening_results%rowtype;
+  newest timestamptz;
+begin
+  if me is null then raise exception '請先登入'; end if;
+  if p_target = me then raise exception '不能對自己做這項檢查'; end if;
+  if public.match_is_blocked(me, p_target) then raise exception '無法對這個帳號提出申請'; end if;
+  if not exists (select 1 from public.get_visible_match_profiles(p_target)) then
+    raise exception '找不到這個人';
+  end if;
+
+  -- 跟 get_screening_for 同一套快取邏輯：資料沒變就不用重跑規則引擎
+  select greatest(max(p.updated_at), max(r.updated_at)) into newest
+    from public.match_profiles p, public.screening_rules r
+   where p.id in (me, p_target);
+
+  select * into res from public.screening_results s
+   where s.from_user = me and s.to_user = p_target and s.audience = 'member'
+     and s.ran_at >= newest;
+  if not found then
+    perform public.run_screening(me, p_target, null, 'member');
+    select * into res from public.screening_results s
+     where s.from_user = me and s.to_user = p_target and s.audience = 'member';
+  end if;
+
+  -- 只回一個數字。不回 findings、不回 topic，連 hidden 給不給看都不必決定，
+  -- 因為根本沒有明細可以藏。
+  return jsonb_build_object('conflicts', coalesce(res.red, 0));
+end $$;
+revoke all on function public.check_hard_filter(uuid) from public, anon;
+grant execute on function public.check_hard_filter(uuid) to authenticated;

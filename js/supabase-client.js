@@ -165,6 +165,14 @@
     if (error) return { ok: false, profile: await getMyProfile(), error };
     return { ok: true, profile: data };
   }
+  // 🔴 送出申請前的 Hard Filter 提醒（見 supabase-schema.sql 第 36 節）
+  // 直接借用初診報告既有的紅燈規則，只回一個數字，不回是哪一項。
+  // 只提醒，不擋——呼叫端要不要因此擋下送出，是前端自己的事。
+  async function checkHardFilter(toId) {
+    const { data, error } = await sb.rpc('check_hard_filter', { p_target: toId });
+    if (error) throw error;
+    return data;
+  }
   // 提出認養申請：扣掛號費＋建立申請＋寫入受保護的答案表＋存進答題紀錄，同一個交易（見 apply_to()）
   async function applyTo(toId, answers, questions) {
     const { data, error } = await sb.rpc('apply_to', {
@@ -797,7 +805,7 @@
     submitFeedback, listMyFeedback, feedbackLooksPersonal,
     adminFeedbackList, adminSetFeedbackStatus,
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
-    applyTo, refundApplication, adminAddCredits,
+    checkHardFilter, applyTo, refundApplication, adminAddCredits,
     sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
     blockUser, unblockUser, listBlockedUsers,
     sendPriorityInvite, settleBonusCredits,

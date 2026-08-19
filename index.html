@@ -3189,7 +3189,19 @@ function bindAnswerBank(root){
 }
 
 /* ── 提出申請 ── */
-function openApply(toId){
+/* 🔴 送出前先跑一次 Hard Filter 提醒（見 schema 第 36 節）。
+   只提醒、不擋：呼叫失敗（離線、還沒登入等）就當作沒有衝突，直接放行——
+   這一步是額外的體貼，不能變成申請流程的新故障點。
+   數字借用既有初診報告的紅燈規則，只回一個數字，不回是哪一項，
+   避免「所以你就是嫌我收入低？」這種對話在送出前就開始。 */
+async function openApply(toId){
+  let conflicts = 0;
+  try{ conflicts = (await DB.checkHardFilter(toId)).conflicts || 0; }catch(e){ conflicts = 0; }
+  if(conflicts > 0 && !confirm(
+    `⚠️ 你們有 ${conflicts} 項不可妥協條件互相衝突。\n\n` +
+    '這通常代表你們在重要的生活安排上互相都無法讓步——送出申請不會被擋下來，' +
+    '對方稍後審查時多半也會看到同樣的衝突。\n\n仍要送出這份認識邀請嗎？'
+  )) return;
   const to = profiles.find(p => p.id === toId); if(!to) return;
   const q1 = (Array.isArray(to.q1) && to.q1.length) ? to.q1 : DEFAULT_Q1;
   const box = document.createElement('div');
