@@ -7089,3 +7089,140 @@ returns jsonb language sql immutable as $$
   ]'::jsonb
 $$;
 grant execute on function public.readiness_questions() to authenticated, anon;
+
+-- ============================================================
+-- 38. 😊 對話後的感受紀錄（私人自我回報）
+--     使用者那輪產品評估的第三條建議：與其讓 AI 偷偷分析對方的聊天內容
+--     判斷「這個人怎麼樣」——那是在監控人，判斷權也不該交給演算法——
+--     改成每個人自己記錄「這次對話讓我感覺怎樣」，而且只有記錄的人自己
+--     看得到。對方永遠不會知道你按了什麼、甚至不會知道你有沒有按。
+--
+--     ── 6 個固定選項，複選 ────────────────────────────────
+--     😊被尊重／🧠被理解／😌可以做自己／😐還不確定／😣有壓力／🚩界線被侵犯。
+--     刻意不開放自訂文字：這是快速紀錄用的動作，不是日記——真的想寫長文，
+--     第 27 節的對話書籤與第 29 節 checkin 的自由題本來就有位置。
+--
+--     ── 每個「對話日」一列，不是每次點擊一列 ──────────────────
+--     同一天在同一段對話裡重覆紀錄，是在更新這一天的感受，不是疊加。
+--     反過來做的話，只是手癢多點幾下，就能讓「最近 5 次有 4 次標記
+--     有壓力」這種統計失真——而失真的統計比沒有統計更糟，因為它看起來
+--     很有說服力。
+--
+--     ── 看到的是自己的模式，不是對對方的判決 ──────────────────
+--     chat_feeling_summary() 只回傳呼叫者自己的紀錄統計；RLS 本身就沒有
+--     「查別人紀錄」這條路可以走——不是前端不顯示擋住的，是資料庫層級
+--     擋住的，包括站方帳號在內都一樣。
+--
+--     ── 🚩 出現很多次，不會自動觸發任何動作 ───────────────────
+--     沒有自動檢舉、沒有通知站方、不會讓對方看到的任何東西改變。
+--     畫面上只是多一句提示，建議去看看安全中心——要不要進一步採取行動，
+--     永遠是本人自己決定的事。
+-- ============================================================
+
+-- 38.1 選項：前後端共用同一份 --------------------------------
+create or replace function public.chat_feeling_options()
+returns jsonb language sql immutable as $$
+  select '[
+    {"key":"respected", "label":"😊 被尊重"},
+    {"key":"understood", "label":"🧠 被理解"},
+    {"key":"myself", "label":"😌 可以做自己"},
+    {"key":"unsure", "label":"😐 還不確定"},
+    {"key":"stressed", "label":"😣 有壓力"},
+    {"key":"boundary_violated", "label":"🚩 界線被侵犯"}
+  ]'::jsonb
+$$;
+grant execute on function public.chat_feeling_options() to authenticated, anon;
+
+-- 38.2 紀錄表：每人每段對話每天最多一列 --------------------------
+create table if not exists public.chat_feelings (
+  id             uuid primary key default gen_random_uuid(),
+  application_id uuid not null references public.applications(id) on delete cascade,
+  user_id        uuid not null references auth.users(id) on delete cascade,
+  chips          jsonb not null default '[]'::jsonb,
+  logged_date    date not null default current_date,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  unique (application_id, user_id, logged_date)
+);
+create index if not exists chat_feelings_lookup_idx
+  on public.chat_feelings(application_id, user_id, logged_date desc);
+
+alter table public.chat_feelings enable row level security;
+drop policy if exists "chat_feelings_own_only" on public.chat_feelings;
+-- 只有自己，永遠不包含對方，也不包含站方帳號——這是整節最重要的一條規則，
+-- 寫在 RLS 裡，不是寫在畫面上。
+create policy "chat_feelings_own_only" on public.chat_feelings
+  for select to authenticated using (user_id = auth.uid());
+grant select on public.chat_feelings to authenticated;
+-- 沒有 insert/update 的 grant：寫入一律走下面的 log_chat_feeling()，
+-- 前端連 SQL 都下不了，才擋得住「幫別人記一筆」這種事。
+
+-- 38.3 記一次（或更新今天已經記過的那一次）------------------------
+create or replace function public.log_chat_feeling(p_app_id uuid, p_chips jsonb)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_app public.applications;
+  v_chips jsonb;
+  v_row public.chat_feelings;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這個對話';
+  end if;
+  if v_app.stage < 2 then raise exception '第二階段後才有對話室'; end if;
+
+  if jsonb_typeof(coalesce(p_chips,'[]'::jsonb)) <> 'array' then
+    raise exception 'chips 格式不正確';
+  end if;
+  -- 只收選項表裡有的 key，順便去重——這裡直接讀 chat_feeling_options()，
+  -- 不像第 37 節的 readiness 白名單需要另外寫一份：這兩支函式都是這一節
+  -- 新加的，沒有「trigger 建立時舊函式還不存在」那種順序限制。
+  select coalesce(jsonb_agg(distinct v), '[]'::jsonb) into v_chips
+    from jsonb_array_elements_text(p_chips) v
+   where v in (select o->>'key' from jsonb_array_elements(public.chat_feeling_options()) o);
+  if jsonb_array_length(v_chips) = 0 then
+    raise exception '請至少選一個感受';
+  end if;
+
+  insert into public.chat_feelings(application_id, user_id, chips, logged_date, updated_at)
+    values (p_app_id, auth.uid(), v_chips, current_date, now())
+  on conflict (application_id, user_id, logged_date)
+    do update set chips = excluded.chips, updated_at = now()
+  returning * into v_row;
+
+  return jsonb_build_object('logged_date', v_row.logged_date, 'chips', v_row.chips);
+end $$;
+revoke all on function public.log_chat_feeling(uuid, jsonb) from public, anon;
+grant execute on function public.log_chat_feeling(uuid, jsonb) to authenticated;
+
+-- 38.4 我自己最近的模式 --------------------------------------------
+--      只讀呼叫者自己的列（RLS 已經擋住其他人），取最近 5 個對話日，
+--      算出每個選項出現幾次。
+create or replace function public.chat_feeling_summary(p_app_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  v_app public.applications;
+  v_total int;
+  v_counts jsonb;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這個對話';
+  end if;
+
+  with recent as (
+    select chips from public.chat_feelings
+     where application_id = p_app_id and user_id = auth.uid()
+     order by logged_date desc limit 5
+  ), flat as (
+    select jsonb_array_elements_text(chips) as k from recent
+  )
+  select (select count(*) from recent),
+         coalesce((select jsonb_object_agg(k, n) from
+           (select k, count(*) as n from flat group by k) x), '{}'::jsonb)
+    into v_total, v_counts;
+
+  return jsonb_build_object('total', coalesce(v_total,0), 'counts', v_counts);
+end $$;
+revoke all on function public.chat_feeling_summary(uuid) from public, anon;
+grant execute on function public.chat_feeling_summary(uuid) to authenticated;

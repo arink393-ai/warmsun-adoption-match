@@ -181,6 +181,23 @@
     if (error) throw error;
     return data;
   }
+  // 😊 對話後的感受紀錄（見 supabase-schema.sql 第 38 節）：只有記錄的人自己看得到，
+  // 對方跟站方帳號都讀不到——這一條是 RLS 保證的，不是前端不顯示。
+  async function chatFeelingOptions() {
+    const { data, error } = await sb.rpc('chat_feeling_options');
+    if (error) throw error;
+    return data;
+  }
+  async function logChatFeeling(appId, chips) {
+    const { data, error } = await sb.rpc('log_chat_feeling', { p_app_id: appId, p_chips: chips });
+    if (error) throw error;
+    return data;
+  }
+  async function chatFeelingSummary(appId) {
+    const { data, error } = await sb.rpc('chat_feeling_summary', { p_app_id: appId });
+    if (error) throw error;
+    return data;
+  }
   // 提出認養申請：扣掛號費＋建立申請＋寫入受保護的答案表＋存進答題紀錄，同一個交易（見 apply_to()）
   async function applyTo(toId, answers, questions) {
     const { data, error } = await sb.rpc('apply_to', {
@@ -814,6 +831,7 @@
     adminFeedbackList, adminSetFeedbackStatus,
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
     checkHardFilter, readinessQuestions, applyTo, refundApplication, adminAddCredits,
+    chatFeelingOptions, logChatFeeling, chatFeelingSummary,
     sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
     blockUser, unblockUser, listBlockedUsers,
     sendPriorityInvite, settleBonusCredits,

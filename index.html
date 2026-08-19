@@ -244,6 +244,8 @@
   .consentBar{padding:10px 16px;border-top:1px solid var(--rule);font-size:12.5px}
   .consentBar.on{background:var(--brand-tint)}
   .consentBar .bar{margin-top:6px}
+  /* 😊 對話後的感受紀錄：跟 .tabbtn.on 同一套「選到了」視覺，不另外發明一種 */
+  .chatFeelingChip.on{background:var(--brand-tint);color:var(--brand-dk);border-color:var(--brand)}
   /* 🔖 記住這句：平常只是一條淡淡的線，收藏了才有顏色。
      收藏一句話是很小的動作，按鈕不該比那句話還大聲。 */
   .bmRow{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
@@ -456,6 +458,8 @@
   <div id="chatAlbum" class="albumBar"></div>
   <div id="chatCompanion" class="companionBar" hidden></div>
   <div id="chatConsent" class="consentBar"></div>
+  <!-- 😊 對話後的感受紀錄：只有自己看得到，見 schema 第 38 節 -->
+  <div id="chatFeelings" class="consentBar"></div>
   <div style="padding:12px 16px">
     <p class="hint" style="margin-top:0">可直接聊天，或把訊息標記為「客製化感情問題」。不舒服時可立即結束對話並檢舉。</p>
     <textarea id="chatBody" rows="3" maxlength="2000" placeholder="寫下想說的話或想深入了解的感情問題…"></textarea>
@@ -4962,6 +4966,55 @@ function renderChatConsent(){
     catch(e){ flash('chatMsg', e.message || '操作失敗'); $('chatConsentBtn').disabled = false; }
   };
 }
+
+/* 😊 對話後的感受紀錄（見 schema 第 38 節）：只有自己看得到，不是替對方打分數，
+   對方永遠不會知道你選了什麼、甚至不會知道你有沒有選。
+   選項文字只存在資料庫這一份，用 RPC 現讀——跟第 37 節的關係能力題目同一個做法。 */
+let CHAT_FEELING_OPTS = null;
+async function ensureChatFeelingOpts(){
+  if(CHAT_FEELING_OPTS) return CHAT_FEELING_OPTS;
+  try{ CHAT_FEELING_OPTS = await DB.chatFeelingOptions(); }
+  catch(e){ CHAT_FEELING_OPTS = []; }
+  return CHAT_FEELING_OPTS;
+}
+let chatFeelingPicked = new Set();
+async function renderChatFeelings(){
+  const box = $('chatFeelings'); if(!box) return;
+  const opts = await ensureChatFeelingOpts();
+  let summary = {total:0, counts:{}};
+  try{ summary = await DB.chatFeelingSummary(activeChat); }catch(e){ /* 讀不到就先不顯示統計 */ }
+
+  const lines = opts
+    .filter(o => (summary.counts[o.key] || 0) > 0)
+    .sort((a,b) => (summary.counts[b.key]||0) - (summary.counts[a.key]||0))
+    .map(o => `最近 ${summary.total} 次對話中，有 ${summary.counts[o.key]} 次標記「${o.label}」`);
+
+  box.innerHTML = `
+    <div><b>🌤️ 這次對話感覺如何？</b>
+      <span class="hint">只有你自己看得到，不會讓對方知道你選了什麼，也不會變成對他的評語。</span></div>
+    <div class="bar" id="chatFeelingChips">${opts.length ? opts.map(o => `
+      <button type="button" class="ghost chatFeelingChip" data-k="${esc(o.key)}">${esc(o.label)}</button>`).join('')
+      : '<span class="hint">選項暫時載入不出來，可以之後再回來記錄。</span>'}</div>
+    ${opts.length ? `<div class="bar"><button class="ghost" id="chatFeelingSave">記錄這次感受</button><span class="msg" id="chatFeelingMsg"></span></div>` : ''}
+    ${lines.length ? `<p class="hint" style="margin:6px 0 0">${lines.map(esc).join('<br>')}</p>` : ''}
+    ${(summary.counts.boundary_violated || 0) >= 2 ? `<p class="hint" style="margin:6px 0 0">
+      如果你觀察到界線一再被侵犯，隨時可以到「安全中心」了解可以怎麼做。</p>` : ''}`;
+
+  if(!opts.length) return; // 選項讀不到時，先不裝互動——按了也存不進去
+  chatFeelingPicked = new Set();
+  box.querySelectorAll('.chatFeelingChip').forEach(b => b.onclick = () => {
+    const k = b.dataset.k;
+    if(chatFeelingPicked.has(k)){ chatFeelingPicked.delete(k); b.classList.remove('on'); }
+    else{ chatFeelingPicked.add(k); b.classList.add('on'); }
+  });
+  $('chatFeelingSave').onclick = async () => {
+    if(!chatFeelingPicked.size){ flash('chatFeelingMsg','請至少選一個感受'); return; }
+    $('chatFeelingSave').disabled = true;
+    try{ await DB.logChatFeeling(activeChat, [...chatFeelingPicked]); await renderChatFeelings(); }
+    catch(e){ flash('chatFeelingMsg', e.message || '記錄失敗'); $('chatFeelingSave').disabled = false; }
+  };
+}
+
 async function openChat(appId, name, otherId){
   activeChat = appId; activeChatOther = {id: otherId || null, name: name || '對方'};
   $('chatTitle').textContent = `與 ${name} 的第二階段對話`;
@@ -4972,6 +5025,7 @@ async function openChat(appId, name, otherId){
   try{ chatConsent = await DB.chatConsentState(appId); }
   catch(e){ chatConsent = {mine:false, other:false, both:false}; }
   renderChatConsent();
+  renderChatFeelings();
   try{ companion = await DB.companionState(appId); }
   catch(e){ companion = {eligible:false, exists:false, status:'none', mine:false, other:false}; }
   renderCompanion();
