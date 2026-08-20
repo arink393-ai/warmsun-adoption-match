@@ -420,9 +420,9 @@
   .or{display:flex;align-items:center;gap:10px;color:var(--ink-soft);font-size:12px;margin:14px 0}
   .or::before,.or::after{content:'';flex:1;height:1px;background:var(--rule)}
   /* .safetyDialog 是動態建立的檢舉視窗，沿用同一套外框 */
-  #chatDialog,#safetyDialog,#reallyDialog,.safetyDialog{width:min(620px,calc(100vw - 24px));
+  #chatDialog,#safetyDialog,#reallyDialog,#rcDialog,.safetyDialog{width:min(620px,calc(100vw - 24px));
     border:1px solid var(--rule);border-radius:8px;padding:0;background:var(--paper);color:var(--ink)}
-  #safetyDialog::backdrop,#reallyDialog::backdrop,.safetyDialog::backdrop{background:rgba(28,23,18,.48)}
+  #safetyDialog::backdrop,#reallyDialog::backdrop,#rcDialog::backdrop,.safetyDialog::backdrop{background:rgba(28,23,18,.48)}
   .safetyDialog form{padding:20px 22px}
   #reallyDialog{width:min(460px,calc(100vw - 24px))}
   #chatDialog::backdrop{background:rgba(28,23,18,.48)}
@@ -466,6 +466,11 @@
   <div id="chatConsent" class="consentBar"></div>
   <!-- 😊 對話後的感受紀錄：只有自己看得到，見 schema 第 38 節 -->
   <div id="chatFeelings" class="consentBar"></div>
+  <!-- 📝 Reality Check：約會後的私人日記，完全私人，見 schema 第 39 節 -->
+  <div class="consentBar">
+    <button type="button" class="ghost" id="rcOpenBtn">📝 Reality Check（私人日記）</button>
+    <span class="hint">見面之後想記點什麼？只有你自己看得到。</span>
+  </div>
   <div style="padding:12px 16px">
     <p class="hint" style="margin-top:0">可直接聊天，或把訊息標記為「客製化感情問題」。不舒服時可立即結束對話並檢舉。</p>
     <textarea id="chatBody" rows="3" maxlength="2000" placeholder="寫下想說的話或想深入了解的感情問題…"></textarea>
@@ -474,6 +479,23 @@
       <button class="ghost" id="chatBlock">結束對話</button>
       <button class="ghost" id="chatBlockUser">封鎖這個人</button><span class="msg" id="chatMsg"></span>
     </div>
+  </div>
+</dialog>
+
+<!-- 📝 Reality Check：約會後的私人日記。完全私人，沒有分享開關，
+     不會用來評分或篩選，也不會讓對方知道你寫過——見 schema 第 39 節。 -->
+<dialog id="rcDialog" aria-labelledby="rcTitle">
+  <div class="chatHead"><strong id="rcTitle">📝 Reality Check（私人日記）</strong>
+    <button class="ghost" id="rcClose">關閉</button></div>
+  <div style="padding:14px 16px">
+    <p class="hint" style="margin-top:0">只有你自己看得到，不會被拿去跟任何人分享，
+      也不會用來評分或篩選——單純幫你自己記錄「見面之後，這個人本人跟資料卡上寫的、
+      跟聊天時表現的，對不對得起來」。</p>
+    <div id="rcList"></div>
+    <div class="bar" style="margin-top:10px">
+      <button type="button" class="ghost" id="rcNewBtn">寫一篇新的</button>
+    </div>
+    <div id="rcForm" hidden></div>
   </div>
 </dialog>
 
@@ -5020,6 +5042,83 @@ async function renderChatFeelings(){
     catch(e){ flash('chatFeelingMsg', e.message || '記錄失敗'); $('chatFeelingSave').disabled = false; }
   };
 }
+
+/* 📝 Reality Check：約會後的私人日記（見 schema 第 39 節）。完全私人，
+   沒有分享開關——這是唯一一個連「有沒有寫過」都不會讓對方知道的功能，
+   所以畫面上也刻意獨立成一個對話框，不會跟其他人共用的訊息串混在一起。
+   題目文字只存在資料庫這一份，用 RPC 現讀——跟第 37／38 節同一個做法。 */
+let RC_Q = null;
+async function ensureRcQuestions(){
+  if(RC_Q) return RC_Q;
+  try{ RC_Q = await DB.realityCheckQuestions(); }catch(e){ RC_Q = []; }
+  return RC_Q;
+}
+function rcFieldId(k){ return 'rc_' + k; }
+async function renderRcList(){
+  const host = $('rcList'); if(!host) return;
+  host.innerHTML = '<p class="hint">讀取中⋯⋯</p>';
+  const qs = await ensureRcQuestions();
+  let rows = [];
+  try{ rows = await DB.listRealityChecks(activeChat); }catch(e){ rows = []; }
+  if(!rows.length){ host.innerHTML = '<p class="hint">還沒有寫過。</p>'; return; }
+  host.innerHTML = rows.map(r => {
+    const lines = qs.map(q => r.answers && r.answers[q.key]
+      ? `<div style="margin-top:6px"><b>${esc(q.label)}</b>：${esc(r.answers[q.key])}</div>` : '').join('');
+    return `<div class="notice" style="margin-top:10px">
+      <div class="bar" style="justify-content:space-between">
+        <b>${esc(r.met_on)}</b>
+        <button type="button" class="ghost rcDel" data-id="${esc(r.id)}"
+          style="font-size:11px;padding:3px 8px;min-height:0">刪除這篇</button>
+      </div>
+      ${lines || '<p class="hint" style="margin:6px 0 0">（這篇沒有填寫任何內容）</p>'}
+    </div>`;
+  }).join('');
+  host.querySelectorAll('.rcDel').forEach(b => b.onclick = async () => {
+    if(!confirm('刪掉這篇日記嗎？刪除後無法復原。')) return;
+    try{ await DB.deleteRealityCheck(b.dataset.id); renderRcList(); }
+    catch(e){ alert(e.message || '刪不掉'); }
+  });
+}
+async function renderRcForm(){
+  const host = $('rcForm'); if(!host) return;
+  const qs = await ensureRcQuestions();
+  host.innerHTML = qs.length ? `
+    <label for="rcMetOn">見面日期</label>
+    <input type="date" id="rcMetOn">
+    ${qs.map(q => `
+      <label>${esc(q.label)}</label>
+      ${q.free
+        ? `<textarea id="${rcFieldId(q.key)}" rows="2" maxlength="500" placeholder="選填"></textarea>`
+        : `<select id="${rcFieldId(q.key)}"><option value="">請選擇（選填）</option>
+             ${q.options.map(o => `<option>${esc(o)}</option>`).join('')}</select>`}`).join('')}
+    <div class="bar" style="margin-top:10px">
+      <button type="button" id="rcSave">儲存這篇</button>
+      <span class="msg" id="rcMsg"></span>
+    </div>` : '<p class="hint">題目暫時載入不出來，可以之後再回來寫。</p>';
+  if($('rcMetOn')) $('rcMetOn').valueAsDate = new Date();
+  if($('rcSave')) $('rcSave').onclick = async () => {
+    const answers = {};
+    qs.forEach(q => { const el = $(rcFieldId(q.key)); if(el && el.value) answers[q.key] = el.value; });
+    $('rcSave').disabled = true;
+    try{
+      await DB.submitRealityCheck(activeChat, $('rcMetOn').value || null, answers);
+      $('rcForm').hidden = true;
+      await renderRcList();
+    }catch(e){ flash('rcMsg', e.message || '存不起來'); }
+    $('rcSave').disabled = false;
+  };
+}
+$('rcOpenBtn').onclick = async () => {
+  if(!activeChat) return;
+  $('rcForm').hidden = true;
+  await renderRcList();
+  $('rcDialog').showModal();
+};
+$('rcClose').onclick = () => $('rcDialog').close();
+$('rcNewBtn').onclick = async () => {
+  $('rcForm').hidden = !$('rcForm').hidden;
+  if(!$('rcForm').hidden) await renderRcForm();
+};
 
 async function openChat(appId, name, otherId){
   activeChat = appId; activeChatOther = {id: otherId || null, name: name || '對方'};

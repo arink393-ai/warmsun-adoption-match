@@ -7226,3 +7226,147 @@ begin
 end $$;
 revoke all on function public.chat_feeling_summary(uuid) from public, anon;
 grant execute on function public.chat_feeling_summary(uuid) to authenticated;
+
+-- ============================================================
+-- 39. 📝 Reality Check：約會後的私人日記
+--     使用者那輪產品評估的最後一條建議：暖陽目前很會篩「條件對不對」
+--     （💞 相容度）與「回答起來像不像有能力經營關係的人」（❤️ 第 37 節），
+--     但沒有任何地方留給「見面之後，這個人本人跟資料卡上寫的、
+--     跟聊天時表現的，對不對得起來」——這件事只有真的見過面才知道，
+--     而且**只該讓見面的人自己知道**。
+--
+--     ── 完全私人，不是 checkin 那種「可以選擇分享」──────────────
+--     第 29 節的關係健康檢查兩邊都在同一段關係裡、分享是雙方對等的事，
+--     所以有 share_with_partner 的選項。Reality Check 不一樣：
+--     寫的人可能還在觀望要不要繼續下去，甚至可能是想紀錄「我觀察到
+--     一些不太對勁的地方」——如果對方看得到，一來這份紀錄會失去誠實，
+--     二來等於變相把「我在觀察你」這件事告訴對方。所以沒有分享開關，
+--     RLS 只認 `user_id = auth.uid()`，沒有例外，跟第 38 節的
+--     chat_feelings 同一個隱私保證，包括站方帳號在內都看不到。
+--
+--     ── 不影響任何揭露層級、不算分數、不用來篩選 ─────────────────
+--     get_visible_match_profiles() 完全不會用到這張表——這是唯一一個
+--     連「有沒有寫過」這件事本身都不會透露給任何人（包括對方）的功能。
+--
+--     ── 一段關係可以寫很多篇，不是一段一篇 ───────────────────────
+--     跟 chat_feelings「同一天更新不疊加」不同：Reality Check 記的是
+--     「某一次實際見面」，見了幾次面就可以寫幾篇，沒有理由限制篇數
+--     或者用日期去重——那是完全不同的使用情境。
+--
+--     ── 題目跟第 29／37 節同一個模式：SQL 是唯一一份 ─────────────
+--     reality_check_questions() 回傳題目，前端用 RPC 現讀。
+--     跟第 38 節的 chat_feeling_options() 一樣，這裡的白名單直接讀
+--     reality_check_questions()，不需要另外寫一份——這幾支函式都是
+--     這一節新加的，沒有「trigger 建立時舊函式還不存在」的順序限制。
+-- ============================================================
+
+-- 39.1 題目：前後端共用同一份 ------------------------------------
+create or replace function public.reality_check_questions()
+returns jsonb language sql immutable as $$
+  select '[
+    {"key":"matched_profile","label":"本人跟資料卡描述的樣子，符合嗎？",
+     "options":["幾乎一致","大致上一致","有些出入","落差很大"],"multi":false},
+    {"key":"handled_no","label":"如果你婉拒了什麼（提議、要求、話題），對方怎麼回應？",
+     "options":["沒有遇到需要婉拒的情況","尊重且不勉強","有點失落但沒有勉強",
+                "追問或想說服我","不太在意我拒絕，直接跳過"],"multi":false},
+    {"key":"treated_staff","label":"對方怎麼對待服務生、店員或司機等提供服務的人？",
+     "options":["這次沒機會觀察到","禮貌、有耐心","普通，沒特別注意",
+                "不太耐煩","明顯不禮貌或頤指氣使"],"multi":false},
+    {"key":"next_step","label":"整體來說，這次見面讓你比較想",
+     "options":["繼續認識下去","再觀察看看","想停下來"],"multi":false},
+    {"key":"boundary_moments","label":"見面過程中有沒有哪個時刻，讓你覺得界線被尊重、或被侵犯？",
+     "options":[],"multi":false,"free":true},
+    {"key":"note","label":"其他想記下的事","options":[],"multi":false,"free":true}
+  ]'::jsonb
+$$;
+grant execute on function public.reality_check_questions() to authenticated, anon;
+
+-- 39.2 紀錄表：一段關係可以有很多篇 --------------------------------
+create table if not exists public.reality_checks (
+  id             uuid primary key default gen_random_uuid(),
+  application_id uuid not null references public.applications(id) on delete cascade,
+  user_id        uuid not null references auth.users(id) on delete cascade,
+  met_on         date not null default current_date,
+  answers        jsonb not null default '{}'::jsonb,
+  created_at     timestamptz not null default now()
+);
+create index if not exists reality_checks_lookup_idx
+  on public.reality_checks(application_id, user_id, met_on desc, created_at desc);
+
+alter table public.reality_checks enable row level security;
+drop policy if exists "reality_checks_own_only" on public.reality_checks;
+-- 只有自己，永遠不包含對方，也不包含站方帳號——這是整節最重要的一條規則，
+-- 寫在 RLS 裡，不是寫在畫面上。
+create policy "reality_checks_own_only" on public.reality_checks
+  for select to authenticated using (user_id = auth.uid());
+grant select on public.reality_checks to authenticated;
+-- 沒有 insert/update/delete 的 grant：寫入與刪除一律走下面的 RPC，
+-- 前端連 SQL 都下不了。
+
+-- 39.3 寫一篇 --------------------------------------------------
+create or replace function public.submit_reality_check(
+  p_app_id uuid, p_met_on date, p_answers jsonb
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_app public.applications;
+  v_keys text[];
+  v_clean jsonb;
+  v_id uuid;
+  v_met date;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這個對話';
+  end if;
+  if v_app.stage < 2 then raise exception '第二階段後才能寫 Reality Check'; end if;
+
+  if jsonb_typeof(coalesce(p_answers,'{}'::jsonb)) <> 'object' then
+    raise exception '格式不正確';
+  end if;
+  select array_agg(q->>'key') into v_keys from jsonb_array_elements(public.reality_check_questions()) q;
+
+  -- 只收題目表裡有的 key，而且每題最多 500 字——這是私人日記，
+  -- 不是要求逐字精確，但還是要有個上限避免整段貼上來的內容把資料表塞爆。
+  select coalesce(jsonb_object_agg(k, left(btrim(v), 500)), '{}'::jsonb) into v_clean
+    from jsonb_each_text(coalesce(p_answers,'{}'::jsonb)) as t(k, v)
+   where k = any(v_keys) and btrim(v) <> '';
+
+  v_met := coalesce(p_met_on, current_date);
+  if v_met > current_date then raise exception '見面日期不能是未來'; end if;
+
+  insert into public.reality_checks(application_id, user_id, met_on, answers)
+    values (p_app_id, auth.uid(), v_met, v_clean)
+    returning id into v_id;
+
+  return jsonb_build_object('id', v_id, 'met_on', v_met, 'answers', v_clean);
+end $$;
+revoke all on function public.submit_reality_check(uuid, date, jsonb) from public, anon;
+grant execute on function public.submit_reality_check(uuid, date, jsonb) to authenticated;
+
+-- 39.4 我自己在這段關係裡寫過的所有篇 --------------------------------
+create or replace function public.list_reality_checks(p_app_id uuid)
+returns setof public.reality_checks
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_app public.applications;
+begin
+  select * into v_app from public.applications where id = p_app_id;
+  if v_app is null or auth.uid() not in (v_app.from_user, v_app.to_user) then
+    raise exception '無權使用這個對話';
+  end if;
+  return query
+    select * from public.reality_checks
+     where application_id = p_app_id and user_id = auth.uid()
+     order by met_on desc, created_at desc;
+end $$;
+revoke all on function public.list_reality_checks(uuid) from public, anon;
+grant execute on function public.list_reality_checks(uuid) to authenticated;
+
+-- 39.5 刪掉自己寫的其中一篇 ------------------------------------------
+create or replace function public.delete_reality_check(p_id uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  delete from public.reality_checks where id = p_id and user_id = auth.uid();
+  if not found then raise exception '找不到這篇，或不是你寫的'; end if;
+end $$;
+revoke all on function public.delete_reality_check(uuid) from public, anon;
+grant execute on function public.delete_reality_check(uuid) to authenticated;

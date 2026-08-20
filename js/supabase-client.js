@@ -198,6 +198,28 @@
     if (error) throw error;
     return data;
   }
+  // 📝 Reality Check：約會後的私人日記（見 supabase-schema.sql 第 39 節）。
+  // 完全私人，沒有分享開關——對方跟站方帳號永遠讀不到，這是 RLS 保證的。
+  async function realityCheckQuestions() {
+    const { data, error } = await sb.rpc('reality_check_questions');
+    if (error) throw error;
+    return data;
+  }
+  async function submitRealityCheck(appId, metOn, answers) {
+    const { data, error } = await sb.rpc('submit_reality_check',
+      { p_app_id: appId, p_met_on: metOn, p_answers: answers });
+    if (error) throw error;
+    return data;
+  }
+  async function listRealityChecks(appId) {
+    const { data, error } = await sb.rpc('list_reality_checks', { p_app_id: appId });
+    if (error) throw error;
+    return data;
+  }
+  async function deleteRealityCheck(id) {
+    const { error } = await sb.rpc('delete_reality_check', { p_id: id });
+    if (error) throw error;
+  }
   // 提出認養申請：扣掛號費＋建立申請＋寫入受保護的答案表＋存進答題紀錄，同一個交易（見 apply_to()）
   async function applyTo(toId, answers, questions) {
     const { data, error } = await sb.rpc('apply_to', {
@@ -832,6 +854,7 @@
     listNotifications, markNotificationsRead, markAllNotificationsRead, subscribeNotifications,
     checkHardFilter, readinessQuestions, applyTo, refundApplication, adminAddCredits,
     chatFeelingOptions, logChatFeeling, chatFeelingSummary,
+    realityCheckQuestions, submitRealityCheck, listRealityChecks, deleteRealityCheck,
     sendStage2, submitStage2, advanceStage3, unlockStage3, consentUnlockTo,
     blockUser, unblockUser, listBlockedUsers,
     sendPriorityInvite, settleBonusCredits,
